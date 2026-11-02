@@ -1,7 +1,7 @@
 /* Planos service worker: la app y las lecciones sin conexión, y el aviso de cada mañana. */
 importScripts('./core.js');
 
-const VERSION = '2026-11-02-6c9c7685';
+const VERSION = '2026-11-02-5d5f0018';
 const CACHE = 'planos-' + VERSION;
 const SHELL = ['./', './index.html', './app.js', './core.js', './fonts.css', './manifest.webmanifest',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './data/path.json', './data/index.json'];
