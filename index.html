@@ -310,6 +310,57 @@ body {
 .settings h3 { font-size: 1rem; }
 .settings textarea { width: 100%; min-height: 80px; resize: vertical; font: 400 .8rem/1.4 var(--f-mono); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .foot { text-align: center; color: var(--faint); font: 400 .75rem var(--f-mono); }
+
+/* Search entry points */
+.pill-btn { cursor: pointer; color: var(--ink); }
+.pill-btn:hover { border-color: var(--blue-line); }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; flex: none; }
+.icon-btn svg { width: 18px; height: 18px; }
+.small-link { font-size: .85rem; font-weight: 500; }
+
+/* Listening */
+.tts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.tts .btn svg { width: 16px; height: 16px; }
+.tts-pos { font: 500 .78rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Review */
+.rev-row { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px; }
+.rev-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--blue-soft); color: var(--blue); }
+.rev-ico svg { width: 22px; height: 22px; }
+.rev-txt { min-width: 0; }
+.rev-txt h2 { font-size: 1.15rem; }
+.rev-meter { height: 6px; }
+.rev-meter > span { background: var(--blue); }
+.flash { display: flex; flex-direction: column; gap: 14px; }
+.flash-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.flash-meta .mono-label { color: var(--blue); }
+.flash-term { font: 800 1.7rem/1.15 var(--f-display); font-stretch: 105%; overflow-wrap: anywhere; }
+.flash-q { font-weight: 600; font-size: 1.08rem; line-height: 1.45; }
+.flash-body { display: flex; flex-direction: column; gap: 10px; }
+.flash-back { border-top: 1px dashed var(--blue-line); padding-top: 14px; }
+.grade-btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+.grade-btns button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 11px 8px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; }
+.grade-btns small { font: 400 .74rem var(--f-mono); color: var(--muted); }
+.grade-btns .g-again { border-color: color-mix(in srgb, var(--pencil) 45%, var(--line)); color: var(--pencil); }
+.grade-btns .g-good { border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); color: var(--blue); }
+.grade-btns .g-easy { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); color: var(--green); }
+.rev-end { display: flex; flex-direction: column; gap: 12px; }
+.rev-end h1 { font-size: 1.8rem; }
+
+/* Search */
+.search-box { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 4px 14px; box-shadow: var(--shadow); }
+.search-box:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.search-box svg { width: 20px; height: 20px; color: var(--muted); flex: none; }
+.search-box input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--ink); font: 500 1.05rem/1.4 var(--f-body); padding: 10px 0; }
+#search-results { display: flex; flex-direction: column; gap: 18px; }
+.gloss-all dd { padding-bottom: 6px; }
+.hits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hits button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 11px 2px; cursor: pointer; }
+.hits li:first-child button { border-top: 0; }
+.hits b { font-weight: 600; }
+.snip { color: var(--muted); font-size: .9rem; line-height: 1.45; }
+mark { background: color-mix(in srgb, var(--amber) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 </style>
 </head>
 <body>

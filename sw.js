@@ -1,7 +1,7 @@
 /* Planos service worker: la app y las lecciones sin conexión, y el aviso de cada mañana. */
 importScripts('./core.js');
 
-const VERSION = '2026-11-02-67446f62';
+const VERSION = '2026-11-02-f23248f8';
 const CACHE = 'planos-' + VERSION;
 const SHELL = ['./', './index.html', './app.js', './core.js', './fonts.css', './manifest.webmanifest',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './data/path.json', './data/index.json'];
@@ -61,8 +61,15 @@ self.addEventListener('push', (event) => {
     if (data.title) msg = { title: String(data.title), body: String(data.body || '') };
     else {
       try {
-        const [path, progress] = await Promise.all([cachedJSON('./data/path.json'), PlanosCore.idbGet('progress')]);
-        msg = PlanosCore.dailyMessage(path, progress || {});
+        const [path, stored, cards, reviewLog] = await Promise.all([cachedJSON('./data/path.json'), PlanosCore.idbGet('progress'), PlanosCore.idbGet('cards'), PlanosCore.idbGet('reviewLog')]);
+        const progress = stored || {};
+        let reviewDue = 0;
+        try {
+          const done = Object.keys(progress).filter((id) => progress[id]?.status === 'done');
+          const units = await Promise.all(done.map((id) => cachedJSON(`./data/units/${id}.json`).catch(() => null)));
+          reviewDue = PlanosCore.reviewQueue(units.filter(Boolean), progress, cards || {}, PlanosCore.todayKey(), Infinity).total;
+        } catch (e) { reviewDue = 0; }
+        msg = PlanosCore.dailyMessage(path, progress, PlanosCore.todayKey(), reviewDue, Object.keys(reviewLog || {}));
       } catch (e) {
         msg = { title: 'Planos', body: 'Tu sesión de hoy te espera.' };
       }
