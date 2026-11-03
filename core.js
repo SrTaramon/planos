@@ -26,13 +26,90 @@
     return { plan, mins };
   }
 
-  // Días seguidos con actividad: una unidad terminada o un repaso hecho (activeDays).
-  function streak(progress, today = todayKey(), activeDays = []) {
-    const days = new Set([...Object.values(progress || {}).map((p) => p.doneOn).filter(Boolean), ...activeDays]);
-    let d = days.has(today) ? today : addDays(today, -1);
-    let n = 0;
-    while (days.has(d)) { n++; d = addDays(d, -1); }
-    return n;
+  // La actividad de cada día: unidades terminadas ese día y tarjetas repasadas, con sus minutos aproximados.
+  const CARD_MIN = 0.35;
+  function activityByDay(path, progress, reviewLog) {
+    const byId = new Map(outline(path).map((u) => [u.id, u]));
+    const days = {};
+    const day = (k) => days[k] || (days[k] = { units: [], cards: 0, minutes: 0 });
+    const done = Object.entries(progress || {}).filter(([, p]) => p?.status === 'done' && p.doneOn)
+      .sort((a, b) => String(a[1].doneAt || '').localeCompare(String(b[1].doneAt || '')));
+    for (const [id, p] of done) {
+      const d = day(p.doneOn);
+      d.units.push(id);
+      d.minutes += byId.get(id)?.minutes || 10;
+    }
+    for (const [k, n] of Object.entries(reviewLog || {})) {
+      if (!(n > 0)) continue;
+      const d = day(k);
+      d.cards += n;
+      d.minutes += n * CARD_MIN;
+    }
+    return days;
+  }
+
+  // La racha: días seguidos en los que terminas una unidad o repasas. Cada 7 días de racha se gana un día
+  // de descanso (como mucho 2 guardados): si un día no haces nada, se gasta solo y la racha sigue.
+  const REST_EVERY = 7;
+  const REST_MAX = 2;
+  function streakInfo(progress, today = todayKey(), activeDays = []) {
+    const days = new Set([...Object.values(progress || {}).map((p) => (p?.status === 'done' ? p.doneOn : null)).filter(Boolean), ...activeDays]);
+    const info = { current: 0, best: 0, rest: 0, restDays: [], restEarned: [], firstReach: {}, todayDone: days.has(today), activeCount: 0 };
+    if (!days.size) return info;
+    let d = [...days].sort()[0];
+    let cur = 0;
+    while (d <= today) {
+      if (days.has(d)) {
+        cur++;
+        info.activeCount++;
+        if (!info.firstReach[cur]) info.firstReach[cur] = d;
+        if (cur % REST_EVERY === 0 && info.rest < REST_MAX) { info.rest++; info.restEarned.push(d); }
+        if (cur > info.best) info.best = cur;
+      } else if (d !== today) {
+        if (info.rest > 0) { info.rest--; info.restDays.push(d); } else cur = 0;
+      }
+      d = addDays(d, 1);
+    }
+    info.current = cur;
+    return info;
+  }
+  const streak = (progress, today = todayKey(), activeDays = []) => streakInfo(progress, today, activeDays).current;
+
+  // Logros: se calculan con el progreso guardado, así que no se pierden ni hay que apuntarlos.
+  const STREAK_BADGES = [[3, '3 días seguidos'], [7, 'Una semana seguida'], [14, 'Dos semanas seguidas'], [30, 'Un mes seguido'], [60, 'Dos meses seguidos']];
+  const UNIT_BADGES = [10, 25, 50];
+  const CARD_BADGES = [50, 200, 500];
+  function badges(path, progress, reviewLog, today = todayKey()) {
+    const list = outline(path);
+    const done = list.filter((u) => isDone(progress, u.id)).map((u) => ({ u, on: progress[u.id].doneOn || today }))
+      .sort((a, b) => a.on.localeCompare(b.on));
+    const firstOf = (kind) => done.find((x) => x.u.kind === kind)?.on || null;
+    const revDays = Object.keys(reviewLog || {}).filter((k) => reviewLog[k] > 0).sort();
+    let cum = 0;
+    const cardsReach = {};
+    for (const k of revDays) {
+      cum += reviewLog[k];
+      for (const n of CARD_BADGES) if (cum >= n && !cardsReach[n]) cardsReach[n] = k;
+    }
+    const st = streakInfo(progress, today, revDays);
+    const out = [];
+    const add = (id, group, title, desc, on, value, target) => out.push({ id, group, title, desc, done: !!on, on: on || null, value: Math.min(value, target), target });
+    add('first-lesson', 'route', 'Primer paso', 'Terminar tu primera lección', firstOf('lesson'), done.some((x) => x.u.kind === 'lesson') ? 1 : 0, 1);
+    add('first-problem', 'route', 'Primer plano', 'Resolver tu primer problema', firstOf('problem'), done.some((x) => x.u.kind === 'problem') ? 1 : 0, 1);
+    for (const n of UNIT_BADGES) if (n < list.length) add(`units-${n}`, 'route', `${n} unidades`, `Terminar ${n} unidades de la ruta`, done[n - 1]?.on, done.length, n);
+    if (list.length) add('route-all', 'route', 'Ruta completa', `Terminar las ${list.length} unidades`, done.length === list.length ? done[done.length - 1].on : null, done.length, list.length);
+    for (const [n, title] of STREAK_BADGES) add(`streak-${n}`, 'streak', title, `Aprender ${n} días seguidos`, st.firstReach[n], st.current, n);
+    add('first-review', 'review', 'Primer repaso', 'Repasar tus primeras tarjetas', revDays[0], revDays.length ? 1 : 0, 1);
+    for (const n of CARD_BADGES) add(`cards-${n}`, 'review', `${n} tarjetas`, `Repasar ${n} tarjetas en total`, cardsReach[n], cum, n);
+    (Array.isArray(path?.modules) ? path.modules : []).forEach((m, i) => {
+      const units = list.filter((u) => u.module === m.id);
+      if (!units.length) return;
+      const doneHere = done.filter((x) => x.u.module === m.id);
+      add(`module-${m.id}`, 'module', `M${i + 1} · ${m.title}`, `Terminar las ${units.length} unidades del módulo`, doneHere.length === units.length ? doneHere[doneHere.length - 1].on : null, doneHere.length, units.length);
+      out[out.length - 1].mark = `M${i + 1}`;
+      out[out.length - 1].name = m.title;
+    });
+    return out;
   }
 
   // Repaso espaciado: tarjetas sacadas de las unidades hechas, en cajas que vuelven cada vez más tarde.
@@ -120,5 +197,5 @@
     });
   }
 
-  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, todayKey, addDays, outline, isDone, kindLabel, todayPlan, streak, cardsOf, reviewQueue, gradeCard, dailyMessage, idbGet, idbSet };
+  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, REST_EVERY, REST_MAX, CARD_MIN, todayKey, addDays, outline, isDone, kindLabel, todayPlan, activityByDay, streakInfo, streak, badges, cardsOf, reviewQueue, gradeCard, dailyMessage, idbGet, idbSet };
 })(typeof self !== 'undefined' ? self : window);

@@ -1,6 +1,6 @@
 /* Planos: la app. Lee la ruta y las unidades de ./data, guarda el progreso en el iPhone (IndexedDB),
    gestiona la instalación y el aviso de cada mañana, el repaso espaciado, la lectura en voz alta,
-   el simulacro de entrevista con Claude y el glosario con buscador. */
+   el simulacro de entrevista con Claude, el glosario con buscador y la página de progreso (racha, calendario y logros). */
 (() => {
   'use strict';
   const C = window.PlanosCore;
@@ -22,7 +22,6 @@
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    days: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     route: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
     bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
     warn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20zM12 10v4M12 17v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
@@ -32,6 +31,9 @@
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
     stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg>',
     cards: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="14" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 4h11a3 3 0 0 1 3 3v10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    flame: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5c-3.9 0-6.8-2.8-6.8-6.6 0-3.4 2.2-5.4 3.8-7.6.3 1.7 1.2 2.9 2.4 3.4.1-3.4 1.6-5.8 3.2-8.2.7 3.2 5.2 6.2 5.2 11.6 0 4.3-3.1 7.4-7.8 7.4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 21.5c-1.8 0-3-1.3-3-3 0-1.8 1.4-2.8 2.3-4.3.9 1.3 3.8 2.4 3.8 4.5 0 1.6-1.3 2.8-3.1 2.8z" fill="currentColor"/></svg>',
+    rest: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 1 1 9.4 4a6.6 6.6 0 0 0 10.6 10.6z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
+    medal: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.6 10.3 6 3h4l2 4.6L14 3h4l-2.6 7.3M12 12.6l.8 1.6 1.7.2-1.2 1.2.3 1.7-1.6-.8-1.6.8.3-1.7-1.2-1.2 1.7-.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
     mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   };
   const NODE_ICON = {
@@ -51,7 +53,7 @@
 
   const S = {
     status: 'loading', path: null, ready: new Set(), version: '', units: {}, progress: {},
-    cards: {}, reviewLog: {}, reviewInfo: null, rev: null,
+    cards: {}, reviewLog: {}, reviewInfo: null, rev: null, seenBadges: null, cal: null,
     search: { q: '', ready: false, terms: [], docs: [] },
     view: { name: 'home' }, ui: {}, reg: null,
     push: { supported: false, permission: 'default', subscribed: false, code: null, sent: false, busy: false },
@@ -130,6 +132,27 @@
   const todayPlan = () => C.todayPlan(S.path, S.progress);
   const nextUndone = () => outline().find((u) => !isDone(u.id));
   const activeDays = () => Object.keys(S.reviewLog).filter((d) => S.reviewLog[d] > 0);
+  const actDays = () => C.activityByDay(S.path, S.progress, S.reviewLog);
+  const streakNow = () => C.streakInfo(S.progress, C.todayKey(), activeDays());
+
+  // Fechas y cifras en castellano.
+  const dayDate = (k) => new Date(k + 'T12:00:00Z');
+  const fmtDay = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const fmtShort = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const fmtMonth = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const weekday = (k) => (dayDate(k).getUTCDay() + 6) % 7; // 0 = lunes
+  // Son estimaciones: a partir de una hora se redondea a 5 min, y a partir de 10 h, a la hora.
+  function fmtMins(m) {
+    let r = Math.round(m);
+    if (r < 60) return `${r} min`;
+    if (r >= 600) return `${Math.round(r / 60)} h`;
+    r = Math.round(r / 5) * 5;
+    const h = Math.floor(r / 60);
+    const rest = r % 60;
+    return rest ? `${h} h ${rest} min` : `${h} h`;
+  }
 
   async function getJSON(url) {
     const r = await fetch(url);
@@ -242,7 +265,7 @@
     ttsStop();
     const q = await refreshReview();
     if (!q.items.length) { toast('No te toca repasar nada ahora mismo'); return; }
-    S.rev = { items: q.items, i: 0, shown: false, chosen: null, results: [] };
+    S.rev = { items: q.items, i: 0, shown: false, chosen: null, results: [], before: streakNow() };
     S.view = { name: 'review' };
     render();
     window.scrollTo(0, 0);
@@ -262,6 +285,7 @@
     persist('reviewLog');
     r.results.push(g);
     r.i++;
+    if (r.i >= r.items.length) r.celebrate = celebrationFor(r.before);
     r.shown = false;
     r.chosen = null;
     render();
@@ -275,7 +299,7 @@
       const again = r.results.filter((x) => x === 'again').length;
       return top + `<section class="card rev-end"><h1>Repaso hecho</h1><p class="lead">${n} ${n === 1 ? 'tarjeta' : 'tarjetas'}` +
         (again ? ` · ${again} ${again === 1 ? 'vuelve' : 'vuelven'} mañana para afianzar` : ' · todo en su sitio') + '.</p>' +
-        '<p class="muted">Cada tarjeta vuelve cuando está a punto de olvidarse: primero al día siguiente, luego a los 3, 7, 16… días.</p>' +
+        '<p class="muted">Cada tarjeta vuelve cuando está a punto de olvidarse: primero al día siguiente, luego a los 3, 7, 16… días.</p>' + celebrateBox(r.celebrate) +
         '<div class="row-actions"><button class="btn" data-act="home">Volver a la ruta</button></div></section>';
     }
     const card = r.items[r.i];
@@ -499,13 +523,241 @@
       `<div id="search-results">${searchResults()}</div>`;
   }
 
+  // ---------- progress: streak, calendar and achievements ----------
+  const badgeList = () => C.badges(S.path, S.progress, S.reviewLog);
+  // Logros nuevos desde la última vez: se celebran una sola vez.
+  function checkBadges() {
+    if (!Array.isArray(S.seenBadges)) return [];
+    const seen = new Set(S.seenBadges);
+    const fresh = badgeList().filter((b) => b.done && !seen.has(b.id));
+    if (fresh.length) { S.seenBadges = [...seen, ...fresh.map((b) => b.id)]; persist('seenBadges'); }
+    return fresh;
+  }
+  // Los logros que ya hay cuentan como vistos (al estrenar esta versión o al restaurar una copia).
+  function quietBadges() {
+    S.seenBadges = badgeList().filter((b) => b.done).map((b) => b.id);
+    persist('seenBadges');
+  }
+  function toastBadges(list) {
+    if (list.length) toast(list.length === 1 ? `Nuevo logro: ${list[0].title}` : `${list.length} logros nuevos`);
+  }
+  // Lo que se celebra al terminar algo: el día que suma a la racha y los logros nuevos.
+  function celebrationFor(before) {
+    const after = streakNow();
+    const today = C.todayKey();
+    const streak = before && !before.todayDone && after.todayDone
+      ? { current: after.current, best: after.best, record: after.best > before.best && after.activeCount > after.current, earned: after.restEarned.includes(today) }
+      : null;
+    return { streak, badges: checkBadges() };
+  }
+  function celebrateBox(c) {
+    if (!c || (!c.streak && !c.badges.length)) return '';
+    let h = '';
+    if (c.streak) {
+      const s = c.streak;
+      const title = s.current === 1 ? 'Empiezas tu racha' : `${s.current} días seguidos`;
+      const sub = s.earned ? `Has ganado un día de descanso: si un día no puedes, tu racha aguanta.`
+        : s.record ? '¡Nuevo récord!'
+        : s.current === 1 ? 'Hoy ya cuenta. Mañana, otra unidad o el repaso, y ya son dos.'
+        : 'Hoy ya cuenta para tu racha.';
+      h += `<div class="cel-row"><span class="cel-ico">${ICON.flame}</span><div><b>${title}</b><span>${sub}</span></div></div>`;
+    }
+    for (const b of c.badges) h += `<div class="cel-row"><span class="cel-ico medal">${ICON.medal}</span><div><b>Nuevo logro: ${esc(b.title)}</b><span>${esc(b.desc)}</span></div></div>`;
+    return `<div class="celebrate" role="status">${h}<button class="link small-link" data-act="progress">Ver tu progreso${ICON.chev}</button></div>`;
+  }
+
+  function weekStrip(today, act, st) {
+    const rest = new Set(st.restDays);
+    const start = C.addDays(today, -weekday(today));
+    let out = '';
+    for (let i = 0; i < 7; i++) {
+      const k = C.addDays(start, i);
+      let cls = 'wk-day';
+      let mark = '';
+      let what;
+      if (k > today) { cls += ' future'; what = 'aún no ha llegado'; }
+      else if (act[k]) { cls += ' on'; mark = ICON.check; what = 'aprendiste algo'; }
+      else if (rest.has(k)) { cls += ' rest'; mark = ICON.rest; what = 'día de descanso'; }
+      else what = k === today ? 'todavía nada' : 'sin actividad';
+      if (k === today) cls += ' today';
+      out += `<li class="${cls}" aria-label="${esc(cap(fmtDay.format(dayDate(k))))}: ${what}"><span class="wk-l" aria-hidden="true">${'LMXJVSD'[i]}</span><span class="wk-dot" aria-hidden="true">${mark}</span></li>`;
+    }
+    return `<ol class="week">${out}</ol>`;
+  }
+
+  function streakHomeCard() {
+    if (!outline().length) return '';
+    const st = streakNow();
+    const today = C.todayKey();
+    const title = st.current ? plural(st.current, 'día seguido', 'días seguidos') : 'Tu racha';
+    const parts = [];
+    if (!st.activeCount) parts.push('Empieza con tu primera unidad: cada día que aprendas, suma');
+    else if (st.todayDone) parts.push('Hoy ya cuenta');
+    else if (st.current) parts.push('Hoy aún no cuenta: termina una unidad o haz el repaso');
+    else parts.push('Empieza hoy una racha nueva: una unidad o el repaso');
+    if (st.best > st.current) parts.push(`récord: ${plural(st.best, 'día', 'días')}`);
+    if (st.rest) parts.push(plural(st.rest, 'descanso guardado', 'descansos guardados'));
+    const sub = parts.join(' · ');
+    return `<section class="card streak-card-home" data-act="progress"><button class="streak-home" data-act="progress"><span class="st-row"><span class="st-ico ${st.current ? '' : 'off'}">${ICON.flame}</span><span class="st-txt"><b>${title}</b><span class="muted">${sub}</span></span><span class="st-chev">${ICON.chev}</span></span><span class="sr">Ver tu progreso</span></button>${weekStrip(today, actDays(), st)}</section>`;
+  }
+
+  function openProgress(from) {
+    ttsStop();
+    const today = C.todayKey();
+    if (!S.cal) S.cal = { month: today.slice(0, 7), day: today };
+    S.view = { name: 'progress', from: from || null };
+    render();
+    window.scrollTo(0, 0);
+  }
+  const monthAdd = (m, n) => { const [y, mo] = m.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+  const level = (min) => (!min ? 0 : min < 15 ? 1 : min < 30 ? 2 : min < 45 ? 3 : 4);
+  function daySummary(a) {
+    const parts = [];
+    if (a.units.length) parts.push(plural(a.units.length, 'unidad', 'unidades'));
+    if (a.cards) parts.push(plural(a.cards, 'tarjeta repasada', 'tarjetas repasadas'));
+    parts.push(`unos ${fmtMins(a.minutes)}`);
+    return parts.join(', ');
+  }
+
+  function streakSection(st) {
+    const slots = Array.from({ length: C.REST_MAX }, (_, i) => `<span class="rest-slot ${i < st.rest ? 'full' : ''}">${ICON.rest}</span>`).join('');
+    const toNext = C.REST_EVERY - (st.current % C.REST_EVERY);
+    let status;
+    if (!st.activeCount) status = '<p class="muted">Tu racha empieza el día que termines tu primera unidad.</p>';
+    else if (st.todayDone) status = `<p class="status-line ok">${ICON.check}Hoy ya cuenta</p>`;
+    else if (st.current) status = '<p class="muted">Hoy aún no cuenta: termina una unidad o haz el repaso y sigue sumando.</p>';
+    else status = '<p class="muted">Hoy puedes empezar una racha nueva.</p>';
+    const restTitle = st.rest ? plural(st.rest, 'día de descanso guardado', 'días de descanso guardados') : 'Días de descanso';
+    const restNext = st.rest < C.REST_MAX && st.current ? ` El próximo, en ${plural(toNext, 'día', 'días')} de racha.` : '';
+    return `<section class="card streak-card" aria-labelledby="sc-h"><h2 id="sc-h" class="sr">Racha</h2>` +
+      `<div class="sc-main"><span class="sc-flame ${st.current ? '' : 'off'}">${ICON.flame}</span><div><div class="sc-num">${st.current}</div><div class="sc-lbl">${st.current === 1 ? 'día seguido' : 'días seguidos'}</div></div>` +
+      `<dl class="sc-side"><div><dt>Récord</dt><dd>${plural(st.best, 'día', 'días')}</dd></div><div><dt>Días aprendiendo</dt><dd>${st.activeCount}</dd></div></dl></div>` +
+      status +
+      `<div class="rest-box"><div class="rest-slots" aria-hidden="true">${slots}</div><div><b>${restTitle}</b><span class="muted">Cuenta cada día que terminas una unidad o haces el repaso. Cada ${C.REST_EVERY} días seguidos ganas un día de descanso (máximo ${C.REST_MAX}): si un día no puedes, se usa solo y tu racha sigue.${restNext}</span></div></div></section>`;
+  }
+
+  function weekSection(st, act, today) {
+    const start = C.addDays(today, -weekday(today));
+    let days = 0;
+    let units = 0;
+    let cards = 0;
+    let mins = 0;
+    for (let i = 0; i < 7; i++) {
+      const a = act[C.addDays(start, i)];
+      if (!a) continue;
+      days++; units += a.units.length; cards += a.cards; mins += a.minutes;
+    }
+    const parts = days ? [plural(days, 'día', 'días'), plural(units, 'unidad', 'unidades')].concat(cards ? [plural(cards, 'tarjeta', 'tarjetas')] : [], [`unos ${fmtMins(mins)}`]).join(' · ') : 'Aún nada esta semana';
+    return `<section class="card" aria-labelledby="wk-h"><div class="sec-head"><h2 id="wk-h">Esta semana</h2><span class="muted">${parts}</span></div>${weekStrip(today, act, st)}</section>`;
+  }
+
+  function calendarSection(st, act, today) {
+    const keys = Object.keys(act).sort();
+    const minMonth = (keys[0] || today).slice(0, 7);
+    const maxMonth = today.slice(0, 7);
+    let month = S.cal.month;
+    if (month < minMonth) month = minMonth;
+    if (month > maxMonth) month = maxMonth;
+    S.cal.month = month;
+    const rest = new Set(st.restDays);
+    const [y, mo] = month.split('-').map(Number);
+    const n = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    let cells = '<span aria-hidden="true"></span>'.repeat(weekday(month + '-01'));
+    for (let d = 1; d <= n; d++) {
+      const k = `${month}-${String(d).padStart(2, '0')}`;
+      const a = act[k];
+      const isRest = !a && rest.has(k);
+      const cls = ['cal-cell', `lv-${level(a?.minutes)}`];
+      if (k === today) cls.push('today');
+      const what = a ? daySummary(a) : isRest ? 'día de descanso' : k > today ? '' : 'sin actividad';
+      const label = `${cap(fmtDay.format(dayDate(k)))}${k === today ? ' (hoy)' : ''}${what ? ': ' + what : ''}`;
+      cells += `<button class="${cls.join(' ')}" data-act="cal-day" data-day="${k}" aria-label="${esc(label)}" aria-pressed="${S.cal.day === k}" ${k > today ? 'disabled' : ''}>${d}${isRest ? `<span class="cal-rest">${ICON.rest}</span>` : ''}</button>`;
+    }
+    const legend = '<div class="cal-legend"><span class="ramp">Menos <span class="sw"></span><span class="sw lv-1"></span><span class="sw lv-2"></span><span class="sw lv-3"></span><span class="sw lv-4"></span> Más</span>' +
+      `<span class="lg">${ICON.rest}Descanso</span><span class="lg">Color: minutos aprendiendo</span></div>`;
+    return `<section class="card" aria-labelledby="cal-h"><div class="cal-nav"><button class="icon-btn" data-act="cal-prev" aria-label="Mes anterior" ${month <= minMonth ? 'disabled' : ''}>${ICON.back}</button>` +
+      `<h2 id="cal-h">${cap(fmtMonth.format(dayDate(month + '-15')))}</h2><button class="icon-btn" data-act="cal-next" aria-label="Mes siguiente" ${month >= maxMonth ? 'disabled' : ''}>${ICON.chev}</button></div>` +
+      `<div class="cal-head" aria-hidden="true">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((x) => `<span>${x}</span>`).join('')}</div><div class="cal-grid">${cells}</div>${legend}${dayDetail(S.cal.day, act, rest, today)}</section>`;
+  }
+
+  function dayDetail(k, act, rest, today) {
+    if (!k || k > today) return '';
+    const a = act[k];
+    const head = `<h3>${k === today ? 'Hoy · ' : ''}${cap(fmtDay.format(dayDate(k)))}</h3>`;
+    let body;
+    if (a) {
+      const items = a.units.map((id) => {
+        const m = meta(id);
+        return `<li><button data-open-from="${esc(id)}"><span class="kind ${m?.kind || 'lesson'}">${kindLabel(m?.kind)}</span><b>${esc(unitTitle(id))}</b></button></li>`;
+      });
+      if (a.cards) items.push(`<li class="day-rev">${ICON.cards}Repaso: ${plural(a.cards, 'tarjeta', 'tarjetas')}</li>`);
+      body = `<ul class="day-list">${items.join('')}</ul><p class="muted">Unos ${fmtMins(a.minutes)} aprendiendo.</p>`;
+    } else if (rest.has(k)) body = '<p class="muted">Día de descanso: no hiciste nada y tu racha siguió.</p>';
+    else if (k === today) body = '<p class="muted">Todavía nada. Una unidad o el repaso, y el día cuenta.</p>';
+    else body = '<p class="muted">Sin actividad este día.</p>';
+    return `<div class="cal-detail" aria-live="polite">${head}${body}</div>`;
+  }
+
+  function totalsSection(st, act) {
+    const list = outline();
+    const done = list.filter((u) => isDone(u.id));
+    const lessons = list.filter((u) => u.kind === 'lesson');
+    const problems = list.filter((u) => u.kind !== 'lesson');
+    const doneL = done.filter((u) => u.kind === 'lesson').length;
+    const mins = Object.values(act).reduce((sum, a) => sum + a.minutes, 0);
+    const cards = Object.values(S.reviewLog).reduce((sum, n) => sum + (n > 0 ? n : 0), 0);
+    const left = list.filter((u) => !isDone(u.id));
+    const leftMins = left.reduce((sum, u) => sum + (u.minutes || 10), 0);
+    let pace = 'Unas dos unidades al día, a tu ritmo.';
+    if (done.length >= 3 && st.activeCount) {
+      const perDay = done.length / st.activeCount;
+      pace = left.length ? `A tu ritmo, unos ${plural(Math.ceil(left.length / perDay), 'día', 'días')} de estudio más.` : 'Ruta terminada.';
+    }
+    const tile = (big, label, sub, meter) => `<div class="tile"><span class="mono-label">${label}</span><span class="big">${big}</span>${sub ? `<span class="muted">${sub}</span>` : ''}${meter != null ? `<div class="meter" aria-hidden="true"><span style="width:${meter}%"></span></div>` : ''}</div>`;
+    return `<section class="card" aria-labelledby="tot-h"><div class="sec-head"><h2 id="tot-h">En total</h2></div><div class="tiles">` +
+      tile(`${done.length} / ${list.length}`, 'Unidades', `${doneL} de ${lessons.length} lecciones · ${done.length - doneL} de ${problems.length} problemas`, list.length ? (done.length / list.length) * 100 : 0) +
+      tile(mins ? `≈ ${fmtMins(mins)}` : '0 min', 'Aprendiendo', 'Según lo que dura cada unidad y cada tarjeta.') +
+      tile(String(cards), 'Tarjetas repasadas', cards ? 'Cada una vuelve justo antes de olvidarse.' : 'Salen de las unidades que terminas.') +
+      tile(left.length ? `≈ ${fmtMins(leftMins)}` : '¡Hecho!', 'Te queda', pace) +
+      '</div></section>';
+  }
+
+  function badgesSection() {
+    const all = badgeList();
+    const got = all.filter((b) => b.done).length;
+    const groups = [['streak', 'Constancia', ICON.flame], ['route', 'La ruta', ICON.route], ['review', 'Repaso', ICON.cards], ['module', 'Módulos', null]];
+    const html = groups.map(([g, label, icon]) => {
+      const items = all.filter((b) => b.group === g);
+      if (!items.length) return '';
+      const tiles = items.map((b) => {
+        const title = b.group === 'module' ? b.name : b.title;
+        const status = b.done ? `Conseguido el ${fmtShort.format(dayDate(b.on))}` : b.target > 1 ? `${b.value} / ${b.target}` : esc(b.desc);
+        const meter = !b.done && b.target > 1 ? `<div class="meter" aria-hidden="true"><span style="width:${(b.value / b.target) * 100}%"></span></div>` : '';
+        return `<li class="bdg ${b.done ? 'on' : ''}" aria-label="${esc(b.title)}: ${b.done ? 'conseguido' : esc(b.desc) + (b.target > 1 ? `, ${b.value} de ${b.target}` : '')}"><span class="bdg-ico" aria-hidden="true">${icon || esc(b.mark || '')}</span><b aria-hidden="true">${esc(title)}</b><span class="muted" aria-hidden="true">${status}</span>${meter}</li>`;
+      }).join('');
+      return `<div class="bdg-group"><h3>${label}</h3><ul class="bdg-grid">${tiles}</ul></div>`;
+    }).join('');
+    return `<section class="card" aria-labelledby="bdg-h"><div class="sec-head"><h2 id="bdg-h">Logros</h2><span class="muted">${got} de ${all.length}</span></div>${html}</section>`;
+  }
+
+  function progressPage() {
+    const today = C.todayKey();
+    const st = streakNow();
+    const act = actDays();
+    const from = S.view.from;
+    const back = from === '@review' ? 'Volver al repaso' : from === '@search' ? 'Volver a la búsqueda' : from && content(from) ? `Volver a «${esc(unitTitle(from))}»` : 'La ruta';
+    return `<div class="topbar"><button class="back" data-act="back">${ICON.back}${back}</button></div>` +
+      '<header class="unit-head"><h1>Tu progreso</h1><p class="orig">Lo que has ido aprendiendo, día a día. Todo se guarda en este iPhone.</p></header>' +
+      streakSection(st) + weekSection(st, act, today) + calendarSection(st, act, today) + totalsSection(st, act) + badgesSection();
+  }
+
   // ---------- home ----------
   function header() {
     const total = outline().length;
     const done = outline().filter((u) => isDone(u.id)).length;
     const st = C.streak(S.progress, C.todayKey(), activeDays());
     return `<header class="top"><div class="brand">${ICON.mark}<div><b>Planos</b><span>System design, paso a paso</span></div></div>` +
-      `<div class="stats"><span class="pill" title="Días seguidos aprendiendo">${ICON.days}${st} ${st === 1 ? 'día' : 'días'}</span><span class="pill" title="Unidades hechas">${ICON.route}${done} / ${total}</span>` +
+      `<div class="stats"><button class="pill pill-btn" data-act="progress" aria-label="Tu progreso: ${plural(st, 'día seguido', 'días seguidos')}"><span class="flame-ico">${ICON.flame}</span>${plural(st, 'día', 'días')}</button><button class="pill pill-btn" data-act="progress" aria-label="Tu progreso: ${done} de ${total} unidades">${ICON.route}${done} / ${total}</button>` +
       `<button class="pill pill-btn" data-act="search" aria-label="Glosario y búsqueda">${ICON.search}Buscar</button></div></header>`;
   }
 
@@ -644,7 +896,7 @@
       app.innerHTML = header() + '<section class="card empty"><h1>No se ha podido cargar la ruta</h1><p class="muted">Comprueba la conexión y vuelve a abrir la app.</p></section>';
       return;
     }
-    app.innerHTML = header() + setupCard() + todayCard() + reviewHomeCard() + markedCard() + routeCard() + settingsCard() + `<p class="foot">Planos · ${esc(S.version)}</p>`;
+    app.innerHTML = header() + setupCard() + todayCard() + reviewHomeCard() + streakHomeCard() + markedCard() + routeCard() + settingsCard() + `<p class="foot">Planos · ${esc(S.version)}</p>`;
   }
 
   // ---------- unit pages ----------
@@ -663,6 +915,7 @@
     ttsStop();
     const from = S.view.from;
     if (from === '@search') { openSearch(); return; }
+    if (from === '@progress') { openProgress(null); return; }
     if (from === '@review' && S.rev) { S.view = { name: 'review' }; render(); window.scrollTo(0, 0); return; }
     if (from && content(from)) { S.view = { name: 'unit', id: from, from: null }; S.ui = { checks: {}, hints: {}, ask: '' }; render(); window.scrollTo(0, 0); return; }
     S.view = { name: 'home' };
@@ -672,6 +925,7 @@
     render();
     window.scrollTo(0, 0);
     refreshReview();
+    toastBadges(checkBadges());
   }
 
   function unitHead(u) {
@@ -718,7 +972,7 @@
       const { plan } = todayPlan();
       const moreToday = after && plan.includes(after) && !isDone(after.id);
       const cards = C.cardsOf(u).length;
-      next = `<div class="next-box"><b>${pressed === 'review' ? 'Hecho. Lo tienes en «Marcadas para repasar».' : 'Hecho.'}</b>` +
+      next = celebrateBox(S.ui.celebrate) + `<div class="next-box"><b>${pressed === 'review' ? 'Hecho. Lo tienes en «Marcadas para repasar».' : 'Hecho.'}</b>` +
         (cards ? `<span class="muted">${cards} ${cards === 1 ? 'tarjeta pasa' : 'tarjetas pasan'} a tu repaso${pressed === 'ok' ? ' dentro de dos días' : ' mañana'}.</span>` : '') +
         (after && isReady(after.id)
           ? `<div class="row-actions"><button class="btn${moreToday ? '' : ' alt'}" data-open="${esc(after.id)}">${moreToday ? 'Siguiente' : 'Adelantar'}: ${esc(after.title)}</button><button class="link" data-act="home">Volver a la ruta</button></div>`
@@ -806,6 +1060,8 @@
       app.innerHTML = reviewPage();
     } else if (S.view.name === 'search') {
       app.innerHTML = searchPage();
+    } else if (S.view.name === 'progress') {
+      app.innerHTML = progressPage();
     } else {
       S.view = { name: 'home' };
       renderHome();
@@ -840,9 +1096,11 @@
   }
   function markFeel(u, feel) {
     const p = prog(u.id);
+    const before = p?.status === 'done' ? null : streakNow();
     const patch = { status: 'done', feel, doneAt: p?.doneAt || new Date().toISOString(), doneOn: p?.doneOn || C.todayKey() };
     if (u.kind === 'problem') patch.at = u.steps.length;
     saveProgress(u.id, patch);
+    if (before) S.ui.celebrate = celebrationFor(before);
     render();
   }
 
@@ -931,6 +1189,7 @@
       C.idbSet('cards', S.cards);
       C.idbSet('reviewLog', S.reviewLog);
       S.settings = { ...S.settings, restore: false, restoreText: '', restoreError: '' };
+      quietBadges();
       toast('Progreso restaurado');
       render();
       refreshReview();
@@ -941,7 +1200,7 @@
   }
 
   // ---------- events ----------
-  const fromHere = () => (S.view.name === 'unit' ? S.view.id : S.view.name === 'search' ? '@search' : S.view.name === 'review' ? '@review' : null);
+  const fromHere = () => (S.view.name === 'unit' ? S.view.id : S.view.name === 'search' ? '@search' : S.view.name === 'review' ? '@review' : S.view.name === 'progress' ? '@progress' : null);
   app.addEventListener('click', (ev) => {
     const from = ev.target.closest('[data-open-from]');
     if (from) { openUnit(from.dataset.openFrom, fromHere()); return; }
@@ -967,6 +1226,10 @@
       case 'tts-stop': ttsStop(); break;
       case 'tts-rate': ttsRate(); break;
       case 'search': openSearch(); break;
+      case 'progress': if (S.view.name !== 'progress') openProgress(fromHere()); break;
+      case 'cal-prev': if (S.cal) { S.cal.month = monthAdd(S.cal.month, -1); render(); } break;
+      case 'cal-next': if (S.cal) { S.cal.month = monthAdd(S.cal.month, 1); render(); } break;
+      case 'cal-day': if (S.cal) { S.cal.day = t.dataset.day; render(); } break;
       case 'review-start': startReview(); break;
       case 'rev-show': if (S.rev) { S.rev.shown = true; render(); } break;
       case 'rev-choose': if (S.rev && !Number.isInteger(S.rev.chosen)) { S.rev.chosen = Number(t.dataset.k); render(); } break;
@@ -1020,9 +1283,10 @@
   async function init() {
     renderHome();
     try {
-      const [path, index, progress, cards, reviewLog] = await Promise.all([
+      const [path, index, progress, cards, reviewLog, seenBadges] = await Promise.all([
         getJSON('./data/path.json'), getJSON('./data/index.json'),
         C.idbGet('progress').catch(() => null), C.idbGet('cards').catch(() => null), C.idbGet('reviewLog').catch(() => null),
+        C.idbGet('seenBadges').catch(() => null),
       ]);
       S.path = path;
       S.ready = new Set(index.units);
@@ -1031,6 +1295,8 @@
       S.cards = cards || {};
       S.reviewLog = reviewLog || {};
       S.status = 'ready';
+      if (Array.isArray(seenBadges)) S.seenBadges = seenBadges;
+      else quietBadges();
     } catch (e) {
       S.status = 'error';
     }
