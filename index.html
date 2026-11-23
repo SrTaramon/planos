@@ -589,48 +589,48 @@ mark { background: color-mix(in srgb, var(--amber) 28%, transparent); color: inh
 /* The drawing itself */
 .scene-svg text { font-family: var(--f-body); }
 .scene-svg .f-t, .scene-svg .f-l, .scene-svg .f-r { stroke-width: 1.4; stroke-linejoin: round; }
-.node.h-b .f-t { fill: var(--sc-b-t); } .node.h-b .f-l { fill: var(--sc-b-l); } .node.h-b .f-r { fill: var(--sc-b-r); } .node.h-b .body { stroke: var(--sc-b-i); color: var(--sc-b-i); }
-.node.h-t .f-t { fill: var(--sc-t-t); } .node.h-t .f-l { fill: var(--sc-t-l); } .node.h-t .f-r { fill: var(--sc-t-r); } .node.h-t .body { stroke: var(--sc-t-i); color: var(--sc-t-i); }
-.node.h-a .f-t { fill: var(--sc-a-t); } .node.h-a .f-l { fill: var(--sc-a-l); } .node.h-a .f-r { fill: var(--sc-a-r); } .node.h-a .body { stroke: var(--sc-a-i); color: var(--sc-a-i); }
-.node.h-p .f-t { fill: var(--sc-p-t); } .node.h-p .f-l { fill: var(--sc-p-l); } .node.h-p .f-r { fill: var(--sc-p-r); } .node.h-p .body { stroke: var(--sc-p-i); color: var(--sc-p-i); }
-.node.h-g .f-t { fill: var(--sc-g-t); } .node.h-g .f-l { fill: var(--sc-g-l); } .node.h-g .f-r { fill: var(--sc-g-r); } .node.h-g .body { stroke: var(--sc-g-i); color: var(--sc-g-i); }
-.node.h-n .f-t { fill: var(--sc-n-t); } .node.h-n .f-l { fill: var(--sc-n-l); } .node.h-n .f-r { fill: var(--sc-n-r); } .node.h-n .body { stroke: var(--sc-n-i); color: var(--sc-n-i); }
-.node.s-hot .f-t { fill: var(--sc-hot-t); } .node.s-hot .f-l { fill: var(--sc-hot-l); } .node.s-hot .f-r { fill: var(--sc-hot-r); } .node.s-hot .body { stroke: var(--sc-hot-i); color: var(--sc-hot-i); }
-.node.s-down .f-t { fill: var(--sc-down-t); } .node.s-down .f-l { fill: var(--sc-down-l); } .node.s-down .f-r { fill: var(--sc-down-r); } .node.s-down .body { stroke: var(--sc-down-i); color: var(--sc-down-i); stroke-dasharray: 4 3; }
-.node.s-down .label text { text-decoration: line-through; fill: var(--muted); }
-.node.s-dim { opacity: .32; }
-.node .n-ico { stroke: currentColor; }
-.node .screen { fill: var(--sc-n-i); stroke: var(--sc-n-i); }
-.node .screen-in { fill: var(--blue-soft); stroke: none; }
+.sc-node.h-b .f-t { fill: var(--sc-b-t); } .sc-node.h-b .f-l { fill: var(--sc-b-l); } .sc-node.h-b .f-r { fill: var(--sc-b-r); } .sc-node.h-b .body { stroke: var(--sc-b-i); color: var(--sc-b-i); }
+.sc-node.h-t .f-t { fill: var(--sc-t-t); } .sc-node.h-t .f-l { fill: var(--sc-t-l); } .sc-node.h-t .f-r { fill: var(--sc-t-r); } .sc-node.h-t .body { stroke: var(--sc-t-i); color: var(--sc-t-i); }
+.sc-node.h-a .f-t { fill: var(--sc-a-t); } .sc-node.h-a .f-l { fill: var(--sc-a-l); } .sc-node.h-a .f-r { fill: var(--sc-a-r); } .sc-node.h-a .body { stroke: var(--sc-a-i); color: var(--sc-a-i); }
+.sc-node.h-p .f-t { fill: var(--sc-p-t); } .sc-node.h-p .f-l { fill: var(--sc-p-l); } .sc-node.h-p .f-r { fill: var(--sc-p-r); } .sc-node.h-p .body { stroke: var(--sc-p-i); color: var(--sc-p-i); }
+.sc-node.h-g .f-t { fill: var(--sc-g-t); } .sc-node.h-g .f-l { fill: var(--sc-g-l); } .sc-node.h-g .f-r { fill: var(--sc-g-r); } .sc-node.h-g .body { stroke: var(--sc-g-i); color: var(--sc-g-i); }
+.sc-node.h-n .f-t { fill: var(--sc-n-t); } .sc-node.h-n .f-l { fill: var(--sc-n-l); } .sc-node.h-n .f-r { fill: var(--sc-n-r); } .sc-node.h-n .body { stroke: var(--sc-n-i); color: var(--sc-n-i); }
+.sc-node.s-hot .f-t { fill: var(--sc-hot-t); } .sc-node.s-hot .f-l { fill: var(--sc-hot-l); } .sc-node.s-hot .f-r { fill: var(--sc-hot-r); } .sc-node.s-hot .body { stroke: var(--sc-hot-i); color: var(--sc-hot-i); }
+.sc-node.s-down .f-t { fill: var(--sc-down-t); } .sc-node.s-down .f-l { fill: var(--sc-down-l); } .sc-node.s-down .f-r { fill: var(--sc-down-r); } .sc-node.s-down .body { stroke: var(--sc-down-i); color: var(--sc-down-i); stroke-dasharray: 4 3; }
+.sc-node.s-down .label text { text-decoration: line-through; fill: var(--muted); }
+.sc-node.s-dim { opacity: .32; }
+.sc-node .n-ico { stroke: currentColor; }
+.sc-node .screen { fill: var(--sc-n-i); stroke: var(--sc-n-i); }
+.sc-node .screen-in { fill: var(--blue-soft); stroke: none; }
 .person rect, .person circle { stroke: var(--ink); stroke-width: 1; }
 .person.p0 rect, .person.p0 circle, .tick.p0 { fill: var(--ppl-0); }
 .person.p1 rect, .person.p1 circle, .tick.p1 { fill: var(--ppl-1); }
 .person.p2 rect, .person.p2 circle, .tick.p2 { fill: var(--ppl-2); }
 .person.p3 rect, .person.p3 circle, .tick.p3 { fill: var(--ppl-3); }
-.node .glow { fill: var(--pk-fail); opacity: .16; animation: sc-pulse 1.6s ease-in-out infinite; }
-.node .halo { stroke-width: 2; }
-.node .halo-good { fill: color-mix(in srgb, var(--green) 14%, transparent); stroke: var(--green); }
-.node .halo-bad { fill: color-mix(in srgb, var(--pk-fail) 12%, transparent); stroke: var(--pk-fail); }
-.node .down-x path { stroke: var(--pk-fail); stroke-width: 3.2; stroke-linecap: round; fill: none; }
-.node.is-new > .body, .node.is-new > .label { animation: sc-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+.sc-node .glow { fill: var(--pk-fail); opacity: .16; animation: sc-pulse 1.6s ease-in-out infinite; }
+.sc-node .halo { stroke-width: 2; }
+.sc-node .halo-good { fill: color-mix(in srgb, var(--green) 14%, transparent); stroke: var(--green); }
+.sc-node .halo-bad { fill: color-mix(in srgb, var(--pk-fail) 12%, transparent); stroke: var(--pk-fail); }
+.sc-node .down-x path { stroke: var(--pk-fail); stroke-width: 3.2; stroke-linecap: round; fill: none; }
+.sc-node.is-new > .body, .sc-node.is-new > .label { animation: sc-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; transform-box: fill-box; transform-origin: center; }
 .scene-svg .label rect { fill: var(--surface); stroke: var(--ink); stroke-width: 1.2; }
 .scene-svg .label text { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
-.scene-svg .link-label rect { fill: var(--surface); stroke: var(--blue-line); stroke-width: 1; }
-.scene-svg .link-label text { font: 500 11px var(--f-mono); fill: var(--muted); }
+.scene-svg .sc-link-label rect { fill: var(--surface); stroke: var(--blue-line); stroke-width: 1; }
+.scene-svg .sc-link-label text { font: 500 11px var(--f-mono); fill: var(--muted); }
 .scene-svg .note { font: 400 10.5px var(--f-mono); fill: var(--muted); }
 .scene-svg .items rect { fill: var(--blue-soft); stroke: var(--blue-line); stroke-width: 1; }
 .scene-svg .items text { font: 500 10px var(--f-mono); fill: var(--ink); }
-.scene-svg .badge > rect:first-child { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
-.scene-svg .badge text { font: 600 11px var(--f-mono); fill: var(--ink); }
+.scene-svg .nbadge > rect:first-child { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
+.scene-svg .nbadge text { font: 600 11px var(--f-mono); fill: var(--ink); }
 .scene-svg .bar-bg { fill: var(--line); }
 .scene-svg .bar.good { fill: var(--green); }
 .scene-svg .bar.mid { fill: var(--amber); }
 .scene-svg .bar.bad { fill: var(--pk-fail); }
-.scene-svg .link { fill: none; stroke: var(--ink); stroke-opacity: .5; stroke-width: 2; stroke-linecap: round; }
-.scene-svg .link.dashed { stroke-dasharray: 5 5; }
-.scene-svg .link.s-hot { stroke: var(--pk-fail); stroke-opacity: .8; }
-.scene-svg .link.s-down { stroke: var(--pk-fail); stroke-opacity: .7; stroke-dasharray: 3 6; }
-.scene-svg .link.s-dim { stroke-opacity: .16; }
+.scene-svg .sc-link { fill: none; stroke: var(--ink); stroke-opacity: .5; stroke-width: 2; stroke-linecap: round; }
+.scene-svg .sc-link.dashed { stroke-dasharray: 5 5; }
+.scene-svg .sc-link.s-hot { stroke: var(--pk-fail); stroke-opacity: .8; }
+.scene-svg .sc-link.s-down { stroke: var(--pk-fail); stroke-opacity: .7; stroke-dasharray: 3 6; }
+.scene-svg .sc-link.s-dim { stroke-opacity: .16; }
 .scene-svg .arrow-head { fill: var(--ink); fill-opacity: .6; }
 .scene-svg .zone rect { fill: color-mix(in srgb, var(--blue) 5%, transparent); stroke: var(--blue-line); stroke-width: 1.4; stroke-dasharray: 7 5; }
 .scene-svg .zone text { font: 600 10.5px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; fill: var(--muted); }

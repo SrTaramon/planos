@@ -43,9 +43,11 @@ rmSync(join(dataDir, 'scenes'), { recursive: true, force: true });
 mkdirSync(join(dataDir, 'scenes'), { recursive: true });
 const sceneDir = join(root, 'scenes');
 if (existsSync(sceneDir)) {
+  // PLANOS_SCENES=L11,L14 publica solo esas (para no publicar escenas a medio escribir).
+  const only = process.env.PLANOS_SCENES ? new Set(process.env.PLANOS_SCENES.split(',').map((x) => x.trim())) : null;
   for (const f of readdirSync(sceneDir).filter((x) => /^[LP]\d{2}\.json$/.test(x)).sort()) {
     const id = f.slice(0, 3);
-    if (!ok.includes(id)) continue;
+    if (!ok.includes(id) || (only && !only.has(id))) continue;
     try {
       execFileSync('node', [join(root, 'tools', 'validate-scene.cjs'), join(sceneDir, f)], { stdio: 'pipe' });
     } catch (e) {

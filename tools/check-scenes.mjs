@@ -53,9 +53,9 @@ for (const f of files) {
       minFont = Math.min(minFont, 12.5 * scale);
       const boxes = [];
       const add = (el, kind, owner) => { const r = el.getBoundingClientRect(); if (r.width && r.height) boxes.push({ kind, owner, r: { x0: r.left + 1, y0: r.top + 1, x1: r.right - 1, y1: r.bottom - 1 } }); };
-      for (const n of svg.querySelectorAll('.node')) {
+      for (const n of svg.querySelectorAll('.sc-node')) {
         const id = n.dataset.id;
-        n.querySelectorAll(':scope > .label, :scope > .badge, :scope > .note, :scope > .items').forEach((el) => add(el, el.getAttribute('class'), id));
+        n.querySelectorAll(':scope > .label, :scope > .nbadge, :scope > .note, :scope > .items').forEach((el) => add(el, el.getAttribute('class'), id));
         const body = n.querySelector(':scope > .body');
         if (body) add(body, 'pieza', id);
       }

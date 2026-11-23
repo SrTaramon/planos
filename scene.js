@@ -166,7 +166,7 @@
     const { x, y } = pos(n);
     const [form, hue] = KIND[n.kind] || KIND.service;
     const st = ['ok', 'hot', 'down', 'dim'].includes(n.state) ? n.state : 'ok';
-    let out = `<g class="node h-${hue} s-${st}${isNew ? ' is-new' : ''}" data-id="${esc(n.id)}">`;
+    let out = `<g class="sc-node h-${hue} s-${st}${isNew ? ' is-new' : ''}" data-id="${esc(n.id)}">`;
     if (n.mark === 'good' || n.mark === 'bad') {
       const w = form === 'crowd' ? 52 : 42;
       out += `<polygon class="halo halo-${n.mark}" points="${x},${y - w / 2 + 12} ${x + w},${y + 12} ${x},${y + w / 2 + 12} ${x - w},${y + 12}"/>`;
@@ -182,7 +182,7 @@
       const w = tw(text, 11, true) + 16 + (bar ? bar + 6 : 0);
       const by = y - 52;
       const lvl = load == null ? '' : load >= 0.85 ? 'bad' : load >= 0.6 ? 'mid' : 'good';
-      out += `<g class="badge"><rect x="${fx(x - w / 2)}" y="${by - 9}" width="${fx(w)}" height="18" rx="9"/>` +
+      out += `<g class="nbadge"><rect x="${fx(x - w / 2)}" y="${by - 9}" width="${fx(w)}" height="18" rx="9"/>` +
         (bar ? `<rect class="bar-bg" x="${fx(x - w / 2 + 8)}" y="${by - 2.5}" width="${bar}" height="5" rx="2.5"/><rect class="bar ${lvl}" x="${fx(x - w / 2 + 8)}" y="${by - 2.5}" width="${fx(bar * load)}" height="5" rx="2.5"/>` : '') +
         `<text x="${fx(x - w / 2 + 8 + (bar ? bar + 6 : 0))}" y="${by + 4}">${esc(text)}</text></g>`;
     }
@@ -202,7 +202,7 @@
   function linkSvg(l, g) {
     const st = ['ok', 'hot', 'down', 'dim'].includes(l.state) ? l.state : 'ok';
     const d = g.C ? `M${fx(g.P0.x)},${fx(g.P0.y)} Q${fx(g.C.x)},${fx(g.C.y)} ${fx(g.P2.x)},${fx(g.P2.y)}` : `M${fx(g.P0.x)},${fx(g.P0.y)} L${fx(g.P2.x)},${fx(g.P2.y)}`;
-    let out = `<path class="link s-${st}${l.dashed ? ' dashed' : ''}" d="${d}"${l.arrow ? ' marker-end="url(#sc-arrow)"' : ''}/>`;
+    let out = `<path class="sc-link s-${st}${l.dashed ? ' dashed' : ''}" d="${d}"${l.arrow ? ' marker-end="url(#sc-arrow)"' : ''}/>`;
     if (l.label) {
       const m = pointAt(g, 0.5);
       out += pill(fx(m.x), fx(m.y), l.label, 'link-label', 11, true);
@@ -255,16 +255,26 @@
       return { f, via, geo, links, kind: PACKETS.includes(f.kind) ? f.kind : 'req', rate: Math.max(0.15, Math.min(8, Number(f.rate) || 1)) };
     }).filter((r) => r.via.length);
   }
-  // Un recorrido concreto: elige rama donde la haya y orienta cada tramo para que sea continuo.
+  // Un recorrido concreto: en cada bifurcación elige entre las ramas que siguen desde donde va el
+  // paquete, y orienta cada tramo para que el recorrido sea continuo.
   function buildPath(route, pick) {
-    const ids = route.via.map((v, k) => (Array.isArray(v) ? v[pick(k, v.length)] : v)).filter((id) => route.geo[id]);
+    const touches = (id, n) => { const l = route.links[id]; return l.from === n || l.to === n; };
     const segs = [];
     let at = null;
-    ids.forEach((id, k) => {
+    route.via.forEach((v, k) => {
+      let opts = (Array.isArray(v) ? v : [v]).filter((id) => route.geo[id]);
+      if (at) { const cont = opts.filter((id) => touches(id, at)); if (cont.length) opts = cont; }
+      if (!opts.length) return;
+      const id = opts.length > 1 ? opts[pick(k, opts.length)] : opts[0];
       const l = route.links[id];
       let fwd = true;
       if (at) fwd = l.from === at || l.to !== at;
-      else if (k + 1 < ids.length) { const nx = route.links[ids[k + 1]]; fwd = !(nx && (nx.from === l.from || nx.to === l.from)); }
+      else {
+        const nx = route.via[k + 1];
+        const nxs = (Array.isArray(nx) ? nx : nx ? [nx] : []).filter((x) => route.links[x]);
+        // Al empezar: si lo siguiente sale de «from» y no de «to», este tramo va al revés.
+        if (nxs.some((x) => touches(x, l.from)) && !nxs.some((x) => touches(x, l.to))) fwd = false;
+      }
       segs.push({ g: route.geo[id], fwd, len: segLength(route.geo[id]) });
       at = fwd ? l.to : l.from;
     });

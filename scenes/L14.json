@@ -1,0 +1,1055 @@
+{
+  "id": "L14",
+  "title": "El tiempo real, en acción",
+  "metrics": [
+    {
+      "id": "req",
+      "label": "Peticiones/s",
+      "better": "low"
+    },
+    {
+      "id": "empty",
+      "label": "Respuestas vacías",
+      "unit": "%",
+      "better": "low"
+    },
+    {
+      "id": "delay",
+      "label": "Retraso medio",
+      "unit": "s",
+      "better": "low"
+    },
+    {
+      "id": "conn",
+      "label": "Conexiones abiertas"
+    }
+  ],
+  "legend": {
+    "ping": "respuesta vacía"
+  },
+  "goals": [
+    {
+      "text": "Por qué el polling gasta tantas peticiones",
+      "step": 1
+    },
+    {
+      "text": "Qué cambia con long polling, SSE y WebSocket",
+      "step": 4
+    },
+    {
+      "text": "Cómo llega un mensaje de un gateway a otro",
+      "step": 5
+    },
+    {
+      "text": "Qué hacer con la app cerrada o un gateway caído",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Polling",
+      "chapter": "problem",
+      "title": "Un millón de apps preguntando cada 5 s",
+      "body": "Con HTTP normal el servidor no puede hablar primero, así que cada app pregunta cada 5 s si hay algo nuevo: **polling**. Con 1 millón de usuarios son **200.000 peticiones por segundo**, y solo el 1 % trae algo. Las demás vuelven vacías, y aun así una novedad tarda de media 2,5 s en verse.",
+      "callout": {
+        "type": "warn",
+        "text": "Bajar el intervalo a 1 s deja el retraso en 0,5 s, pero multiplica las peticiones por 5: un millón por segundo."
+      },
+      "metrics": {
+        "req": 200000,
+        "empty": 99,
+        "delay": 2.5,
+        "conn": 0
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "1.000.000 usuarios / 5 s = 200.000 peticiones/s"
+          },
+          {
+            "text": "Traen algo nuevo: el 1 %, 2.000/s",
+            "tone": "good"
+          },
+          {
+            "text": "Vuelven vacías: el 99 %, 198.000/s",
+            "tone": "bad"
+          },
+          {
+            "text": "Retraso medio: la mitad del intervalo, 2,5 s"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "1 M usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ],
+          "load": 0.9,
+          "state": "hot",
+          "mark": "bad"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ],
+          "load": 0.75
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api",
+          "state": "hot"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-api"
+          ],
+          "kind": "req",
+          "back": "ping",
+          "rate": 4
+        },
+        {
+          "via": [
+            "users-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "ping",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Long polling",
+      "chapter": "technique",
+      "title": "Long polling: el servidor espera a tener algo",
+      "body": "Ahora el servidor no responde «nada» al momento: retiene la petición hasta que hay algo nuevo o pasan 30 s. Entonces responde y la app vuelve a preguntar enseguida. La novedad llega casi al instante y casi no hay respuestas vacías.",
+      "callout": {
+        "type": "warn",
+        "text": "A cambio, cada app que espera ocupa una conexión, cada mensaje cuesta una petición nueva y algunos proxies cortan las peticiones largas."
+      },
+      "changes": [
+        "~ La API retiene cada petición hasta 30 s",
+        "~ Respuestas vacías: 99 % → casi ninguna",
+        "~ Retraso: 2,5 s → casi nada",
+        "+ Un millón de conexiones esperando"
+      ],
+      "metrics": {
+        "req": "1 por novedad",
+        "empty": "casi 0",
+        "delay": "casi 0",
+        "conn": 1000000
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "1 M usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ],
+          "load": 0.55,
+          "badge": "espera"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ],
+          "load": 0.2
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 2200,
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "SSE",
+      "chapter": "solution",
+      "title": "SSE: una respuesta que no se cierra",
+      "body": "Con **Server-Sent Events**, la app hace una sola petición y el servidor no la cierra: va escribiendo cada evento en la misma respuesta según ocurre. En el navegador lo lleva `EventSource`, que reconecta solo y manda `Last-Event-ID` para seguir donde lo dejó.",
+      "callout": {
+        "type": "insight",
+        "text": "Va en un solo sentido, del servidor al cliente, y es HTTP normal: pasa por los mismos proxies y load balancers. Encaja con marcadores en directo, notificaciones o el progreso de una tarea."
+      },
+      "changes": [
+        "+ Una respuesta abierta por usuario",
+        "~ Peticiones/s: 0",
+        "~ Los eventos solo bajan del servidor"
+      ],
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 1000000
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "1 M usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ],
+          "load": 0.4
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ],
+          "load": 0.2
+        }
+      ],
+      "links": [
+        {
+          "id": "api-users",
+          "from": "api",
+          "to": "users"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "api-users"
+          ],
+          "kind": "event",
+          "rate": 2.2,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "WebSocket",
+      "chapter": "solution",
+      "title": "WebSocket: un chat habla en los dos sentidos",
+      "body": "En un chat, la app también habla mucho. Un **WebSocket** empieza como una petición HTTP con `Upgrade: websocket` y se queda abierto en los dos sentidos. Ana escribe por el suyo; el servidor guarda el mensaje y se lo empuja a Bruno por el de Bruno, sin que Bruno pregunte.",
+      "callout": {
+        "type": "tip",
+        "text": "Si la información solo baja del servidor, propón SSE antes que WebSocket. Guarda el WebSocket para cuando el cliente también manda mucho."
+      },
+      "changes": [
+        "+ Ana y Bruno, cada uno con su WebSocket",
+        "~ Los mensajes van en los dos sentidos",
+        "~ La base de datos guarda cada mensaje"
+      ],
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 1000000
+      },
+      "predict": {
+        "q": "Con 2 millones conectados no basta un servidor: hacen falta 40. Ana queda en el 3 y Bruno en el 17. ¿Cómo le llega a Bruno el mensaje de Ana?",
+        "options": [
+          "El servidor 3 se lo manda a los 40, por si acaso",
+          "Se publica en el canal de Bruno y solo el servidor suscrito, el 17, lo entrega",
+          "El load balancer ve el mensaje y lo reenvía al servidor de Bruno",
+          "La app de Bruno pregunta al servidor 3 cada pocos segundos"
+        ],
+        "answer": 1,
+        "explain": "Cada servidor de conexiones se suscribe al canal de los usuarios que tiene. Se publica en `user:bruno` y solo el 17 lo recibe. El load balancer solo reparte conexiones al abrirlas: no ve los mensajes que viajan después por el socket."
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ],
+          "load": 0.3
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-api",
+          "from": "ana",
+          "to": "api"
+        },
+        {
+          "id": "api-bruno",
+          "from": "api",
+          "to": "bruno"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-api",
+            "api-bruno"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        },
+        {
+          "via": [
+            "api-bruno",
+            "ana-api"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Gateways",
+      "chapter": "solution",
+      "title": "Ana está en el gateway 3 y Bruno en el 17",
+      "body": "Se separan dos papeles. Los **gateways** solo mantienen los sockets abiertos; la API, stateless, guarda el mensaje y decide a quién va. Cada gateway se suscribe en el **pub/sub** al canal de cada usuario que tiene conectado. El mensaje de Ana se publica en `user:bruno` y solo el gateway 17 lo recibe y lo escribe en el socket de Bruno.",
+      "callout": {
+        "type": "insight",
+        "text": "El mensaje se guarda antes en la base de datos: el pub/sub solo lo entrega en vivo, no lo guarda."
+      },
+      "changes": [
+        "+ Gateway 3 y gateway 17 (de 40)",
+        "+ Pub/sub, con un canal por usuario",
+        "~ La API ya no guarda sockets: es stateless"
+      ],
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 2000000
+      },
+      "panel": {
+        "title": "Cuántos gateways",
+        "rows": [
+          {
+            "text": "2.000.000 conexiones / 50.000 por servidor = 40"
+          },
+          {
+            "text": "Sin pasar del 70 % de cada uno: 58"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            0,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            2,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            2.5
+          ],
+          "note": "canal de Bruno"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-api",
+          "from": "gw3",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-ps",
+          "from": "api",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw17",
+          "from": "ps",
+          "to": "gw17"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-api",
+            "api-ps",
+            "ps-gw17",
+            "gw17-bruno"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "App cerrada",
+      "chapter": "case",
+      "title": "Bruno cierra la app: push notification",
+      "body": "Con la app en segundo plano, el móvil corta su WebSocket para ahorrar batería y el gateway 17 ya no tiene a Bruno. La API guarda el mensaje igual y manda una **push notification** a APNs (iPhone) o FCM (Android) con el **device token** que la app registró. Al abrir la app, esta pide el mensaje a la API.",
+      "callout": {
+        "type": "warn",
+        "text": "La push es best-effort: puede llegar tarde, agruparse o no llegar, y solo caben unos pocos KB. Sirve para avisar, no para entregar datos."
+      },
+      "changes": [
+        "− El WebSocket de Bruno",
+        "+ APNs / FCM",
+        "~ Retraso: casi nada → segundos, sin garantía"
+      ],
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "segundos",
+        "conn": 2000000
+      },
+      "predict": {
+        "q": "Ahora se reinicia el gateway 17 y sus 50.000 apps pierden la conexión. Si todas reconectan en cuanto lo notan, ¿qué pasa?",
+        "options": [
+          "Nada: el load balancer las reparte y cada gateway recibe unas pocas",
+          "Llegan todas a la vez y el pico puede tumbar a los gateways que quedan",
+          "Se quedan sin conexión hasta que vuelva el gateway 17",
+          "Pierden los mensajes guardados en la base de datos"
+        ],
+        "answer": 1,
+        "explain": "Repartir no basta si llegan en el mismo instante: 50.000 conexiones nuevas de golpe saturan a los gateways vecinos, que pueden caer y soltar a los suyos. Los mensajes no se pierden: están en la base de datos."
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ],
+          "note": "app cerrada"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs / FCM",
+          "at": [
+            1,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            0,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            2,
+            1.25
+          ],
+          "load": 0.5,
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-api",
+          "from": "gw3",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-ps",
+          "from": "api",
+          "to": "ps",
+          "state": "dim"
+        },
+        {
+          "id": "ps-gw17",
+          "from": "ps",
+          "to": "gw17",
+          "state": "dim"
+        },
+        {
+          "id": "api-apns",
+          "from": "api",
+          "to": "apns"
+        },
+        {
+          "id": "apns-bruno",
+          "from": "apns",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-api"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "api-apns",
+            "apns-bruno"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Cae un gateway",
+      "chapter": "case",
+      "title": "Cae el gateway 17 y 50.000 apps reconectan a la vez",
+      "body": "Un despliegue reinicia el gateway 17 y se cortan de golpe sus 50.000 conexiones. Si todas las apps reconectan en el mismo instante, el pico satura a los gateways que quedan y puede tumbarlos también. Por eso cada app espera antes de reconectar, con **exponential backoff** y **jitter**, como los reintentos de la lección de colas.",
+      "callout": {
+        "type": "tip",
+        "text": "El jitter suma a cada espera un rato al azar: las reconexiones llegan repartidas en vez de todas juntas."
+      },
+      "changes": [
+        "− Gateway 17 (caído)",
+        "~ 50.000 apps reconectan a la vez",
+        "~ El gateway 3 se satura"
+      ],
+      "metrics": {
+        "req": 50000,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 1950000
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "+49.999"
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            0,
+            1.25
+          ],
+          "load": 0.97,
+          "state": "hot",
+          "mark": "bad"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "down"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-api",
+          "from": "gw3",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-ps",
+          "from": "api",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw17",
+          "from": "ps",
+          "to": "gw17",
+          "state": "down"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno",
+          "state": "down"
+        },
+        {
+          "id": "bruno-gw3",
+          "from": "bruno",
+          "to": "gw3",
+          "state": "hot",
+          "label": "reconecta"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "gw17-bruno"
+          ],
+          "kind": "fail",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "bruno-gw3"
+          ],
+          "kind": "req",
+          "rate": 5
+        },
+        {
+          "via": [
+            "bruno-gw3"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-api"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- **Polling**: simple, pero con retraso y muchas respuestas vacías.\n- **Long polling**: responde en cuanto hay algo, a cambio de retener conexiones.\n- **SSE** baja eventos por una respuesta abierta; el **WebSocket** va en los dos sentidos.\n- Los gateways guardan los sockets y el pub/sub lleva cada mensaje al gateway de su destinatario.\n- App cerrada: push. Gateway caído: reconexión con backoff y jitter.",
+      "callout": {
+        "type": "insight",
+        "text": "El polling no es un error: para datos que cambian cada minuto es lo más simple. Lo que sobra es un intervalo corto para algo que casi nunca cambia."
+      },
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 2000000
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            0,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            2,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            2.5
+          ],
+          "note": "canal de Bruno"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-api",
+          "from": "gw3",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-ps",
+          "from": "api",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw17",
+          "from": "ps",
+          "to": "gw17"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-api",
+            "api-ps",
+            "ps-gw17",
+            "gw17-bruno"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.9
+        }
+      ]
+    }
+  ]
+}
