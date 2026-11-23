@@ -1,0 +1,1256 @@
+{
+  "id": "P21",
+  "title": "El vídeo, en acción",
+  "metrics": [
+    {
+      "id": "status",
+      "label": "Estado del vídeo"
+    },
+    {
+      "id": "q",
+      "label": "Calidad"
+    },
+    {
+      "id": "origin",
+      "label": "Al origen",
+      "unit": "Gbit/s",
+      "better": "low"
+    },
+    {
+      "id": "stall",
+      "label": "Cortes",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué la subida va por trozos",
+      "step": 1
+    },
+    {
+      "text": "Cómo 80 minutos de trabajo salen en segundos",
+      "step": 2
+    },
+    {
+      "text": "Quién sirve los segmentos",
+      "step": 3
+    },
+    {
+      "text": "Por qué el vídeo no se para en un túnel",
+      "step": 4
+    },
+    {
+      "text": "Qué se repite si falla una tarea",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Subir",
+      "chapter": "solution",
+      "title": "94 trozos, directos al storage",
+      "body": "El creador pide subir 750 MB y recibe URLs pre-firmadas para trozos de 8 MB. La app sube 4 a la vez directo al storage; si se corta, pregunta cuáles faltan y sigue. Al acabar, `complete`: `202` y a procesar.",
+      "changes": [
+        "+ Subida por trozos, reanudable",
+        "+ El original, a salvo en el storage"
+      ],
+      "metrics": {
+        "status": "uploading",
+        "q": "—",
+        "origin": 0,
+        "stall": 0
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ]
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit",
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc",
+          "state": "dim"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cre-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "cre-s3"
+          ],
+          "kind": "write",
+          "rate": 3
+        }
+      ]
+    },
+    {
+      "short": "Codificar",
+      "chapter": "solution",
+      "title": "240 tareas en paralelo",
+      "body": "El orquestador parte el vídeo en tramos de 10 s y lanza una tarea por tramo y versión. Los workers las toman a la vez, leen su tramo y escriben segmentos. Con 360p y 720p hechos, el vídeo ya se puede ver.",
+      "changes": [
+        "+ Orquestador (DAG)",
+        "+ Workers en paralelo",
+        "~ processing → ready"
+      ],
+      "metrics": {
+        "status": "ready",
+        "q": "—",
+        "origin": 0,
+        "stall": 0
+      },
+      "panel": {
+        "title": "Un vídeo de 10 minutos",
+        "rows": [
+          {
+            "text": "60 tramos × 4 versiones = 240 tareas de 20 s"
+          },
+          {
+            "text": "En serie: 80 minutos",
+            "tone": "bad"
+          },
+          {
+            "text": "240 workers: ~20 s, más partir y empaquetar",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "load": 0.8,
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit",
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos",
+          "state": "dim"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "api-orc"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "orc-wk"
+          ],
+          "kind": "event",
+          "rate": 3.5
+        },
+        {
+          "via": [
+            "wk-s3"
+          ],
+          "kind": "write",
+          "rate": 3
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Ver",
+      "chapter": "solution",
+      "title": "La ficha, por la API; los segmentos, por la CDN",
+      "body": "El reproductor pide la ficha y el manifest a la API. Después pide segmentos a la CDN, empezando por 360p: 3,6 Mbit llegan en 0,36 s. Como sobra tiempo, sube a 720p y luego a 1080p. Los vistos van al log en lotes.",
+      "changes": [
+        "+ CDN, el 95 % de los segmentos",
+        "+ Eventos del reproductor al log"
+      ],
+      "metrics": {
+        "status": "ready",
+        "q": "360p → 1080p",
+        "origin": 260,
+        "stall": 0
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ]
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit",
+          "mark": "good"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ply-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ply-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3.5
+        },
+        {
+          "via": [
+            "cdn-s3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "ply-log"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "En un túnel la conexión cae de 10 a 2 Mbit/s mientras ves 720p, con segmentos de 6 s de 15 Mbit. ¿Qué hace el reproductor?",
+        "options": [
+          "Sigue en 720p: el buffer aguanta todo el túnel",
+          "Pide al servidor una versión nueva a 2 Mbit/s",
+          "Pide los siguientes segmentos en una calidad más baja",
+          "Para el vídeo hasta que vuelva la cobertura"
+        ],
+        "answer": 2,
+        "explain": "A 2 Mbit/s, un segmento de 720p tardaría 7,5 s en llegar y solo dura 6: el buffer se vaciaría. El reproductor lo ve en lo que tarda cada segmento y baja de calidad. El servidor no recodifica nada: las versiones ya están hechas y el reproductor elige entre ellas."
+      }
+    },
+    {
+      "short": "Túnel",
+      "chapter": "case",
+      "title": "En el túnel, la conexión cae a 2 Mbit/s",
+      "body": "Ves 720p y la conexión cae a 2 Mbit/s. El reproductor ve que el siguiente segmento tardaría más de lo que dura y pide los siguientes en 360p, que llegan en 1,8 s. Más borroso, sin pararse.",
+      "changes": [
+        "~ Conexión: 10 → 2 Mbit/s",
+        "~ Calidad: 720p → 360p",
+        "~ Cortes: ninguno"
+      ],
+      "metrics": {
+        "status": "ready",
+        "q": "720p → 360p",
+        "origin": 260,
+        "stall": 0
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ]
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ],
+          "mark": "good",
+          "badge": "2 Mbit/s"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn",
+          "state": "hot"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ply-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "cdn-s3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "ply-log"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "Mientras se codifica otro vídeo, el worker de la tarea «tramo 37 en 720p» se cae a mitad. ¿Qué se repite?",
+        "options": [
+          "El vídeo entero, desde el original",
+          "Solo la tarea del tramo 37 en 720p",
+          "Las cuatro versiones del tramo 37",
+          "Nada: el vídeo sale sin ese tramo"
+        ],
+        "answer": 1,
+        "explain": "El orquestador lleva el estado de cada tarea en `encode_tasks`: ve que esa no acabó y la vuelve a encolar. Otro worker la repite y escribe en la misma clave, así que es idempotente. Las otras 239 ya están hechas o siguen a lo suyo."
+      }
+    },
+    {
+      "short": "Falla una",
+      "chapter": "case",
+      "title": "Falla la tarea del tramo 37 en 720p",
+      "body": "El orquestador ve en `encode_tasks` que esa tarea no acabó y la vuelve a encolar. Otro worker la repite y escribe en la misma clave. Las otras 239 no se tocan, y quien ve vídeos ni se entera.",
+      "changes": [
+        "− Un worker (caído)",
+        "+ Reintento de una sola tarea"
+      ],
+      "metrics": {
+        "status": "processing",
+        "q": "720p",
+        "origin": 260,
+        "stall": 0
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ]
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "reintenta 37"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "orc-wk"
+          ],
+          "kind": "fail",
+          "rate": 0.5,
+          "failAt": 0.9
+        },
+        {
+          "via": [
+            "orc-wk"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "wk-s3"
+          ],
+          "kind": "write",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "ply-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ply-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3.5
+        },
+        {
+          "via": [
+            "cdn-s3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "ply-log"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- La subida va por trozos, directa y reanudable.\n- Codificar es un DAG de tareas pequeñas en paralelo, que se reintentan solas.\n- El reproductor elige la calidad segmento a segmento.\n- La CDN sirve casi todo; el origen solo ve los misses.",
+      "callout": {
+        "type": "insight",
+        "text": "Dos caminos que solo se tocan en el storage y en la ficha: la subida puede esperar minutos; la reproducción, ni un segundo."
+      },
+      "metrics": {
+        "status": "ready",
+        "q": "1080p",
+        "origin": 260,
+        "stall": 0
+      },
+      "nodes": [
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            2.6,
+            0
+          ]
+        },
+        {
+          "id": "orc",
+          "kind": "queue",
+          "label": "Orquestador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "cre",
+          "kind": "client",
+          "label": "Creador",
+          "at": [
+            0,
+            1.8
+          ]
+        },
+        {
+          "id": "ply",
+          "kind": "client",
+          "label": "Reproductor",
+          "at": [
+            3,
+            1.8
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2.3,
+            2.8
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.3
+          ],
+          "note": "95 % hit"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Storage",
+          "at": [
+            1.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cre-api",
+          "from": "cre",
+          "to": "api"
+        },
+        {
+          "id": "cre-s3",
+          "from": "cre",
+          "to": "s3",
+          "label": "trozos"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-orc",
+          "from": "api",
+          "to": "orc"
+        },
+        {
+          "id": "orc-wk",
+          "from": "orc",
+          "to": "wk"
+        },
+        {
+          "id": "wk-s3",
+          "from": "wk",
+          "to": "s3"
+        },
+        {
+          "id": "ply-api",
+          "from": "ply",
+          "to": "api"
+        },
+        {
+          "id": "ply-cdn",
+          "from": "ply",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-s3",
+          "from": "cdn",
+          "to": "s3"
+        },
+        {
+          "id": "ply-log",
+          "from": "ply",
+          "to": "log"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ply-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ply-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3.5
+        },
+        {
+          "via": [
+            "cdn-s3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "ply-log"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "cre-s3"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "orc-wk"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "wk-s3"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        }
+      ]
+    }
+  ]
+}

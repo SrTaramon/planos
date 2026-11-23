@@ -1,0 +1,1188 @@
+{
+  "id": "P19",
+  "title": "El A/B testing, en acción",
+  "metrics": [
+    {
+      "id": "dec",
+      "label": "Decisiones",
+      "unit": "/s"
+    },
+    {
+      "id": "net",
+      "label": "Peticiones al decidir",
+      "better": "low"
+    },
+    {
+      "id": "cfg",
+      "label": "Configuración"
+    },
+    {
+      "id": "err",
+      "label": "Usuarios con error",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué la variante no se pregunta a nadie",
+      "step": 2
+    },
+    {
+      "text": "Quién cuenta para el resultado",
+      "step": 3
+    },
+    {
+      "text": "Qué notan los usuarios si cae la plataforma",
+      "step": 4
+    },
+    {
+      "text": "Cuánto tarda en apagarse un experimento",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Configurar",
+      "chapter": "solution",
+      "title": "Cada cambio, un fichero nuevo",
+      "body": "El equipo crea `boton-pago`: 10 % del tráfico, 50/50. La API lo guarda en la base de datos, compila la configuración del proyecto en un JSON con su versión y la publica detrás de la CDN.",
+      "changes": [
+        "+ Experimento boton-pago",
+        "+ Configuración v1843 en la CDN"
+      ],
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1843",
+        "err": 0
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1843",
+          "mark": "good"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash",
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job",
+          "state": "dim"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res",
+          "state": "dim"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "adm-api",
+            "api-cfg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "api-cdn"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Decidir",
+      "chapter": "solution",
+      "title": "La variante sale de una cuenta",
+      "body": "El SDK descarga el fichero una vez y pregunta cada minuto con su ETag: `304` si no cambia. La variante se calcula en memoria, con un hash de `boton-pago:u-42`. Ni una petición por decisión, y mañana, en otro móvil, sale la misma.",
+      "changes": [
+        "+ SDK con la configuración en memoria",
+        "~ 58.000 decisiones/s, sin red"
+      ],
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1843",
+        "err": 0
+      },
+      "panel": {
+        "title": "hash(«boton-pago:u-42»)",
+        "rows": [
+          {
+            "text": "entra = 7 → menor que 10: dentro"
+          },
+          {
+            "text": "hueco = 63 → de 50 a 99: verde",
+            "tone": "good"
+          },
+          {
+            "text": "Otro día, otro móvil: 7 y 63 otra vez",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1843"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash",
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job",
+          "state": "dim"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res",
+          "state": "dim"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Medir",
+      "chapter": "solution",
+      "title": "Exposiciones y compras, al log",
+      "body": "La primera vez que el SDK usa la variante, apunta una exposición; las compras van como eventos normales. Cada noche, el job une cada exposición con las compras posteriores de ese usuario y cuenta por variante.",
+      "changes": [
+        "+ Log de eventos",
+        "+ Job nocturno y resultados"
+      ],
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1843",
+        "err": 0
+      },
+      "panel": {
+        "title": "boton-pago, tras 40.000 por variante",
+        "rows": [
+          {
+            "text": "Control: 5,0 % compran"
+          },
+          {
+            "text": "Verde: 5,6 % compran"
+          },
+          {
+            "text": "Por casualidad: ~1,5 veces de cada 10.000",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1843"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "usr-log"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "log-job"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "job-res"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "pan-res"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "Ahora la API de experimentos se cae una hora, con su base de datos. ¿Qué notan los clientes de la tienda?",
+        "options": [
+          "Todos ven el control: el SDK se queda sin configuración",
+          "Las páginas tardan más, porque el SDK reintenta",
+          "Nada: el SDK sigue con el fichero que tiene, servido por la CDN",
+          "Un error al pagar con el botón verde"
+        ],
+        "answer": 2,
+        "explain": "La app nunca llama a la API de experimentos: la configuración está en la memoria del SDK y en la CDN, que sigue sirviendo la `v1843`. Solo ve el control quien no tiene ningún fichero, ni en memoria ni en disco. Lo único que se para es cambiar experimentos."
+      }
+    },
+    {
+      "short": "Cae la API",
+      "chapter": "case",
+      "title": "La API de experimentos se cae una hora",
+      "body": "El equipo no puede tocar experimentos, pero la tienda sigue igual: cada SDK decide con la `v1843` que tiene y la CDN la sigue sirviendo. Los eventos tampoco pasan por la API.",
+      "changes": [
+        "− API de experimentos (caída)",
+        "~ Usuarios con error: 0"
+      ],
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1843",
+        "err": 0
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "down"
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional",
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1843"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash",
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api",
+          "state": "down"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg",
+          "state": "down"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn",
+          "state": "down"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "adm-api"
+          ],
+          "kind": "fail",
+          "rate": 0.5,
+          "failAt": 0.9
+        },
+        {
+          "via": [
+            "usr-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "usr-log"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "log-job"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "job-res"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "pan-res"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "Ya ha vuelto. A las 12:00 alguien ve que la verde falla al pagar y pausa el experimento. La CDN guarda el fichero 60 s y el SDK pregunta cada minuto. ¿Cuándo vuelven todos al control, como mucho?",
+        "options": [
+          "Al instante: la pausa es un interruptor",
+          "Cuando cada usuario cierre y abra la app",
+          "Mañana, cuando pase el job de la noche",
+          "Hacia las 12:02: lo que tarda la CDN en soltar la vieja y el SDK en volver a preguntar"
+        ],
+        "answer": 3,
+        "explain": "Pausar es compilar una `v1844` sin el experimento. La CDN puede servir la vieja hasta 60 s más, y un SDK que acaba de preguntar tarda otro minuto en volver: en el peor caso, unos 2 minutos. Con SSE en el backend serían segundos. No hace falta reabrir la app: el SDK sigue preguntando."
+      }
+    },
+    {
+      "short": "Apagar",
+      "chapter": "case",
+      "title": "La verde rompe el pago: se apaga",
+      "body": "La pausa compila la `v1844`, sin `boton-pago`. La CDN suelta la vieja en 60 s y cada SDK, en su siguiente consulta, recibe la nueva y vuelve al control. Hacia las 12:02, nadie ve la verde.",
+      "callout": {
+        "type": "tip",
+        "text": "Apagar no borra nada: los eventos y los resultados hasta las 12:00 siguen ahí para entender qué falló."
+      },
+      "changes": [
+        "+ Configuración v1844",
+        "~ Todos, de vuelta al control"
+      ],
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1844",
+        "err": 0
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1844",
+          "mark": "good"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash",
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "adm-api",
+            "api-cfg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "api-cdn"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "usr-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "usr-log"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- La configuración se compila en un fichero y se sirve por CDN.\n- La variante es un hash calculado en el SDK: estable y sin red.\n- Si cae la plataforma, el SDK sigue con lo último que tiene.\n- Apagar es publicar una versión nueva.\n- Los eventos van aparte, y deciden los lotes.",
+      "callout": {
+        "type": "insight",
+        "text": "Dos sistemas que casi no se tocan: ninguna flecha va de la tienda a la API de experimentos."
+      },
+      "metrics": {
+        "dec": 58000,
+        "net": 0,
+        "cfg": "v1844",
+        "err": 0
+      },
+      "nodes": [
+        {
+          "id": "adm",
+          "kind": "client",
+          "label": "Producto",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API exp.",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "cfg",
+          "kind": "db",
+          "label": "Config",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "relacional"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            2.4
+          ],
+          "badge": "v1844"
+        },
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "note": "SDK + hash"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            3,
+            3.6
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "worker",
+          "label": "Job noche",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "res",
+          "kind": "db",
+          "label": "Resultados",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "pan",
+          "kind": "client",
+          "label": "Panel",
+          "at": [
+            3,
+            0
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "adm-api",
+          "from": "adm",
+          "to": "api"
+        },
+        {
+          "id": "api-cfg",
+          "from": "api",
+          "to": "cfg"
+        },
+        {
+          "id": "api-cdn",
+          "from": "api",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-cdn",
+          "from": "usr",
+          "to": "cdn"
+        },
+        {
+          "id": "usr-log",
+          "from": "usr",
+          "to": "log"
+        },
+        {
+          "id": "log-job",
+          "from": "log",
+          "to": "job"
+        },
+        {
+          "id": "job-res",
+          "from": "job",
+          "to": "res"
+        },
+        {
+          "id": "pan-res",
+          "from": "pan",
+          "to": "res"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "usr-log"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "log-job"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "job-res"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "pan-res"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}
