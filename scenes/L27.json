@@ -1,0 +1,1240 @@
+{
+  "id": "L27",
+  "title": "Ver qué pasa dentro, en acción",
+  "metrics": [
+    {
+      "id": "ok",
+      "label": "¿Va bien?"
+    },
+    {
+      "id": "where",
+      "label": "¿Dónde falla?"
+    },
+    {
+      "id": "why",
+      "label": "¿Por qué?"
+    },
+    {
+      "id": "logs",
+      "label": "Logs al día",
+      "unit": "GB",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "métrica, span o log",
+    "heavy": "queja de un cliente"
+  },
+  "goals": [
+    {
+      "text": "Por qué se alerta por síntomas, con un SLO y su error budget",
+      "step": 3
+    },
+    {
+      "text": "Cómo una traza dice dónde se va el tiempo",
+      "step": 4
+    },
+    {
+      "text": "Qué pregunta responden métricas, trazas y logs",
+      "step": 5
+    },
+    {
+      "text": "Por qué se muestrean logs y trazas, y no las métricas",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "A ciegas",
+      "chapter": "problem",
+      "title": "Te enteras porque llama un cliente",
+      "body": "Pedidos llama a Stock, y Stock empieza a fallar: **5 de cada 100 pedidos** dan error. Nadie mira nada, así que te enteras cuando un cliente llama para quejarse. Y aun así no sabes cuánto falla, **dónde** ni **por qué**.",
+      "callout": {
+        "type": "insight",
+        "text": "Observabilidad es poder entender qué pasa dentro mirando lo que el sistema emite, sin desplegar código nuevo para averiguarlo."
+      },
+      "metrics": {
+        "ok": "?",
+        "where": "?",
+        "why": "?"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ],
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "users-oncall",
+          "from": "users",
+          "to": "oncall",
+          "label": "llamada",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "users-oncall"
+          ],
+          "kind": "heavy",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Métricas",
+      "chapter": "technique",
+      "title": "Métricas: ¿va bien?",
+      "body": "Cada servicio expone sus métricas: un **counter** de peticiones y errores y un **histogram** de latencias. Se guardan en una **TSDB** como series temporales, con un punto cada 10 s. Ya se ve: los errores están en el **5 %**. Y mira el **p99**, no la media: con una media de 120 ms, el 1 % más lento puede estar esperando segundos.",
+      "callout": {
+        "type": "warn",
+        "text": "Cuidado con la cardinalidad: cada combinación de etiquetas es una serie. Con `user_id` de etiqueta, un millón de usuarios son un millón de series. Los ids, a logs y trazas."
+      },
+      "changes": [
+        "+ TSDB con las métricas de cada servicio",
+        "~ ¿Va bien?: no, 5 % de errores"
+      ],
+      "predict": {
+        "q": "Ya tienes las métricas. ¿Por cuál conviene que salte la alerta que despierta a la guardia de madrugada?",
+        "options": [
+          "La CPU de Stock por encima del 90 %",
+          "El porcentaje de peticiones con error o lentas, frente a un objetivo",
+          "La memoria usada de cada servidor",
+          "El número de líneas de log por minuto"
+        ],
+        "answer": 1,
+        "explain": "Una alerta despierta a alguien, así que tiene que significar que los usuarios lo notan: errores y lentitud. Una CPU al 90 % puede ser un sistema trabajando a pleno rendimiento sin que nadie note nada; es una causa, y va a un dashboard para investigar."
+      },
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "?",
+        "why": "?"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "note": "cada 10 s",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ped-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "stock-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Alerta",
+      "chapter": "technique",
+      "title": "Alerta por síntomas, con un SLO",
+      "body": "La alerta salta por lo que nota el usuario, no por una CPU al 90 %. Te pones un **SLO**: el 99,9 % de las peticiones bien en 30 días. Eso te deja un **error budget** de 43 minutos de fallo, y la alerta mira a qué ritmo lo gastas, el **burn rate**. Al 5 % de errores se gasta 50 veces más rápido de la cuenta: avisa ya a la guardia.",
+      "callout": {
+        "type": "tip",
+        "text": "Si el presupuesto se gasta despacio, basta un aviso para mañana. Y si a final de mes sobra, puedes arriesgar más con los despliegues."
+      },
+      "changes": [
+        "+ Alertas, que leen de la TSDB",
+        "~ Avisa a la guardia, no un cliente",
+        "~ Las causas (CPU, disco), a un dashboard"
+      ],
+      "panel": {
+        "title": "El error budget",
+        "rows": [
+          {
+            "text": "SLO: el 99,9 % de peticiones bien en 30 días"
+          },
+          {
+            "text": "Budget: el 0,1 % de 30 días = 43 min de fallo"
+          },
+          {
+            "text": "Al 5 % de errores: burn rate de 50×"
+          },
+          {
+            "text": "En una hora se van 3 min; en unas 14 h, todo",
+            "tone": "bad"
+          }
+        ]
+      },
+      "predict": {
+        "q": "Salta la alerta: 5 % de errores. ¿Qué miras ahora para saber qué servicio tiene la culpa?",
+        "options": [
+          "La latencia media en el dashboard",
+          "Todos los logs de todos los servicios, uno a uno",
+          "Una traza de un pedido que falló, con el tiempo de cada servicio",
+          "La CPU de cada máquina"
+        ],
+        "answer": 2,
+        "explain": "Una traza sigue una petición por todos los servicios y dice cuánto tardó cada tramo: señala al culpable. Los logs dicen por qué, pero sin saber dónde mirar son una montaña: primero la traza, luego los logs de ese servicio. La media y la CPU no dicen qué servicio falla."
+      },
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "?",
+        "why": "?"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "burn 50×"
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "note": "cada 10 s"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ped-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "stock-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "tsdb-alerts",
+            "alerts-oncall"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Traza",
+      "chapter": "technique",
+      "title": "Una traza: por dónde pasó y dónde se fue el tiempo",
+      "body": "Una **traza** sigue una petición por todos los servicios. Cada tramo de trabajo es un **span**, y todos comparten un **trace id** que viaja de servicio en servicio en una cabecera. La de un pedido que falló: 900 ms en total, **700 en Stock**. Ya sabes dónde mirar.",
+      "callout": {
+        "type": "insight",
+        "text": "Las tres se usan en orden: la métrica dispara la alerta, la traza dice qué servicio falla y los logs de ese servicio dicen por qué."
+      },
+      "changes": [
+        "+ Trazas, con un span por servicio",
+        "~ ¿Dónde falla?: en Stock"
+      ],
+      "panel": {
+        "title": "La traza del pedido que falló",
+        "rows": [
+          {
+            "text": "API gateway: 900 ms en total"
+          },
+          {
+            "text": "→ Pedidos: 850 ms"
+          },
+          {
+            "text": "→ → Stock: 700 ms de los 900",
+            "tone": "bad"
+          }
+        ]
+      },
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "en Stock",
+        "why": "?"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ],
+          "state": "hot",
+          "mark": "bad"
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "note": "cada 10 s"
+        },
+        {
+          "id": "traces",
+          "kind": "storage",
+          "label": "Trazas",
+          "at": [
+            1.2,
+            1.5
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts",
+          "state": "dim"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall",
+          "state": "dim"
+        },
+        {
+          "id": "ped-traces",
+          "from": "ped",
+          "to": "traces"
+        },
+        {
+          "id": "stock-traces",
+          "from": "stock",
+          "to": "traces"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ped-traces"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "stock-traces"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Logs",
+      "chapter": "technique",
+      "title": "Los logs de Stock dicen por qué",
+      "body": "Los **logs** cuentan cada evento con detalle. Escritos **estructurados**, en JSON con campos fijos y con el trace id, de la traza saltas a sus líneas: Stock no llega a leer el inventario a tiempo. Pero guardarlo todo sale caro: 10.000 peticiones por segundo con 1 KB de logs cada una son **~860 GB al día**.",
+      "callout": {
+        "type": "tip",
+        "text": "Campos fijos (`level`, `service`, `traceId`, `orderId`) y no frases sueltas: así se filtran y se agregan."
+      },
+      "changes": [
+        "+ Logs estructurados, con el trace id",
+        "~ ¿Por qué?: un timeout en Stock",
+        "~ Logs al día: ~860 GB"
+      ],
+      "panel": {
+        "title": "Una línea de log de Stock",
+        "rows": [
+          {
+            "text": "\"level\": \"error\", \"service\": \"stock\","
+          },
+          {
+            "text": "\"traceId\": \"4bf92f\", \"orderId\": 8812,"
+          },
+          {
+            "text": "\"msg\": \"timeout al leer el inventario\"",
+            "tone": "bad"
+          }
+        ]
+      },
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 860
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ],
+          "state": "hot",
+          "mark": "bad"
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "note": "cada 10 s"
+        },
+        {
+          "id": "traces",
+          "kind": "storage",
+          "label": "Trazas",
+          "at": [
+            1.2,
+            1.5
+          ]
+        },
+        {
+          "id": "logs",
+          "kind": "search",
+          "label": "Logs",
+          "at": [
+            2.4,
+            1.5
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts",
+          "state": "dim"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall",
+          "state": "dim"
+        },
+        {
+          "id": "ped-traces",
+          "from": "ped",
+          "to": "traces",
+          "state": "dim"
+        },
+        {
+          "id": "stock-traces",
+          "from": "stock",
+          "to": "traces",
+          "state": "dim"
+        },
+        {
+          "id": "stock-logs",
+          "from": "stock",
+          "to": "logs"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "stock-logs"
+          ],
+          "kind": "event",
+          "rate": 2
+        }
+      ]
+    },
+    {
+      "short": "Muestreo",
+      "chapter": "case",
+      "title": "Guardarlo todo es carísimo: muestrea",
+      "body": "Arreglado Stock, toca la factura. Con **head sampling** decides al empezar (quedarte con el 1 %): barato, pero puede tirar justo el pedido que falló. Con **tail sampling** decides al terminar: guardas todo lo que falló o fue lento y un 1 % de lo demás. Los logs, igual. Las métricas no se muestrean: son baratas y son las que disparan las alertas.",
+      "callout": {
+        "type": "insight",
+        "text": "Y para las métricas viejas, el downsampling: un año con un punto cada 10 s ocupa ~3.150 GB; con resúmenes de 5 minutos, ~105 GB."
+      },
+      "changes": [
+        "+ Tail sampling en logs y trazas",
+        "~ Logs al día: ~860 GB → ~9,5 GB",
+        "~ Las métricas, enteras"
+      ],
+      "panel": {
+        "title": "La cuenta de los logs",
+        "rows": [
+          {
+            "text": "Todo: 10.000/s × 1 KB ≈ 860 GB al día",
+            "tone": "bad"
+          },
+          {
+            "text": "Se guarda todo lo que falla o va lento (~0,1 %)"
+          },
+          {
+            "text": "y un 1 % del resto: en total, ~1,1 %"
+          },
+          {
+            "text": "1,1 % de 860 GB ≈ 9,5 GB al día",
+            "tone": "good"
+          }
+        ]
+      },
+      "metrics": {
+        "ok": "sí",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 9.5
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ]
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "note": "cada 10 s"
+        },
+        {
+          "id": "traces",
+          "kind": "storage",
+          "label": "Trazas",
+          "at": [
+            1.2,
+            1.5
+          ],
+          "note": "errores + 1 %"
+        },
+        {
+          "id": "logs",
+          "kind": "search",
+          "label": "Logs",
+          "at": [
+            2.4,
+            1.5
+          ],
+          "note": "errores + 1 %"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall"
+        },
+        {
+          "id": "ped-traces",
+          "from": "ped",
+          "to": "traces"
+        },
+        {
+          "id": "stock-traces",
+          "from": "stock",
+          "to": "traces"
+        },
+        {
+          "id": "stock-logs",
+          "from": "stock",
+          "to": "logs"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "ped-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "stock-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "ped-traces"
+          ],
+          "kind": "event",
+          "rate": 0.25
+        },
+        {
+          "via": [
+            "stock-traces"
+          ],
+          "kind": "event",
+          "rate": 0.25
+        },
+        {
+          "via": [
+            "stock-logs"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Métricas para saber si va bien; trazas para ver por dónde pasó; logs para saber qué pasó.\n- Las métricas, en una TSDB: percentiles con histogramas y pocas etiquetas.\n- Alerta por síntomas, con un SLO y su error budget.\n- Logs estructurados con trace id, y muestreo (mejor el que decide al final) de logs y trazas.",
+      "callout": {
+        "type": "insight",
+        "text": "Cuando diseñes algo, di qué SLO tendría y qué métricas lo vigilan: demuestra que piensas en operarlo, no solo en construirlo."
+      },
+      "metrics": {
+        "ok": "sí",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 9.5
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ]
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ]
+        },
+        {
+          "id": "traces",
+          "kind": "storage",
+          "label": "Trazas",
+          "at": [
+            1.2,
+            1.5
+          ]
+        },
+        {
+          "id": "logs",
+          "kind": "search",
+          "label": "Logs",
+          "at": [
+            2.4,
+            1.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall"
+        },
+        {
+          "id": "ped-traces",
+          "from": "ped",
+          "to": "traces"
+        },
+        {
+          "id": "stock-traces",
+          "from": "stock",
+          "to": "traces"
+        },
+        {
+          "id": "stock-logs",
+          "from": "stock",
+          "to": "logs"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "ped-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "stock-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "ped-traces"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "stock-traces"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "stock-logs"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        }
+      ]
+    }
+  ]
+}
