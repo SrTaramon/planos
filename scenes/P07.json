@@ -131,7 +131,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos",
+          "note": "grandes",
           "state": "dim"
         },
         {
@@ -324,7 +324,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos"
+          "note": "grandes"
         },
         {
           "id": "act",
@@ -497,7 +497,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos",
+          "note": "grandes",
           "state": "dim"
         },
         {
@@ -676,7 +676,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos",
+          "note": "grandes",
           "state": "dim"
         },
         {
@@ -889,7 +889,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos",
+          "note": "grandes",
           "mark": "good",
           "load": 0.6
         },
@@ -1062,7 +1062,7 @@
             1.0,
             2.6
           ],
-          "note": "páginas, grupos"
+          "note": "grandes"
         },
         {
           "id": "act",
