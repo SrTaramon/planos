@@ -1,0 +1,1333 @@
+{
+  "id": "L10",
+  "title": "Los shards, en acción",
+  "metrics": [
+    {
+      "id": "max",
+      "label": "La más cargada",
+      "unit": "%",
+      "better": "low"
+    },
+    {
+      "id": "avg",
+      "label": "Carga media",
+      "unit": "%",
+      "better": "low"
+    },
+    {
+      "id": "data",
+      "label": "Datos por máquina",
+      "unit": "TB",
+      "better": "low"
+    },
+    {
+      "id": "moved",
+      "label": "Datos que se mueven",
+      "unit": "%",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "claves que se mueven"
+  },
+  "goals": [
+    {
+      "text": "Por qué las réplicas no bastan para escribir más",
+      "step": 1
+    },
+    {
+      "text": "Cómo decide el router a qué shard va cada consulta",
+      "step": 2
+    },
+    {
+      "text": "Qué hace buena a una shard key",
+      "step": 3
+    },
+    {
+      "text": "Por qué un shard va al 152 % con la media al 80 %",
+      "step": 4
+    },
+    {
+      "text": "Cuánto se mueve al añadir un shard, y cómo evitarlo",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Un primary",
+      "chapter": "problem",
+      "title": "Un primary que no da abasto",
+      "body": "Supón un chat con 30 TB de mensajes y **16.000 consultas por segundo**, muchas de ellas escrituras. Un primary aguanta 5.000: va al 320 %. Las réplicas no lo arreglan: cada escritura pasa por el primary y se copia a todas, y cada copia guarda los 30 TB.",
+      "callout": {
+        "type": "insight",
+        "text": "Hay tres muros que las réplicas no saltan: las escrituras, el tamaño de los datos y la memoria, cuando los índices ya no caben en RAM."
+      },
+      "metrics": {
+        "max": 320,
+        "avg": 320,
+        "data": 30,
+        "moved": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Primary",
+          "at": [
+            1,
+            1.35
+          ],
+          "state": "hot",
+          "load": 1,
+          "badge": "16.000/s",
+          "mark": "bad"
+        },
+        {
+          "id": "ra",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "30 TB"
+        },
+        {
+          "id": "rb",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "30 TB"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "state": "hot"
+        },
+        {
+          "id": "db-ra",
+          "from": "db",
+          "to": "ra"
+        },
+        {
+          "id": "db-rb",
+          "from": "db",
+          "to": "rb"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-db"
+          ],
+          "kind": "write",
+          "rate": 3
+        },
+        {
+          "via": [
+            "app-db"
+          ],
+          "kind": "fail",
+          "rate": 1
+        },
+        {
+          "via": [
+            [
+              "db-ra",
+              "db-rb"
+            ]
+          ],
+          "kind": "write",
+          "rate": 2
+        }
+      ]
+    },
+    {
+      "short": "Shards",
+      "chapter": "technique",
+      "title": "Cuatro shards, cada uno con un trozo",
+      "body": "Repartes las filas de la tabla de mensajes entre 4 **shards**: cada uno tiene la misma tabla, pero solo un trozo de las filas. Un **router** calcula `hash(chat_id) % 4` y manda cada consulta solo al shard que tiene esas filas.",
+      "callout": {
+        "type": "tip",
+        "text": "Cada shard suele ser un primary con sus réplicas: el sharding reparte la carga y la replicación protege cada trozo."
+      },
+      "changes": [
+        "+ Router: hash(chat_id) % 4",
+        "+ 4 shards",
+        "~ La más cargada: 320 % → 80 %",
+        "~ Datos por máquina: 30 TB → 7,5 TB"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "16.000 consultas/s ÷ 4 = 4.000 por shard: el 80 %",
+            "tone": "good"
+          },
+          {
+            "text": "30 TB ÷ 4 = 7,5 TB por shard"
+          }
+        ]
+      },
+      "metrics": {
+        "max": 80,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 4",
+          "mark": "good"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            [
+              "router-s0",
+              "router-s1",
+              "router-s2",
+              "router-s3"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        }
+      ]
+    },
+    {
+      "short": "Shard key",
+      "chapter": "technique",
+      "title": "La consulta principal, en un solo shard",
+      "body": "La consulta más frecuente es «los 50 últimos mensajes del chat 123». Con `chat_id` como **shard key**, los mensajes de un chat viven juntos y esa consulta va a un solo shard. Y como hay millones de chats, la carga se reparte bien.",
+      "callout": {
+        "type": "tip",
+        "text": "Las consultas raras sí pueden preguntar a todos los shards (**scatter-gather**): un informe diario, vale; la pantalla principal, no."
+      },
+      "changes": [
+        "+ chat 123 → shard 1",
+        "~ Una consulta, un shard"
+      ],
+      "panel": {
+        "title": "Otras shard keys",
+        "rows": [
+          {
+            "text": "chat_id: un chat, un shard; millones de chats",
+            "tone": "good"
+          },
+          {
+            "text": "message_id: leer un chat pregunta a los 4",
+            "tone": "bad"
+          },
+          {
+            "text": "created_at: todo lo de hoy cae en el mismo",
+            "tone": "bad"
+          },
+          {
+            "text": "país: pocos valores; el más grande revienta",
+            "tone": "bad"
+          }
+        ]
+      },
+      "metrics": {
+        "max": 80,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 4"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ]
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "items": [
+            "chat123"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0",
+          "state": "dim"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1",
+          "state": "ok"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2",
+          "state": "dim"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "router-s1"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Un chat se hace viral y se lleva el 30 % de las 16.000 consultas por segundo. Cada shard aguanta 5.000. ¿Cómo queda el shard de ese chat?",
+        "options": [
+          "Al 80 %, como los demás: el hash reparte bien",
+          "Al 96 %: le llegan 4.800 de 5.000",
+          "Al 152 %: 4.800 del chat + 2.800 del resto",
+          "Al 120 %: le toca el doble que a los demás"
+        ],
+        "answer": 2,
+        "explain": "El hash reparte claves, no tráfico: las 4.800 consultas del chat viral van todas a su shard. Y además le toca su parte del resto: 11.200 / 4 = 2.800. Total, 7.600 de 5.000. El 96 % olvida esa segunda parte."
+      }
+    },
+    {
+      "short": "Hot partition",
+      "chapter": "case",
+      "title": "Un chat viral calienta un shard",
+      "body": "El chat 777 se hace viral y se lleva el **30 %** del tráfico. Todas sus consultas van al shard 2. Recibe 4.800 + 2.800 = **7.600** por segundo, el 152 % de lo que aguanta, mientras los otros tres van al 56 %. Es una **hot partition**.",
+      "callout": {
+        "type": "warn",
+        "text": "Vigila la carga de cada shard, no solo la media: aquí la media sigue al 80 % y parece que vas bien."
+      },
+      "changes": [
+        "+ chat 777: el 30 % del tráfico",
+        "~ shard 2: 80 % → 152 %",
+        "~ Los demás: 80 % → 56 %"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "El chat 777: 16.000 × 0,3 = 4.800/s, a un shard"
+          },
+          {
+            "text": "El resto: 11.200 / 4 = 2.800/s por shard"
+          },
+          {
+            "text": "shard 2: 4.800 + 2.800 = 7.600/s, el 152 %",
+            "tone": "bad"
+          }
+        ]
+      },
+      "metrics": {
+        "max": 152,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 4"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ],
+          "badge": "2.800/s",
+          "load": 0.56
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "badge": "2.800/s",
+          "load": 0.56
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "7.600/s",
+          "load": 1,
+          "state": "hot",
+          "mark": "bad",
+          "items": [
+            "chat777"
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "2.800/s",
+          "load": 0.56
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2",
+          "state": "hot"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            [
+              "router-s0",
+              "router-s1",
+              "router-s3"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "router-s2"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3.5
+        }
+      ]
+    },
+    {
+      "short": "Partir clave",
+      "chapter": "solution",
+      "title": "Partir la clave en diez subclaves",
+      "body": "Guardas el chat 777 en diez subclaves (`chat777#0` … `#9`), que el hash manda a shards distintos. Sus escrituras se reparten entre los cuatro. A cambio, leer el chat junta las diez: lecturas más caras para quitar el cuello de botella.",
+      "callout": {
+        "type": "tip",
+        "text": "Otros remedios: una cache delante de esa clave o, para un cliente gigante, un shard propio (fácil si repartes con un directorio)."
+      },
+      "changes": [
+        "+ chat777#0 … #9 en los 4 shards",
+        "~ La más cargada: 152 % → 85 %"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "4.800/s ÷ 10 subclaves = 480/s cada una"
+          },
+          {
+            "text": "3 subclaves: 2.800 + 1.440 = 4.240/s, el 85 %",
+            "tone": "good"
+          },
+          {
+            "text": "2 subclaves: 2.800 + 960 = 3.760/s, el 75 %",
+            "tone": "good"
+          }
+        ]
+      },
+      "metrics": {
+        "max": 85,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 4"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ],
+          "badge": "4.240/s",
+          "load": 0.848,
+          "items": [
+            "#0",
+            "#4",
+            "#8"
+          ]
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "badge": "4.240/s",
+          "load": 0.848,
+          "items": [
+            "#1",
+            "#5",
+            "#9"
+          ]
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "3.760/s",
+          "load": 0.752,
+          "items": [
+            "#2",
+            "#6"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "3.760/s",
+          "load": 0.752,
+          "items": [
+            "#3",
+            "#7"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            [
+              "router-s0",
+              "router-s1",
+              "router-s2",
+              "router-s3"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        }
+      ],
+      "predict": {
+        "q": "Llega más tráfico y pasas a 5 shards: la regla pasa a `hash(chat_id) % 5`. De los 30 TB, ¿cuántos cambian de shard?",
+        "options": [
+          "6 TB: lo que le toca al shard nuevo",
+          "7,5 TB: lo que tenía un shard",
+          "Nada: solo los mensajes nuevos van al quinto",
+          "24 TB: el 80 %"
+        ],
+        "answer": 3,
+        "explain": "Una clave solo se queda si su hash da el mismo resto entre 4 y entre 5: una de cada cinco. Se mueve el 80 %, 24 de los 30 TB, también entre los shards viejos. Los 6 TB serían lo justo, pero `% N` no lo consigue."
+      }
+    },
+    {
+      "short": "Resharding",
+      "chapter": "case",
+      "title": "Un quinto shard con hash % 5 lo mueve casi todo",
+      "body": "Añades el shard 4 y la regla pasa a `hash % 5`. Casi todas las claves cambian de sitio, también entre los shards que ya estaban: se mueve el **80 %**, 24 TB. Moverlos sin parar la app lleva semanas.",
+      "callout": {
+        "type": "warn",
+        "text": "Cambiar el número de shards es el dolor más grande del sharding. Mejor pensarlo antes de empezar."
+      },
+      "changes": [
+        "+ shard 4",
+        "~ La regla pasa a hash % 5",
+        "~ Datos que se mueven: 0 → 80 %"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "Se queda si hash % 4 = hash % 5: una de cada cinco"
+          },
+          {
+            "text": "Se mueve el 80 % de 30 TB: 24 TB",
+            "tone": "bad"
+          },
+          {
+            "text": "Lo justo: el 20 %, lo que va al shard nuevo"
+          }
+        ]
+      },
+      "metrics": {
+        "max": 64,
+        "avg": 64,
+        "data": 6,
+        "moved": 80
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 5"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ]
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ]
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ]
+        },
+        {
+          "id": "s4",
+          "kind": "db",
+          "label": "shard 4",
+          "at": [
+            1,
+            2.7
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0",
+          "state": "dim"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1",
+          "state": "dim"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2",
+          "state": "dim"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "router-s4",
+          "from": "router",
+          "to": "s4",
+          "state": "dim"
+        },
+        {
+          "id": "s0-s1",
+          "from": "s0",
+          "to": "s1",
+          "dashed": true
+        },
+        {
+          "id": "s2-s3",
+          "from": "s2",
+          "to": "s3",
+          "dashed": true
+        },
+        {
+          "id": "s0-s4",
+          "from": "s0",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s1-s4",
+          "from": "s1",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s2-s4",
+          "from": "s2",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s3-s4",
+          "from": "s3",
+          "to": "s4",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "s0-s1"
+          ],
+          "kind": "event",
+          "back": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "s2-s3"
+          ],
+          "kind": "event",
+          "back": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            [
+              "s0-s4",
+              "s1-s4",
+              "s2-s4",
+              "s3-s4"
+            ]
+          ],
+          "kind": "event",
+          "rate": 2.4,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Lógicos",
+      "chapter": "solution",
+      "title": "256 shards lógicos: se mueven enteros",
+      "body": "Mejor empezar con **256 shards lógicos** en 4 máquinas, 64 en cada una. La regla, `hash % 256`, no cambia nunca. Para crecer, cada máquina vieja pasa 13 shards lógicos enteros a la nueva y se queda con 51. Se mueve el **20 %**: justo lo que le toca.",
+      "callout": {
+        "type": "insight",
+        "text": "Solo cambia la tabla que dice qué máquina tiene cada shard lógico. Consistent hashing consigue algo parecido de otra forma: es la siguiente lección."
+      },
+      "changes": [
+        "~ La regla pasa a hash % 256, fija",
+        "~ Cada máquina: 64 → 51 shards lógicos",
+        "~ Datos que se mueven: 80 % → 20 %"
+      ],
+      "metrics": {
+        "max": 64,
+        "avg": 64,
+        "data": 6,
+        "moved": 20
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 256"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "máquina 0",
+          "at": [
+            0,
+            0.7
+          ],
+          "badge": "64 → 51"
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "máquina 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "badge": "64 → 51"
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "máquina 2",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "64 → 51"
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "máquina 3",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "64 → 51"
+        },
+        {
+          "id": "s4",
+          "kind": "db",
+          "label": "máquina 4",
+          "at": [
+            1,
+            2.7
+          ],
+          "badge": "0 → 52",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0",
+          "state": "dim"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1",
+          "state": "dim"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2",
+          "state": "dim"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "router-s4",
+          "from": "router",
+          "to": "s4",
+          "state": "dim"
+        },
+        {
+          "id": "s0-s4",
+          "from": "s0",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s1-s4",
+          "from": "s1",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s2-s4",
+          "from": "s2",
+          "to": "s4",
+          "dashed": true
+        },
+        {
+          "id": "s3-s4",
+          "from": "s3",
+          "to": "s4",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "s0-s4",
+              "s1-s4",
+              "s2-s4",
+              "s3-s4"
+            ]
+          ],
+          "kind": "event",
+          "rate": 1.2,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Las réplicas reparten lecturas; los shards reparten también escrituras y datos.\n- La shard key, por la consulta principal y un reparto parejo.\n- El hash reparte claves, no tráfico: ojo con las hot partitions.\n- Con `hash % N`, cambiar N mueve casi todo: empieza con shards lógicos.",
+      "callout": {
+        "type": "warn",
+        "text": "El sharding es lo último, no lo primero: complica consultas, joins y transacciones. Antes, índices, cache, réplicas y una máquina más grande."
+      },
+      "metrics": {
+        "max": 64,
+        "avg": 64,
+        "data": 6,
+        "moved": 20
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "hash % 256"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "máquina 0",
+          "at": [
+            0,
+            0.7
+          ]
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "máquina 1",
+          "at": [
+            2,
+            0.7
+          ]
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "máquina 2",
+          "at": [
+            0,
+            2
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "máquina 3",
+          "at": [
+            2,
+            2
+          ]
+        },
+        {
+          "id": "s4",
+          "kind": "db",
+          "label": "máquina 4",
+          "at": [
+            1,
+            2.7
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3"
+        },
+        {
+          "id": "router-s4",
+          "from": "router",
+          "to": "s4"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            [
+              "router-s0",
+              "router-s1",
+              "router-s2",
+              "router-s3",
+              "router-s4"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        }
+      ]
+    }
+  ]
+}

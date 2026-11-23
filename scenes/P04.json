@@ -1,0 +1,1107 @@
+{
+  "id": "P04",
+  "title": "El configurador, en acción",
+  "metrics": [
+    {
+      "id": "qps",
+      "label": "Clics por segundo"
+    },
+    {
+      "id": "ok",
+      "label": "Clics con respuesta",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "ver",
+      "label": "Catálogo en uso"
+    },
+    {
+      "id": "pg",
+      "label": "Lecturas a Postgres",
+      "unit": "/clic",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "aviso de versión nueva"
+  },
+  "goals": [
+    {
+      "text": "Por qué un clic no llega a Postgres",
+      "step": 1
+    },
+    {
+      "text": "Cómo se cachea una lista filtrada",
+      "step": 2
+    },
+    {
+      "text": "Cómo se publica una regla sin invalidar nada",
+      "step": 3
+    },
+    {
+      "text": "Qué notan los clientes si cae Redis o Postgres",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Comprobar",
+      "chapter": "solution",
+      "title": "Un clic se resuelve en memoria",
+      "body": "El cliente añade una placa. La petición lleva **toda la selección**, así que cualquier copia la atiende. Compat A evalúa las reglas con el catálogo `v42` que tiene en memoria y responde con el choque y su motivo. Postgres ni se entera.",
+      "callout": {
+        "type": "insight",
+        "text": "Cada copia tiene los ~100 MB del catálogo cargados. Por eso el clic no baja a la base de datos."
+      },
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v42",
+        "pg": 0
+      },
+      "panel": {
+        "title": "La comprobación",
+        "rows": [
+          {
+            "text": "6 piezas → ~15 reglas aplicables"
+          },
+          {
+            "text": "cpu AM5 ≠ placa LGA1700 → choque",
+            "tone": "bad"
+          },
+          {
+            "text": "El motivo sale de la regla que falla",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v42"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas",
+          "state": "dim"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v42"
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas",
+          "state": "dim"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r",
+          "state": "dim"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r",
+          "state": "dim"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.2
+        }
+      ]
+    },
+    {
+      "short": "Lista",
+      "chapter": "solution",
+      "title": "La lista filtrada, de Redis o en memoria",
+      "body": "Abre las placas. Compat B busca `fits:v42:placa:cpu_17,ram_88` en Redis. Si no está, filtra las 4.000 placas con **el mismo evaluador** y la guarda. El siguiente cliente con esa selección la recibe hecha.",
+      "callout": {
+        "type": "tip",
+        "text": "La lista y la comprobación usan el mismo código: nunca se ofrece una placa que luego salga incompatible."
+      },
+      "changes": [
+        "+ Redis con las listas",
+        "~ La clave lleva la versión: fits:v42:…"
+      ],
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v42",
+        "pg": 0
+      },
+      "panel": {
+        "title": "Si no está en Redis",
+        "rows": [
+          {
+            "text": "4.000 placas × 15 reglas = 60.000 comparaciones"
+          },
+          {
+            "text": "Un instante para cualquier servidor",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v42"
+          ]
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas",
+          "badge": "fits:v42",
+          "mark": "good"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v42"
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas",
+          "state": "dim"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            [
+              "a-r",
+              "b-r"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        }
+      ],
+      "predict": {
+        "q": "El equipo del catálogo corrige una regla y publica `v43`. ¿Qué hay que hacer con las listas que ya están en Redis?",
+        "options": [
+          "Borrarlas todas justo antes de publicar",
+          "Nada: las claves nuevas llevan v43 y las viejas caducan solas",
+          "Dejarlas: se siguen sirviendo hasta que caduque su TTL",
+          "Recalcularlas todas en el momento de publicar"
+        ],
+        "answer": 1,
+        "explain": "Con `v43`, los servidores piden claves `fits:v43:…`, que aún no existen: se calculan con la regla nueva. Las de `v42` ya nadie las pide y caducan por TTL. Borrar a mano no hace falta, y dejarlas «servir» no pasa: ningún servidor pregunta ya por ellas."
+      }
+    },
+    {
+      "short": "Publicar v43",
+      "chapter": "solution",
+      "title": "Una regla nueva es un INSERT y una versión",
+      "body": "El equipo añade la regla en el panel y publica `v43`. Cada copia mira la versión cada pocos segundos, ve el cambio y recarga el catálogo. Desde ese momento pide claves `v43`: **no se invalida nada**.",
+      "changes": [
+        "+ Regla nueva en Postgres",
+        "~ Versión: v42 → v43",
+        "~ Las copias recargan el catálogo"
+      ],
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v43",
+        "pg": 0
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas",
+          "badge": "fits:v43"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true,
+          "label": "v43"
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true,
+          "label": "v43"
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "pan-pg"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "pg-a",
+              "pg-b"
+            ]
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        }
+      ]
+    },
+    {
+      "short": "Cae Redis",
+      "chapter": "case",
+      "title": "Se cae Redis",
+      "body": "Redis no responde. Las copias no esperan: filtran cada lista en memoria, como en un miss. Trabajan algo más, pero cada clic sigue teniendo respuesta en una fracción de segundo.",
+      "callout": {
+        "type": "insight",
+        "text": "Redis es un atajo, no la fuente de verdad: la verdad la tiene cada copia en memoria."
+      },
+      "changes": [
+        "− Redis (caído)",
+        "~ Cada lista se calcula en memoria",
+        "~ Carga de las copias: sube un poco"
+      ],
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v43",
+        "pg": 0
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ],
+          "load": 0.45
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas",
+          "state": "down"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ],
+          "load": 0.45
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas",
+          "state": "dim"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r",
+          "state": "down"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r",
+          "state": "down"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.2
+        },
+        {
+          "via": [
+            [
+              "a-r",
+              "b-r"
+            ]
+          ],
+          "kind": "fail",
+          "rate": 0.5
+        }
+      ],
+      "predict": {
+        "q": "Redis vuelve. Ahora es Postgres el que se cae durante una hora. ¿Qué notan los clientes del configurador?",
+        "options": [
+          "Errores en cada clic hasta que vuelva",
+          "Nada: el catálogo v43 sigue en la memoria de cada copia",
+          "Las listas funcionan pero la comprobación falla",
+          "Clics más lentos, porque leen de Redis en vez de Postgres"
+        ],
+        "answer": 1,
+        "explain": "Postgres solo guarda la versión buena y la entrega al recargar. Ningún clic la lee: las copias siguen con `v43` en memoria. Lo único que se para es publicar una versión nueva. Pensar «sin base de datos no hay nada» es el error típico."
+      }
+    },
+    {
+      "short": "Cae Postgres",
+      "chapter": "case",
+      "title": "Se cae Postgres: los clientes, ni se enteran",
+      "body": "Postgres no está en el camino del clic: las copias siguen con `v43` en memoria y Redis vuelve a ahorrar cálculos. Lo que se para es el panel: la próxima versión espera a que vuelva la base de datos.",
+      "callout": {
+        "type": "warn",
+        "text": "Si una copia se reinicia ahora, no puede cargar el catálogo. Por eso conviene guardar también la última versión en un fichero o tener una réplica."
+      },
+      "changes": [
+        "− Postgres (caído)",
+        "~ Publicar v44: en espera",
+        "~ Clics atendidos: siguen al 100 %"
+      ],
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v43",
+        "pg": 0
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas",
+          "badge": "fits:v43"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas",
+          "state": "down"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo",
+          "badge": "espera",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true,
+          "state": "down"
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true,
+          "state": "down"
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            [
+              "a-r",
+              "b-r"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "pan-pg"
+          ],
+          "kind": "fail",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Cada clic se resuelve en memoria: la selección viaja en la petición.\n- La lista y la comprobación usan el mismo evaluador.\n- Una regla nueva es una versión nueva, y las claves con la versión no se invalidan.\n- Si cae Redis o Postgres, el configurador sigue respondiendo.",
+      "callout": {
+        "type": "insight",
+        "text": "Un problema pequeño de datos: el catálogo cabe en memoria, y eso decide todo el diseño."
+      },
+      "metrics": {
+        "qps": 175,
+        "ok": 100,
+        "ver": "v43",
+        "pg": 0
+      },
+      "nodes": [
+        {
+          "id": "nav",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Compat A",
+          "at": [
+            0,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "r",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1,
+            2.45
+          ],
+          "note": "listas filtradas"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Compat B",
+          "at": [
+            2,
+            2.45
+          ],
+          "items": [
+            "v43"
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            3.75
+          ],
+          "note": "piezas y reglas"
+        },
+        {
+          "id": "pan",
+          "kind": "service",
+          "label": "Panel",
+          "at": [
+            2.2,
+            3.75
+          ],
+          "note": "equipo catálogo"
+        }
+      ],
+      "links": [
+        {
+          "id": "nav-lb",
+          "from": "nav",
+          "to": "lb"
+        },
+        {
+          "id": "lb-a",
+          "from": "lb",
+          "to": "a"
+        },
+        {
+          "id": "lb-b",
+          "from": "lb",
+          "to": "b"
+        },
+        {
+          "id": "a-r",
+          "from": "a",
+          "to": "r"
+        },
+        {
+          "id": "b-r",
+          "from": "b",
+          "to": "r"
+        },
+        {
+          "id": "pg-a",
+          "from": "pg",
+          "to": "a",
+          "dashed": true
+        },
+        {
+          "id": "pg-b",
+          "from": "pg",
+          "to": "b",
+          "dashed": true
+        },
+        {
+          "id": "pan-pg",
+          "from": "pan",
+          "to": "pg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "nav-lb",
+            [
+              "lb-a",
+              "lb-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            [
+              "a-r",
+              "b-r"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        }
+      ]
+    }
+  ]
+}

@@ -39,6 +39,7 @@ let problems = 0;
 for (const f of files) {
   let scene = JSON.parse(readFileSync(f, 'utf8'));
   // Una unidad (data/units/Lxx.json): se dibujan los mini planos de sus preguntas.
+  const isUnit = !!scene.kind;
   if (scene.kind) scene = { steps: (scene.checks || []).filter((c) => c.scene).map((c) => c.scene) };
   if (!scene.steps.length) { console.log(`· ${basename(f)}: nada que dibujar`); continue; }
   const report = await page.evaluate(async (scene) => {
@@ -49,7 +50,8 @@ for (const f of files) {
       app.innerHTML = `<section class="card scene-card" style="margin:0"><div class="sc-stage" id="sc-stage">${PlanosScene.svg(scene, i, { still: true })}</div></section>`;
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const svg = app.querySelector('svg');
-      const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+      const box = svg.getBoundingClientRect();
+      const scale = Math.min(box.width / svg.viewBox.baseVal.width, box.height / svg.viewBox.baseVal.height);
       minFont = Math.min(minFont, 12.5 * scale);
       const boxes = [];
       const add = (el, kind, owner) => { const r = el.getBoundingClientRect(); if (r.width && r.height) boxes.push({ kind, owner, r: { x0: r.left + 1, y0: r.top + 1, x1: r.right - 1, y1: r.bottom - 1 } }); };
@@ -81,7 +83,7 @@ for (const f of files) {
   if (shots) {
     for (let i = 0; i < scene.steps.length; i++) {
       await page.evaluate(({ scene, i }) => { document.getElementById('app').innerHTML = `<section class="card scene-card"><div class="sc-stage" id="sc-stage">${PlanosScene.svg(scene, i, { still: true })}</div></section>`; }, { scene, i });
-      await page.locator('.sc-stage').screenshot({ path: join(shots, `${basename(f, '.json')}-${i + 1}.png`) });
+      await page.locator('.sc-stage').screenshot({ path: join(shots, `${isUnit ? 'checks-' : ''}${basename(f, '.json')}-${i + 1}.png`) });
     }
   }
 }

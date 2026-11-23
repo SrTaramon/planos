@@ -1,0 +1,1318 @@
+{
+  "id": "L13",
+  "title": "El feed, en acción",
+  "metrics": [
+    {
+      "id": "lists",
+      "label": "Listas que se mezclan",
+      "better": "low"
+    },
+    {
+      "id": "ins",
+      "label": "Inserciones por seg.",
+      "better": "low"
+    },
+    {
+      "id": "late",
+      "label": "Un post tarda",
+      "unit": "s",
+      "better": "low"
+    },
+    {
+      "id": "mem",
+      "label": "Memoria de timelines",
+      "unit": "GB",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "job de fan-out",
+    "write": "escritura (un id)"
+  },
+  "goals": [
+    {
+      "text": "Por qué juntar el feed al leer sale tan caro",
+      "step": 1
+    },
+    {
+      "text": "Qué cuesta repartir cada post al publicar",
+      "step": 2
+    },
+    {
+      "text": "Por qué leer el feed se queda en leer una lista",
+      "step": 3
+    },
+    {
+      "text": "Por qué los famosos rompen el push",
+      "step": 4
+    },
+    {
+      "text": "Cómo los resuelve el híbrido",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Al leer",
+      "chapter": "problem",
+      "title": "Cada vez que abres el feed, 300 autores",
+      "body": "Sin nada preparado, abrir el feed es mirar a quién sigues, pedir los posts de esas **300 cuentas** y mezclarlos por fecha. Con los posts repartidos por `author_id`, son consultas a muchos shards, **11.600 veces por segundo**. Publicar, en cambio, son 116 posts por segundo.",
+      "callout": {
+        "type": "insight",
+        "text": "Esto ya es **fan-out on read**: el reparto se hace al leer. Y se lee 100 veces más de lo que se escribe: compensa preparar el feed antes."
+      },
+      "metrics": {
+        "lists": 300,
+        "ins": 116,
+        "late": 0,
+        "mem": 0
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Autor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "hot",
+          "load": 1,
+          "mark": "bad"
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed",
+          "state": "hot"
+        },
+        {
+          "id": "feed-posts",
+          "from": "feed",
+          "to": "posts",
+          "state": "hot"
+        },
+        {
+          "id": "feed-seg",
+          "from": "feed",
+          "to": "seg",
+          "label": "¿a quién sigo?"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "lector-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 1200,
+          "rate": 1
+        },
+        {
+          "via": [
+            "feed-seg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "feed-posts"
+          ],
+          "kind": "heavy",
+          "back": "resp",
+          "rate": 4
+        }
+      ],
+      "predict": {
+        "q": "Cambias de idea: al publicar, el id del post se copia en el timeline de cada seguidor. Con 10 millones de posts al día y 200 seguidores de media, ¿cuántas inserciones por segundo son, más o menos?",
+        "options": [
+          "Unas 116: una por post",
+          "Unas 2.300",
+          "Unas 23.000",
+          "Unos 2 millones"
+        ],
+        "answer": 2,
+        "explain": "10 millones × 200 = 2.000 millones de inserciones al día; entre 86.400 s, unas 23.000 por segundo. 116 es lo que cuesta publicar si no repartes: una inserción por post."
+      }
+    },
+    {
+      "short": "Push",
+      "chapter": "technique",
+      "title": "Fan-out on write: repartir al publicar",
+      "body": "Cada usuario tiene su **timeline** ya hecho: una lista en memoria con los ids de sus posts. Al publicar, el servicio guarda el post y deja un job en la cola. Un worker busca a los seguidores del autor y pone el id (`987`) al principio de la lista de cada uno, recortada a 800.",
+      "callout": {
+        "type": "warn",
+        "text": "Mucho de ese trabajo se tira: va a feeds de gente que hoy no entrará."
+      },
+      "changes": [
+        "+ Cola, workers y timelines",
+        "~ Inserciones: 116/s → 23.000/s",
+        "+ 640 GB de timelines en memoria"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "10 M posts/día × 200 seguidores = 2.000 M al día"
+          },
+          {
+            "text": "2.000 M / 86.400 s ≈ 23.000 inserciones/s",
+            "tone": "bad"
+          },
+          {
+            "text": "100 M listas × 800 ids × 8 bytes = 640 GB"
+          }
+        ]
+      },
+      "metrics": {
+        "lists": 300,
+        "ins": 23000,
+        "late": 0,
+        "mem": 640
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Autor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "workers",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1,
+            2.5
+          ],
+          "load": 0.25,
+          "mark": "good"
+        },
+        {
+          "id": "tl",
+          "kind": "cache",
+          "label": "Timelines",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "987",
+            "954",
+            "912"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "psvc-cola",
+          "from": "psvc",
+          "to": "cola"
+        },
+        {
+          "id": "cola-workers",
+          "from": "cola",
+          "to": "workers"
+        },
+        {
+          "id": "workers-seg",
+          "from": "workers",
+          "to": "seg"
+        },
+        {
+          "id": "workers-tl",
+          "from": "workers",
+          "to": "tl"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-cola"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "cola-workers"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "workers-seg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "workers-tl"
+          ],
+          "kind": "write",
+          "rate": 3,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Una lista",
+      "chapter": "solution",
+      "title": "Leer el feed es leer una lista",
+      "body": "Al abrir el feed, el servicio lee los 20 primeros ids de tu timeline: unos milisegundos. Después los **hidrata**: pide esos 20 posts completos (texto, autor, foto) de una vez. De mezclar 300 listas a leer una.",
+      "callout": {
+        "type": "insight",
+        "text": "Guardar ids y no posts es lo que lo hace viable: 640 GB caben en unos cuantos nodos de cache, repartidos con consistent hashing."
+      },
+      "changes": [
+        "~ Listas que se mezclan: 300 → 1",
+        "+ Hidratar: 20 posts por id",
+        "~ Posts deja de ir saturado"
+      ],
+      "metrics": {
+        "lists": 1,
+        "ins": 23000,
+        "late": 0,
+        "mem": 640
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Autor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "workers",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "tl",
+          "kind": "cache",
+          "label": "Timelines",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "987",
+            "954",
+            "912"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "psvc-cola",
+          "from": "psvc",
+          "to": "cola"
+        },
+        {
+          "id": "cola-workers",
+          "from": "cola",
+          "to": "workers"
+        },
+        {
+          "id": "workers-seg",
+          "from": "workers",
+          "to": "seg"
+        },
+        {
+          "id": "workers-tl",
+          "from": "workers",
+          "to": "tl"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed"
+        },
+        {
+          "id": "feed-tl",
+          "from": "feed",
+          "to": "tl"
+        },
+        {
+          "id": "feed-posts",
+          "from": "feed",
+          "to": "posts"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-cola"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "cola-workers"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "workers-tl"
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "lector-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "feed-tl"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4,
+          "pop": true
+        },
+        {
+          "via": [
+            "feed-posts"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        }
+      ],
+      "predict": {
+        "q": "Ahora publica una cuenta con 50 millones de seguidores. Los workers hacen 100.000 inserciones por segundo entre todos. ¿Cuánto tarda su post en estar en todos los timelines?",
+        "options": [
+          "Lo mismo que otro post: los workers van en paralelo",
+          "Unos 8 minutos",
+          "Unos 50 segundos",
+          "Unas 14 horas"
+        ],
+        "answer": 1,
+        "explain": "50.000.000 / 100.000 = 500 s, más de 8 minutos, y con todos los workers ocupados en él. El paralelismo ya está en esos 100.000 por segundo: más workers lo acortan, pero cada post de un famoso seguiría costando 50 millones de inserciones."
+      }
+    },
+    {
+      "short": "Un famoso",
+      "chapter": "case",
+      "title": "Publica un famoso: 50 millones de inserciones",
+      "body": "Una cuenta con **50 millones** de seguidores publica. Con workers que hacen 100.000 inserciones por segundo entre todos, su post tarda **500 s, más de 8 minutos**, en llegar a todos. Mientras, los posts de los demás esperan detrás, en la misma cola.",
+      "callout": {
+        "type": "warn",
+        "text": "Es el **celebrity problem**: con las cuentas enormes, el push se atasca por muchos workers que pongas."
+      },
+      "changes": [
+        "~ Autor: 50 M de seguidores",
+        "~ Workers a tope: 100.000/s",
+        "~ Un post tarda: 0 → 500 s"
+      ],
+      "metrics": {
+        "lists": 1,
+        "ins": 100000,
+        "late": 500,
+        "mem": 640
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Famoso",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "50 M",
+          "mark": "bad"
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "workers",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1,
+            2.5
+          ],
+          "badge": "100.000/s",
+          "state": "hot"
+        },
+        {
+          "id": "tl",
+          "kind": "cache",
+          "label": "Timelines",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "987",
+            "954",
+            "912"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "psvc-cola",
+          "from": "psvc",
+          "to": "cola"
+        },
+        {
+          "id": "cola-workers",
+          "from": "cola",
+          "to": "workers",
+          "state": "hot"
+        },
+        {
+          "id": "workers-seg",
+          "from": "workers",
+          "to": "seg"
+        },
+        {
+          "id": "workers-tl",
+          "from": "workers",
+          "to": "tl",
+          "state": "hot"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed"
+        },
+        {
+          "id": "feed-tl",
+          "from": "feed",
+          "to": "tl"
+        },
+        {
+          "id": "feed-posts",
+          "from": "feed",
+          "to": "posts"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-cola"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "cola-workers"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "workers-seg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "workers-tl"
+          ],
+          "kind": "write",
+          "rate": 6
+        },
+        {
+          "via": [
+            "lector-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "feed-tl"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Híbrido",
+      "chapter": "solution",
+      "title": "Los famosos se mezclan al leer",
+      "body": "Las cuentas de más de 100.000 seguidores no se reparten: su post solo se guarda. Al abrir el feed, el servicio coge tu timeline ya hecho y le mezcla los posts recientes de los famosos que sigues. Es fan-out on read, pero de unos 10 autores, no de 300. Los demás siguen con push.",
+      "callout": {
+        "type": "tip",
+        "text": "Otro ajuste del mismo estilo: no hacer push a quien lleva semanas sin entrar. Si vuelve, su feed se reconstruye con pull la primera vez."
+      },
+      "changes": [
+        "− Push de los famosos",
+        "+ Al leer: timeline + 10 famosos",
+        "~ Un post tarda: 500 s → 0",
+        "~ Listas que se mezclan: 1 → 11"
+      ],
+      "metrics": {
+        "lists": 11,
+        "ins": 23000,
+        "late": 0,
+        "mem": 640
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Famoso",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "50 M"
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ],
+          "items": [
+            "famosos"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "workers",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "tl",
+          "kind": "cache",
+          "label": "Timelines",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "987",
+            "954",
+            "912"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "psvc-cola",
+          "from": "psvc",
+          "to": "cola",
+          "state": "dim"
+        },
+        {
+          "id": "cola-workers",
+          "from": "cola",
+          "to": "workers"
+        },
+        {
+          "id": "workers-seg",
+          "from": "workers",
+          "to": "seg"
+        },
+        {
+          "id": "workers-tl",
+          "from": "workers",
+          "to": "tl"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed"
+        },
+        {
+          "id": "feed-tl",
+          "from": "feed",
+          "to": "tl"
+        },
+        {
+          "id": "feed-posts",
+          "from": "feed",
+          "to": "posts"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "cola-workers"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "workers-tl"
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "lector-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "feed-tl"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "feed-posts"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Se lee 100 veces más de lo que se escribe: compensa preparar el feed.\n- Push: al publicar, el id va al timeline de cada seguidor, y leer es leer una lista.\n- Pull: publicar es barato, y cada lectura junta y mezcla.\n- Los famosos atascan el push: el híbrido los mezcla al leer.",
+      "callout": {
+        "type": "tip",
+        "text": "Para pedir más feed, un cursor («los 20 más viejos que este»), no `?page=2`: si entran posts nuevos mientras haces scroll, la página 2 repetiría los últimos que viste."
+      },
+      "metrics": {
+        "lists": 11,
+        "ins": 23000,
+        "late": 0,
+        "mem": 640
+      },
+      "nodes": [
+        {
+          "id": "autor",
+          "kind": "client",
+          "label": "Autor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "psvc",
+          "kind": "service",
+          "label": "Servicio posts",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lector",
+          "kind": "client",
+          "label": "Lector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "posts",
+          "kind": "db",
+          "label": "Posts",
+          "at": [
+            1,
+            1.25
+          ],
+          "items": [
+            "famosos"
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Servicio feed",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "seg",
+          "kind": "db",
+          "label": "Seguidores",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "workers",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "tl",
+          "kind": "cache",
+          "label": "Timelines",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "987",
+            "954",
+            "912"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "autor-psvc",
+          "from": "autor",
+          "to": "psvc"
+        },
+        {
+          "id": "psvc-posts",
+          "from": "psvc",
+          "to": "posts"
+        },
+        {
+          "id": "psvc-cola",
+          "from": "psvc",
+          "to": "cola"
+        },
+        {
+          "id": "cola-workers",
+          "from": "cola",
+          "to": "workers"
+        },
+        {
+          "id": "workers-seg",
+          "from": "workers",
+          "to": "seg"
+        },
+        {
+          "id": "workers-tl",
+          "from": "workers",
+          "to": "tl"
+        },
+        {
+          "id": "lector-feed",
+          "from": "lector",
+          "to": "feed"
+        },
+        {
+          "id": "feed-tl",
+          "from": "feed",
+          "to": "tl"
+        },
+        {
+          "id": "feed-posts",
+          "from": "feed",
+          "to": "posts"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "autor-psvc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-posts"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "psvc-cola"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "cola-workers"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "workers-tl"
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "lector-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "feed-tl"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "feed-posts"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        }
+      ]
+    }
+  ]
+}
