@@ -1,0 +1,1098 @@
+{
+  "id": "L20",
+  "title": "CAP, en acción",
+  "metrics": [
+    {
+      "id": "stale",
+      "label": "Puede leer algo viejo"
+    },
+    {
+      "id": "twice",
+      "label": "Vendidas dos veces",
+      "better": "low"
+    },
+    {
+      "id": "wait",
+      "label": "Espera cada escritura",
+      "unit": "ms",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Qué es una partición de red y por qué no se elige",
+      "step": 2
+    },
+    {
+      "text": "Qué gana y qué pierde Dublín con AP y con CP",
+      "step": 4
+    },
+    {
+      "text": "Cuánto cuesta la consistencia fuerte sin partición",
+      "step": 5
+    },
+    {
+      "text": "Por qué con R + W > N se lee siempre lo último",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Dos copias",
+      "chapter": "problem",
+      "title": "Queda 1 entrada, en Madrid y en Dublín",
+      "body": "Las entradas de un concierto están en dos réplicas, una en Madrid y otra en Dublín. Cada venta se copia a la otra **sin esperar**: es **eventual consistency**. Si dejan de llegar ventas, las dos acaban iguales, pero no en el mismo instante. Ahora mismo las dos dicen «queda 1».",
+      "callout": {
+        "type": "insight",
+        "text": "Fuerte: toda lectura ve la última escritura, como si hubiera una sola copia. Eventual: las copias acaban iguales, pero durante un rato una puede contar algo viejo."
+      },
+      "metrics": {
+        "stale": "un rato",
+        "twice": 0,
+        "wait": 0
+      },
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mad",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            1.6
+          ],
+          "badge": "queda 1"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "dub",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            1.6
+          ],
+          "badge": "queda 1"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-mad",
+          "from": "um",
+          "to": "mad"
+        },
+        {
+          "id": "ud-dub",
+          "from": "ud",
+          "to": "dub"
+        },
+        {
+          "id": "mad-dub",
+          "from": "mad",
+          "to": "dub",
+          "label": "replicación"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "um-mad"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "mad-dub"
+          ],
+          "kind": "write",
+          "rate": 0.4,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Partición",
+      "chapter": "problem",
+      "title": "Se corta la red entre las dos zonas",
+      "body": "Falla un enlace y Madrid y Dublín dejan de hablarse: es una **network partition**. En Madrid alguien compra la última entrada y Madrid pasa a «queda 0». Dublín no se entera y sigue en «queda 1». Justo entonces, alguien pregunta en Dublín cuántas quedan.",
+      "callout": {
+        "type": "warn",
+        "text": "Con datos en varias máquinas, las particiones van a pasar: un cable, un switch, un centro de datos aislado. La P de CAP no se elige."
+      },
+      "predict": {
+        "q": "Dublín no puede hablar con Madrid. Si elige **disponibilidad** (AP), ¿qué contesta a quien pregunta cuántas quedan?",
+        "options": [
+          "Un error, hasta que vuelva la red",
+          "«Queda 1»: su último dato, aunque ya no sea verdad",
+          "«Queda 0»: la venta de Madrid le llega igual",
+          "Espera a Madrid y después contesta"
+        ],
+        "answer": 1,
+        "explain": "Con AP, toda petición que llega a una máquina que funciona recibe respuesta, y Dublín solo tiene su dato: «queda 1». El error (o la espera) es lo que haría con CP. Y la venta de Madrid no puede llegarle: el enlace está cortado."
+      },
+      "changes": [
+        "− Enlace Madrid-Dublín",
+        "~ Madrid: queda 1 → queda 0",
+        "~ Dublín sigue en «queda 1»"
+      ],
+      "metrics": {
+        "stale": "sí",
+        "twice": 0,
+        "wait": 0
+      },
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ],
+          "tone": "warn"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "compra"
+        },
+        {
+          "id": "mad",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            1.6
+          ],
+          "badge": "queda 0"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "pregunta"
+        },
+        {
+          "id": "dub",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            1.6
+          ],
+          "badge": "queda 1",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-mad",
+          "from": "um",
+          "to": "mad"
+        },
+        {
+          "id": "ud-dub",
+          "from": "ud",
+          "to": "dub",
+          "label": "¿cuántas?"
+        },
+        {
+          "id": "mad-dub",
+          "from": "mad",
+          "to": "dub",
+          "label": "cortado",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "um-mad"
+          ],
+          "kind": "write",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "mad-dub"
+          ],
+          "kind": "write",
+          "failAt": 0.5,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "req",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "AP",
+      "chapter": "case",
+      "title": "AP: Dublín contesta con su último dato",
+      "body": "Si eliges **disponibilidad** (AP), Dublín responde con lo que tiene: «queda 1». Siempre contesta, pero el dato puede ser viejo: el usuario compra y Dublín vende una entrada que en Madrid ya no existe. La misma entrada, vendida dos veces.",
+      "callout": {
+        "type": "tip",
+        "text": "AP vale para lo que aguanta un dato viejo unos segundos: el contador de likes, las visitas, los seguidores."
+      },
+      "changes": [
+        "~ Dublín responde «queda 1»",
+        "~ Vendidas dos veces: 0 → 1"
+      ],
+      "metrics": {
+        "stale": "sí",
+        "twice": 1,
+        "wait": 0
+      },
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ],
+          "tone": "bad"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "compra"
+        },
+        {
+          "id": "mad",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            1.6
+          ],
+          "badge": "queda 0"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "pregunta"
+        },
+        {
+          "id": "dub",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            1.6
+          ],
+          "badge": "queda 0",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-mad",
+          "from": "um",
+          "to": "mad"
+        },
+        {
+          "id": "ud-dub",
+          "from": "ud",
+          "to": "dub",
+          "label": "«queda 1»"
+        },
+        {
+          "id": "mad-dub",
+          "from": "mad",
+          "to": "dub",
+          "label": "cortado",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "write",
+          "rate": 0.4,
+          "pop": true
+        },
+        {
+          "via": [
+            "mad-dub"
+          ],
+          "kind": "write",
+          "failAt": 0.5,
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "CP",
+      "chapter": "solution",
+      "title": "CP: Dublín prefiere no contestar",
+      "body": "Si eliges **consistencia** (CP), Dublín no puede confirmar con Madrid y devuelve un error, o espera a que vuelva la red. Quien pregunta en Dublín se queda sin respuesta, pero nunca recibe un dato falso ni compra una entrada que ya no existe.",
+      "callout": {
+        "type": "insight",
+        "text": "Para la última entrada, el saldo o un nombre de usuario único, mejor un error que vender dos veces."
+      },
+      "changes": [
+        "~ Dublín devuelve un error",
+        "~ Vendidas dos veces: 1 → 0",
+        "− Disponibilidad en Dublín"
+      ],
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": 0
+      },
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ],
+          "tone": "warn"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "compra"
+        },
+        {
+          "id": "mad",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            1.6
+          ],
+          "badge": "queda 0"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "pregunta"
+        },
+        {
+          "id": "dub",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            1.6
+          ],
+          "badge": "no confirma"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-mad",
+          "from": "um",
+          "to": "mad"
+        },
+        {
+          "id": "ud-dub",
+          "from": "ud",
+          "to": "dub",
+          "label": "error",
+          "state": "hot"
+        },
+        {
+          "id": "mad-dub",
+          "from": "mad",
+          "to": "dub",
+          "label": "cortado",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "mad-dub"
+          ],
+          "kind": "write",
+          "failAt": 0.5,
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "Sin partición",
+      "chapter": "case",
+      "title": "Sin partición, la consistencia cuesta latencia",
+      "body": "Vuelve la red y CAP ya no dice nada. **PACELC** lo completa: si hay partición, eliges entre A y C; si no, entre latencia y consistencia. Para que una venta de Madrid esté también en Dublín antes de confirmarla, cada escritura espera la ida y vuelta: unos 30 ms.",
+      "callout": {
+        "type": "tip",
+        "text": "La partición pasa de vez en cuando; los 30 ms se pagan en cada escritura, todos los días."
+      },
+      "changes": [
+        "+ La red vuelve",
+        "~ Cada venta espera a Dublín: 0 → 30 ms",
+        "~ Las dos copias, iguales: queda 0"
+      ],
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": 30
+      },
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "compra"
+        },
+        {
+          "id": "mad",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0,
+            1.6
+          ],
+          "badge": "queda 0"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "pregunta"
+        },
+        {
+          "id": "dub",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            2,
+            1.6
+          ],
+          "badge": "queda 0",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-mad",
+          "from": "um",
+          "to": "mad"
+        },
+        {
+          "id": "ud-dub",
+          "from": "ud",
+          "to": "dub"
+        },
+        {
+          "id": "mad-dub",
+          "from": "mad",
+          "to": "dub",
+          "label": "ida y vuelta"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "um-mad",
+            "mad-dub"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "ud-dub"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Quorum",
+      "chapter": "technique",
+      "title": "Tres copias: escribe en 2, lee de 2",
+      "body": "Con **quorums** no hace falta esperar siempre a todas. Hay **N = 3** copias. Una escritura se confirma cuando la guardan **W = 2**; una lectura pregunta a **R = 2** y se queda con la versión más reciente. Como R + W > N, los dos grupos comparten una copia, y esa tiene lo último.",
+      "callout": {
+        "type": "tip",
+        "text": "Como en la oficina: si la noticia la saben 2 de 3 compañeros y tú preguntas a 2, uno de los dos la sabe seguro."
+      },
+      "predict": {
+        "q": "Para ir más rápido bajas a W = 1 y R = 1: escribes en una copia y lees de una. ¿Qué arriesgas?",
+        "options": [
+          "Nada: con 3 copias siempre hay una al día",
+          "No poder escribir si se cae una copia",
+          "Que la lectura pregunte a una copia que aún no tiene lo último",
+          "Que se pierda la escritura al llegar a una sola copia"
+        ],
+        "answer": 2,
+        "explain": "1 + 1 = 2 no supera N = 3: la copia que lees puede no ser la que escribiste, y devuelve un dato viejo. No poder escribir con una copia caída es el riesgo contrario, el de W = 3."
+      },
+      "changes": [
+        "+ 3 copias (N = 3)",
+        "~ Escribe en 2 (W) y lee de 2 (R)",
+        "~ La copia 2 está en los dos grupos"
+      ],
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": "a 2 copias"
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "N = 3, W = 2, R = 2"
+          },
+          {
+            "text": "R + W = 4 > 3: comparten al menos 1 copia",
+            "tone": "good"
+          },
+          {
+            "text": "Aguanta 1 copia caída al escribir y 1 al leer"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "escribe v2"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "lee"
+        },
+        {
+          "id": "q1",
+          "kind": "db",
+          "label": "Copia 1",
+          "at": [
+            0,
+            1.6
+          ],
+          "items": [
+            "v2"
+          ]
+        },
+        {
+          "id": "q2",
+          "kind": "db",
+          "label": "Copia 2",
+          "at": [
+            1,
+            1.6
+          ],
+          "items": [
+            "v2"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "q3",
+          "kind": "db",
+          "label": "Copia 3",
+          "at": [
+            2,
+            1.6
+          ],
+          "items": [
+            "v1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "um-q1",
+          "from": "um",
+          "to": "q1"
+        },
+        {
+          "id": "um-q2",
+          "from": "um",
+          "to": "q2"
+        },
+        {
+          "id": "ud-q2",
+          "from": "ud",
+          "to": "q2"
+        },
+        {
+          "id": "ud-q3",
+          "from": "ud",
+          "to": "q3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "um-q1",
+              "um-q2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.2,
+          "pop": true
+        },
+        {
+          "via": [
+            [
+              "ud-q2",
+              "ud-q3"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        }
+      ]
+    },
+    {
+      "short": "W = 1, R = 1",
+      "chapter": "case",
+      "title": "Con W = 1 y R = 1 puedes leer algo viejo",
+      "body": "Para ir más rápido bajas a **W = 1** y **R = 1**. Pero 1 + 1 = 2 no supera 3: la escritura llega solo a la copia 1 y la lectura pregunta solo a la 3, que sigue en v1. Aguanta 2 copias caídas en cada lado, pero devuelve un dato viejo.",
+      "callout": {
+        "type": "warn",
+        "text": "Al revés también hay precio: con W = 3 lees de una sola copia, pero si se cae una ya no puedes escribir."
+      },
+      "changes": [
+        "~ W: 2 → 1 y R: 2 → 1",
+        "~ R + W = 2: no supera N = 3",
+        "~ La lectura devuelve v1"
+      ],
+      "metrics": {
+        "stale": "sí",
+        "twice": 0,
+        "wait": "a 1 copia"
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "N = 3, W = 1, R = 1"
+          },
+          {
+            "text": "R + W = 2: puede no tocar la copia nueva",
+            "tone": "bad"
+          },
+          {
+            "text": "Aguanta 2 copias caídas al escribir y 2 al leer"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "escribe v2"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "lee v1"
+        },
+        {
+          "id": "q1",
+          "kind": "db",
+          "label": "Copia 1",
+          "at": [
+            0,
+            1.6
+          ],
+          "items": [
+            "v2"
+          ]
+        },
+        {
+          "id": "q2",
+          "kind": "db",
+          "label": "Copia 2",
+          "at": [
+            1,
+            1.6
+          ],
+          "items": [
+            "v1"
+          ]
+        },
+        {
+          "id": "q3",
+          "kind": "db",
+          "label": "Copia 3",
+          "at": [
+            2,
+            1.6
+          ],
+          "items": [
+            "v1"
+          ],
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-q1",
+          "from": "um",
+          "to": "q1"
+        },
+        {
+          "id": "um-q2",
+          "from": "um",
+          "to": "q2",
+          "state": "dim"
+        },
+        {
+          "id": "ud-q2",
+          "from": "ud",
+          "to": "q2",
+          "state": "dim"
+        },
+        {
+          "id": "ud-q3",
+          "from": "ud",
+          "to": "q3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "um-q1"
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "ud-q3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Eventual: las copias acaban iguales, pero no a la vez.\n- En una partición, AP contesta quizá con un dato viejo; CP no contesta.\n- Sin partición, la consistencia fuerte se paga en latencia (PACELC).\n- Con N copias, si R + W > N, la lectura ve lo último.",
+      "callout": {
+        "type": "insight",
+        "text": "Decide dato a dato: ¿qué pasa si alguien ve el valor viejo unos segundos? Likes, eventual; stock y saldo, fuerte. Read-your-writes cubre muchos casos."
+      },
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": "a 2 copias"
+      },
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "escribe v2"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "lee"
+        },
+        {
+          "id": "q1",
+          "kind": "db",
+          "label": "Copia 1",
+          "at": [
+            0,
+            1.6
+          ],
+          "items": [
+            "v2"
+          ]
+        },
+        {
+          "id": "q2",
+          "kind": "db",
+          "label": "Copia 2",
+          "at": [
+            1,
+            1.6
+          ],
+          "items": [
+            "v2"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "q3",
+          "kind": "db",
+          "label": "Copia 3",
+          "at": [
+            2,
+            1.6
+          ],
+          "items": [
+            "v1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "um-q1",
+          "from": "um",
+          "to": "q1"
+        },
+        {
+          "id": "um-q2",
+          "from": "um",
+          "to": "q2"
+        },
+        {
+          "id": "ud-q2",
+          "from": "ud",
+          "to": "q2"
+        },
+        {
+          "id": "ud-q3",
+          "from": "ud",
+          "to": "q3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "um-q1",
+              "um-q2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            [
+              "ud-q2",
+              "ud-q3"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    }
+  ]
+}

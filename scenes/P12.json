@@ -1,0 +1,1120 @@
+{
+  "id": "P12",
+  "title": "El chat, en acción",
+  "metrics": [
+    {
+      "id": "tick",
+      "label": "Ana ve"
+    },
+    {
+      "id": "dup",
+      "label": "Duplicados",
+      "better": "low"
+    },
+    {
+      "id": "lost",
+      "label": "Perdidos",
+      "better": "low"
+    },
+    {
+      "id": "reconn",
+      "label": "Reconexiones/s",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "mensaje o aviso",
+    "resp": "confirmación"
+  },
+  "goals": [
+    {
+      "text": "Por qué Ana ve ✓ solo cuando el mensaje está guardado",
+      "step": 1
+    },
+    {
+      "text": "Cómo encuentra el sistema el gateway de Bruno",
+      "step": 2
+    },
+    {
+      "text": "Por qué un reenvío no duplica el mensaje",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa si Bruno no está conectado",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa si se cae un gateway",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Ana envía",
+      "chapter": "solution",
+      "title": "Ana envía: primero se guarda, después ✓",
+      "body": "Ana escribe «¿Cenamos?». Su móvil lo manda por el WebSocket que ya tiene abierto con el gateway 3, con un `clientMsgId`. El servicio de chat le da el `seq` 1081, lo guarda con su referencia en el inbox de Bruno y solo entonces responde `ack`.",
+      "callout": {
+        "type": "insight",
+        "text": "El ✓ no significa «enviado»: significa «guardado». A partir de ahí no se puede perder."
+      },
+      "changes": [
+        "+ seq 1081 en la conversación",
+        "+ Referencia en el inbox de Bruno"
+      ],
+      "metrics": {
+        "tick": "✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 0
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox",
+          "mark": "good"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs/FCM",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola push",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "bruno → gw-17",
+          "state": "dim"
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "A Bruno",
+      "chapter": "solution",
+      "title": "El registro dice dónde está Bruno",
+      "body": "El servicio mira en el registro de sesiones: `bruno:móvil → gw-17`. Le pasa el mensaje a ese gateway, que lo empuja por el WebSocket de Bruno. Su móvil responde `delivered` y Ana ve ✓✓. Los gateways solo guardan conexiones; el servicio no guarda nada.",
+      "changes": [
+        "+ Consulta al registro",
+        "~ Ana ve ✓ → ✓✓"
+      ],
+      "metrics": {
+        "tick": "✓✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 0
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs/FCM",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola push",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "bruno → gw-17",
+          "mark": "good"
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-reg",
+          "from": "svc",
+          "to": "reg"
+        },
+        {
+          "id": "svc-gw17",
+          "from": "svc",
+          "to": "gw17"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-reg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-gw17",
+            "gw17-bruno"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "Ana manda otro mensaje en un túnel: se guarda, pero el `ack` no le llega y su móvil lo reenvía. ¿Qué ve Bruno?",
+        "options": [
+          "El mensaje dos veces, con dos seq seguidos",
+          "Una vez: el servicio reconoce el `clientMsgId` y devuelve el ack original",
+          "Nada hasta que Ana salga del túnel",
+          "Una vez, pero ahora con el seq 1082"
+        ],
+        "answer": 1,
+        "explain": "El reenvío lleva el mismo `clientMsgId`. El servicio recuerda los ya vistos y, ante uno repetido, devuelve el `ack` original sin guardar nada: Bruno lo recibe una vez, con su `seq` de siempre. Es at-least-once más un receptor idempotente."
+      }
+    },
+    {
+      "short": "Túnel",
+      "chapter": "case",
+      "title": "Ana reenvía desde un túnel",
+      "body": "El `ack` se pierde y el móvil de Ana reintenta con el mismo `clientMsgId`. El servicio lo reconoce: devuelve el `ack` original y no guarda nada. Bruno lo tiene una vez, en su sitio.",
+      "callout": {
+        "type": "tip",
+        "text": "At-least-once (reintentar) + idempotente (reconocer repetidos) se ve como «exactamente una vez»."
+      },
+      "changes": [
+        "~ Mismo clientMsgId, mismo ack",
+        "~ Duplicados: 0"
+      ],
+      "metrics": {
+        "tick": "✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 0
+      },
+      "panel": {
+        "title": "El reenvío",
+        "rows": [
+          {
+            "text": "1. send 7f3c… → guardado como seq 1082"
+          },
+          {
+            "text": "2. el ack se pierde en el túnel",
+            "tone": "bad"
+          },
+          {
+            "text": "3. send 7f3c… otra vez"
+          },
+          {
+            "text": "4. ya visto: ack 1082, sin guardar nada",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs/FCM",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola push",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "bruno → gw-17"
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db",
+          "state": "dim",
+          "dashed": true
+        },
+        {
+          "id": "svc-reg",
+          "from": "svc",
+          "to": "reg"
+        },
+        {
+          "id": "svc-gw17",
+          "from": "svc",
+          "to": "gw17"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 1.6
+        }
+      ],
+      "predict": {
+        "q": "Bruno tiene la app cerrada y no hay ningún WebSocket suyo. ¿Qué pasa con el siguiente mensaje de Ana?",
+        "options": [
+          "El servicio lo guarda en memoria y reintenta hasta que Bruno conecte",
+          "Va dentro de la push; si la push se pierde, se pierde el mensaje",
+          "Ya está en su inbox: una push le avisa y, al abrir, lo pide desde su cursor",
+          "Ana no recibe el ✓ hasta que Bruno conecte"
+        ],
+        "answer": 2,
+        "explain": "El mensaje se guardó antes del ✓ y su referencia está en el inbox de Bruno. La push solo lo despierta: al abrir la app, el móvil pide todo lo que hay desde su cursor. Si la push se pierde, el mensaje sigue esperando. Y el ✓ de Ana no depende de Bruno: es «guardado»."
+      }
+    },
+    {
+      "short": "Sin conexión",
+      "chapter": "case",
+      "title": "Bruno tiene la app cerrada",
+      "body": "El registro no tiene ninguna conexión de Bruno, y el mensaje ya espera en su inbox. El servicio deja «avisar a Bruno» en la cola de push y sigue; un worker llama a APNs o FCM. Al abrir la app, el móvil pide `GET /sync?cursor=…` y recibe todo lo que le falta.",
+      "callout": {
+        "type": "tip",
+        "text": "La push es el despertador, no el cartero: si se pierde, el mensaje sigue en el inbox."
+      },
+      "changes": [
+        "+ Aviso por la cola de push",
+        "~ Bruno se pone al día con su cursor"
+      ],
+      "metrics": {
+        "tick": "✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 0
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox",
+          "mark": "good"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs/FCM",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola push",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "sin Bruno"
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-reg",
+          "from": "svc",
+          "to": "reg"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q"
+        },
+        {
+          "id": "q-apns",
+          "from": "q",
+          "to": "apns"
+        },
+        {
+          "id": "apns-bruno",
+          "from": "apns",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-reg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-q",
+            "q-apns",
+            "apns-bruno"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Cae gw-17",
+      "chapter": "case",
+      "title": "Se cae el gateway 17",
+      "body": "Sus 50.000 conexiones se cortan, pero no se pierde nada: los mensajes están guardados y sus entradas del registro caducan solas. Cada móvil reconecta a otro gateway tras una espera aleatoria (jitter) y sincroniza desde su cursor.",
+      "callout": {
+        "type": "warn",
+        "text": "Si los 50.000 reconectaran en el mismo segundo, tumbarían al siguiente gateway: thundering herd."
+      },
+      "changes": [
+        "− Gateway 17 (caído)",
+        "+ Reconexión con jitter a otro gateway",
+        "~ Registro: sus entradas caducan"
+      ],
+      "metrics": {
+        "tick": "✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 1700
+      },
+      "panel": {
+        "title": "50.000 móviles reconectan",
+        "rows": [
+          {
+            "text": "Todos a la vez: 50.000 en un segundo",
+            "tone": "bad"
+          },
+          {
+            "text": "Con jitter en ~30 s: ~1.700 por segundo",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox"
+        },
+        {
+          "id": "gw9",
+          "kind": "service",
+          "label": "Gateway 9",
+          "at": [
+            1,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "caduca (TTL)"
+        },
+        {
+          "id": "herd",
+          "kind": "users",
+          "label": "Sus móviles",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "down"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-gw17",
+          "from": "svc",
+          "to": "gw17",
+          "state": "down"
+        },
+        {
+          "id": "gw17-herd",
+          "from": "gw17",
+          "to": "herd",
+          "state": "down"
+        },
+        {
+          "id": "herd-gw9",
+          "from": "herd",
+          "to": "gw9"
+        },
+        {
+          "id": "gw9-svc",
+          "from": "gw9",
+          "to": "svc"
+        },
+        {
+          "id": "svc-reg",
+          "from": "svc",
+          "to": "reg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "herd-gw9",
+            "gw9-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "svc-reg"
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- ✓ es «guardado»: el mensaje nunca depende de que Bruno esté.\n- El registro dice en qué gateway está cada dispositivo.\n- Un reenvío con el mismo `clientMsgId` no duplica.\n- Sin conexión, el inbox espera y la push despierta.\n- Si cae un gateway, se reconecta con jitter y se sincroniza.",
+      "callout": {
+        "type": "insight",
+        "text": "Lo difícil no son los datos sino las conexiones: el único estado de un gateway es la conexión."
+      },
+      "metrics": {
+        "tick": "✓✓",
+        "dup": 0,
+        "lost": 0,
+        "reconn": 0
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Mensajes",
+          "at": [
+            3,
+            0.4
+          ],
+          "note": "+ inbox"
+        },
+        {
+          "id": "apns",
+          "kind": "external",
+          "label": "APNs/FCM",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola push",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Chat",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "reg",
+          "kind": "cache",
+          "label": "Registro",
+          "at": [
+            3,
+            2.1
+          ],
+          "note": "bruno → gw-17"
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            1,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-svc",
+          "from": "gw3",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-reg",
+          "from": "svc",
+          "to": "reg"
+        },
+        {
+          "id": "svc-gw17",
+          "from": "svc",
+          "to": "gw17"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q"
+        },
+        {
+          "id": "q-apns",
+          "from": "q",
+          "to": "apns"
+        },
+        {
+          "id": "apns-bruno",
+          "from": "apns",
+          "to": "bruno"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3",
+            "gw3-svc"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-reg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-gw17",
+            "gw17-bruno"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    }
+  ]
+}

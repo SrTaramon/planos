@@ -1,0 +1,1305 @@
+{
+  "id": "P13",
+  "title": "Los comentarios en directo, en acción",
+  "metrics": [
+    {
+      "id": "comments",
+      "label": "Comentarios/s"
+    },
+    {
+      "id": "copies",
+      "label": "Copias por comentario"
+    },
+    {
+      "id": "screens",
+      "label": "A pantallas",
+      "unit": "M/s",
+      "better": "low"
+    },
+    {
+      "id": "dbreads",
+      "label": "Lecturas a la BD/s",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "comentario",
+    "resp": "lote por SSE",
+    "fail": "borrado (delete)"
+  },
+  "goals": [
+    {
+      "text": "Qué hace el servicio con un comentario nuevo",
+      "step": 1
+    },
+    {
+      "text": "Cómo llega a 2 millones de pantallas en dos niveles",
+      "step": 2
+    },
+    {
+      "text": "Por qué cada pantalla ve como mucho 5 por segundo",
+      "step": 3
+    },
+    {
+      "text": "De dónde salen los recientes cuando entran todos a la vez",
+      "step": 4
+    },
+    {
+      "text": "Cómo se quita un comentario ya publicado",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Comentar",
+      "chapter": "solution",
+      "title": "Escribes «¡Golazo!» en la final",
+      "body": "Tu comentario es un `POST` normal. El servicio pasa la moderación rápida, lo guarda en la BD (partición `video_id`, ordenado por un Snowflake ID), lo añade a la cache de recientes y lo publica en el canal del vídeo, `video:v123`.",
+      "callout": {
+        "type": "insight",
+        "text": "Escribir es fácil: 2.000 por segundo los aguanta una BD repartida. Lo difícil es repartir."
+      },
+      "changes": [
+        "+ POST /videos/v123/comments",
+        "+ Publicado en video:v123"
+      ],
+      "metrics": {
+        "comments": 2000,
+        "copies": "—",
+        "screens": "—",
+        "dbreads": "—"
+      },
+      "nodes": [
+        {
+          "id": "me",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD",
+          "at": [
+            2,
+            0
+          ],
+          "note": "por video_id"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Recientes",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "50 últimos"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ]
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "me-svc",
+          "from": "me",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-cache",
+          "from": "svc",
+          "to": "cache"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "me-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-cache"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Repartir",
+      "chapter": "solution",
+      "title": "Una copia por gateway, no por espectador",
+      "body": "Los gateways con espectadores de v123 están suscritos a su canal. El comentario viaja una vez a cada uno, 40 en total, y cada gateway hace el último reparto en memoria: lo empuja por SSE a sus ~50.000 conexiones de ese vídeo.",
+      "callout": {
+        "type": "warn",
+        "text": "Con 2.000 comentarios por segundo, mandarlos todos a todos son 4.000 millones de envíos por segundo. Nadie lee tanto."
+      },
+      "changes": [
+        "+ Gateways suscritos a video:v123",
+        "~ 40 copias por comentario"
+      ],
+      "metrics": {
+        "comments": 2000,
+        "copies": 40,
+        "screens": 4000,
+        "dbreads": "—"
+      },
+      "nodes": [
+        {
+          "id": "me",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD",
+          "at": [
+            2,
+            0
+          ],
+          "note": "por video_id"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Recientes",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "50 últimos"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "me-svc",
+          "from": "me",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-cache",
+          "from": "svc",
+          "to": "cache"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw1",
+          "from": "ps",
+          "to": "gw1"
+        },
+        {
+          "id": "ps-gw2",
+          "from": "ps",
+          "to": "gw2"
+        },
+        {
+          "id": "gw1-v1",
+          "from": "gw1",
+          "to": "v1"
+        },
+        {
+          "id": "gw2-v2",
+          "from": "gw2",
+          "to": "v2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "me-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-cache"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "ps-gw1"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "ps-gw2"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "gw1-v1"
+          ],
+          "kind": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "gw2-v2"
+          ],
+          "kind": "resp",
+          "rate": 2
+        }
+      ],
+      "predict": {
+        "q": "Cada gateway pasa a mandar a cada espectador como mucho 5 comentarios por segundo. Con 2 millones de espectadores, ¿cuántos envíos por segundo salen hacia las pantallas?",
+        "options": [
+          "4.000 millones: cada comentario a cada espectador",
+          "10 millones: 5 por espectador",
+          "80.000: una copia por gateway",
+          "200: 5 por gateway"
+        ],
+        "answer": 1,
+        "explain": "El tope es por espectador: 5 × 2 M = 10 millones por segundo, 400 veces menos. Las 80.000 copias por segundo son lo que mueve el pub/sub (2.000 × 40 gateways), no lo que llega a las pantallas."
+      }
+    },
+    {
+      "short": "Tope",
+      "chapter": "case",
+      "title": "Más comentarios de los que nadie puede leer",
+      "body": "Cada gateway manda a cada espectador como mucho 5 comentarios por segundo, en lotes cada 500 ms, y descarta el resto del directo: siguen guardados y salen al hacer scroll. Puede priorizar los de tus amigos o los del que emite.",
+      "callout": {
+        "type": "tip",
+        "text": "Dos espectadores pueden ver selecciones distintas. Aquí es aceptable: la consistencia es relajada."
+      },
+      "changes": [
+        "+ Tope de 5 por segundo y espectador",
+        "+ Lotes cada 500 ms",
+        "~ A pantallas: 4.000 M/s → 10 M/s"
+      ],
+      "metrics": {
+        "comments": 2000,
+        "copies": 40,
+        "screens": 10,
+        "dbreads": "—"
+      },
+      "panel": {
+        "title": "Hacia las pantallas, por segundo",
+        "rows": [
+          {
+            "text": "Sin tope: 2.000 × 2 M = 4.000 millones",
+            "tone": "bad"
+          },
+          {
+            "text": "Con tope: 5 × 2 M = 10 millones",
+            "tone": "good"
+          },
+          {
+            "text": "En lotes: 2 envíos por espectador"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "me",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD",
+          "at": [
+            2,
+            0
+          ],
+          "note": "por video_id"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Recientes",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "50 últimos"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ]
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "me-svc",
+          "from": "me",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-cache",
+          "from": "svc",
+          "to": "cache"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw1",
+          "from": "ps",
+          "to": "gw1"
+        },
+        {
+          "id": "ps-gw2",
+          "from": "ps",
+          "to": "gw2"
+        },
+        {
+          "id": "gw1-v1",
+          "from": "gw1",
+          "to": "v1"
+        },
+        {
+          "id": "gw2-v2",
+          "from": "gw2",
+          "to": "v2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "me-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-cache"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "ps-gw1"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ps-gw2"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "gw1-v1"
+          ],
+          "kind": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "gw2-v2"
+          ],
+          "kind": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Entran",
+      "chapter": "case",
+      "title": "Un millón entra en un minuto",
+      "body": "Empieza la final: ~16.700 entradas por segundo, y cada una pide los comentarios recientes. Salen de la cache de los 50 últimos, nunca de la BD. Después cada uno abre su SSE con un gateway, y si un gateway cae, sus clientes reconectan con jitter.",
+      "changes": [
+        "+ GET recientes desde la cache",
+        "~ Lecturas a la BD: 0"
+      ],
+      "metrics": {
+        "comments": 2000,
+        "copies": 40,
+        "screens": 10,
+        "dbreads": 0
+      },
+      "nodes": [
+        {
+          "id": "me",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD",
+          "at": [
+            2,
+            0
+          ],
+          "note": "por video_id"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Recientes",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "50 últimos",
+          "mark": "good"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ]
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "Entrando",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "me-svc",
+          "from": "me",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-cache",
+          "from": "svc",
+          "to": "cache"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw1",
+          "from": "ps",
+          "to": "gw1"
+        },
+        {
+          "id": "ps-gw2",
+          "from": "ps",
+          "to": "gw2"
+        },
+        {
+          "id": "gw1-v1",
+          "from": "gw1",
+          "to": "v1"
+        },
+        {
+          "id": "gw2-v2",
+          "from": "gw2",
+          "to": "v2"
+        },
+        {
+          "id": "v1-cache",
+          "from": "v1",
+          "to": "cache"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "me-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-cache"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "ps-gw1"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "ps-gw2"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "gw2-v2"
+          ],
+          "kind": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "v1-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        }
+      ],
+      "predict": {
+        "q": "Una estafa pasa el filtro rápido (no está en la lista de palabras) y se publica. ¿Qué ven los espectadores?",
+        "options": [
+          "Nada: no se publica hasta que el clasificador lo apruebe",
+          "La ven unos segundos y desaparece cuando llega su `delete` por el mismo canal",
+          "La ven para siempre: lo que se ha publicado no se puede quitar",
+          "Solo la ven los espectadores de su mismo gateway"
+        ],
+        "answer": 1,
+        "explain": "La moderación lenta va después, por una cola: un worker la pasa por el clasificador y, si no pasa, la marca oculta y publica un `delete` con su id en `video:v123`. Llega a todos los gateways como cualquier comentario. Retener todos hasta aprobarlos lo evitaría, a costa de latencia para todos."
+      }
+    },
+    {
+      "short": "Moderar",
+      "chapter": "case",
+      "title": "Una estafa delante de 2 millones",
+      "body": "Se publica y, a la vez, entra en la cola de moderación. Un worker la pasa por el clasificador, la marca oculta y publica un `delete` con su id por el mismo canal. Los gateways lo reparten como un comentario más y las pantallas la quitan.",
+      "callout": {
+        "type": "warn",
+        "text": "Puede verse unos segundos. En los directos de más riesgo, o con cuentas nuevas, se retiene antes de publicar."
+      },
+      "changes": [
+        "+ Cola de moderación",
+        "+ Evento delete por video:v123"
+      ],
+      "metrics": {
+        "comments": 2000,
+        "copies": 40,
+        "screens": 10,
+        "dbreads": 0
+      },
+      "nodes": [
+        {
+          "id": "troll",
+          "kind": "client",
+          "label": "Estafador",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "modq",
+          "kind": "queue",
+          "label": "Cola mod.",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ]
+        },
+        {
+          "id": "mw",
+          "kind": "worker",
+          "label": "Moderación",
+          "at": [
+            3,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "troll-svc",
+          "from": "troll",
+          "to": "svc"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        },
+        {
+          "id": "svc-modq",
+          "from": "svc",
+          "to": "modq"
+        },
+        {
+          "id": "modq-mw",
+          "from": "modq",
+          "to": "mw"
+        },
+        {
+          "id": "mw-ps",
+          "from": "mw",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw1",
+          "from": "ps",
+          "to": "gw1"
+        },
+        {
+          "id": "ps-gw2",
+          "from": "ps",
+          "to": "gw2"
+        },
+        {
+          "id": "gw1-v1",
+          "from": "gw1",
+          "to": "v1"
+        },
+        {
+          "id": "gw2-v2",
+          "from": "gw2",
+          "to": "v2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "troll-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "svc-modq",
+            "modq-mw"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "mw-ps",
+            "ps-gw1",
+            "gw1-v1"
+          ],
+          "kind": "fail",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "mw-ps",
+            "ps-gw2",
+            "gw2-v2"
+          ],
+          "kind": "fail",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "ps-gw1"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "ps-gw2"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "gw1-v1"
+          ],
+          "kind": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "gw2-v2"
+          ],
+          "kind": "resp",
+          "rate": 2
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Escribir es un POST; leer, un SSE abierto.\n- Un canal por vídeo: una copia por gateway, y cada gateway reparte.\n- Como mucho 5 por segundo y espectador, en lotes.\n- Los que entran leen los recientes de la cache.\n- La moderación lenta va después y borra por el mismo canal.",
+      "callout": {
+        "type": "insight",
+        "text": "Perder o desordenar algún comentario se acepta, y eso permite un pub/sub en memoria sin garantías."
+      },
+      "metrics": {
+        "comments": 2000,
+        "copies": 40,
+        "screens": 10,
+        "dbreads": 0
+      },
+      "nodes": [
+        {
+          "id": "me",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Comentarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD",
+          "at": [
+            2,
+            0
+          ],
+          "note": "por video_id"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Recientes",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "50 últimos"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            1.25
+          ]
+        },
+        {
+          "id": "v1",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "gw1",
+          "kind": "service",
+          "label": "Gateway 1",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw2",
+          "kind": "service",
+          "label": "Gateway 2",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "v2",
+          "kind": "users",
+          "label": "1 M miran",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "me-svc",
+          "from": "me",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "svc-cache",
+          "from": "svc",
+          "to": "cache"
+        },
+        {
+          "id": "svc-ps",
+          "from": "svc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gw1",
+          "from": "ps",
+          "to": "gw1"
+        },
+        {
+          "id": "ps-gw2",
+          "from": "ps",
+          "to": "gw2"
+        },
+        {
+          "id": "gw1-v1",
+          "from": "gw1",
+          "to": "v1"
+        },
+        {
+          "id": "gw2-v2",
+          "from": "gw2",
+          "to": "v2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "me-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-cache"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-ps"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "ps-gw1"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "ps-gw2"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "gw1-v1"
+          ],
+          "kind": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "gw2-v2"
+          ],
+          "kind": "resp",
+          "rate": 1
+        }
+      ]
+    }
+  ]
+}

@@ -202,12 +202,13 @@
   function linkSvg(l, g) {
     const st = ['ok', 'hot', 'down', 'dim'].includes(l.state) ? l.state : 'ok';
     const d = g.C ? `M${fx(g.P0.x)},${fx(g.P0.y)} Q${fx(g.C.x)},${fx(g.C.y)} ${fx(g.P2.x)},${fx(g.P2.y)}` : `M${fx(g.P0.x)},${fx(g.P0.y)} L${fx(g.P2.x)},${fx(g.P2.y)}`;
-    let out = `<path class="sc-link s-${st}${l.dashed ? ' dashed' : ''}" d="${d}"${l.arrow ? ' marker-end="url(#sc-arrow)"' : ''}/>`;
-    if (l.label) {
-      const m = pointAt(g, 0.5);
-      out += pill(fx(m.x), fx(m.y), l.label, 'link-label', 11, true);
-    }
-    return out;
+    return `<path class="sc-link s-${st}${l.dashed ? ' dashed' : ''}" d="${d}"${l.arrow ? ' marker-end="url(#sc-arrow)"' : ''}/>`;
+  }
+  // La etiqueta va aparte, por encima de los paquetes, para que no la tapen al pasar.
+  function linkLabelSvg(l, g) {
+    if (!l.label) return '';
+    const m = pointAt(g, 0.5);
+    return pill(fx(m.x), fx(m.y), l.label, 'link-label', 11, true);
   }
 
   // El SVG de un paso. prev: el paso anterior (para animar lo que aparece).
@@ -236,12 +237,12 @@
       out += `<g class="ring"><circle class="track" cx="${fx(c.x)}" cy="${fx(c.y)}" r="${fx(r)}"/>${ticks}${st.ring.label ? pill(fx(c.x), fx(c.y - r), st.ring.label, 'link-label', 11, true) : ''}</g>`;
     }
     out += '</g><g class="links">';
-    for (const l of Object.values(links)) { const g = linkGeom(l, nodes); if (g) out += linkSvg(l, g); }
-    out += '</g><g class="packets"></g><g class="nodes">';
+    let labels = '';
+    for (const l of Object.values(links)) { const g = linkGeom(l, nodes); if (g) { out += linkSvg(l, g); labels += linkLabelSvg(l, g); } }
+    out += `</g><g class="packets">${opts.still ? staticPackets(scene, i) : ''}</g><g class="links link-labels">${labels}</g><g class="nodes">`;
     const order = Object.values(nodes).sort((a, b) => a.at[1] - b.at[1] || a.at[0] - b.at[0]);
     for (const n of order) out += nodeSvg(n, prev ? !prev[n.id] : false);
     out += '</g><g class="fx"></g>';
-    if (opts.still) out += staticPackets(scene, i);
     return out + '</svg>';
   }
 

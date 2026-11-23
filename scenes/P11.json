@@ -1,0 +1,1151 @@
+{
+  "id": "P11",
+  "title": "Las alertas de precio, en acción",
+  "metrics": [
+    {
+      "id": "reads",
+      "label": "Lecturas/s"
+    },
+    {
+      "id": "looked",
+      "label": "Alertas leídas",
+      "better": "low"
+    },
+    {
+      "id": "fake",
+      "label": "Avisos falsos",
+      "better": "low"
+    },
+    {
+      "id": "dup",
+      "label": "Avisos repetidos",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "cambio de precio o aviso"
+  },
+  "goals": [
+    {
+      "text": "Por qué cada regla se guarda como un umbral",
+      "step": 1
+    },
+    {
+      "text": "Cómo se leen los precios sin saturar la tienda",
+      "step": 2
+    },
+    {
+      "text": "Cómo un cambio encuentra solo sus alertas",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa cuando la tienda cambia su página",
+      "step": 4
+    },
+    {
+      "text": "Cómo se avisa una sola vez",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Crear",
+      "chapter": "solution",
+      "title": "Una regla se guarda como un umbral",
+      "body": "Pides «avísame si baja un 20 %» para una consola de 300 €. La API no guarda la frase: guarda un umbral, 240 €, junto a los de las demás alertas de ese producto. Así todo se reduce a comparar un precio con umbrales. Si ya estuviera por debajo, se dispararía al momento.",
+      "changes": [
+        "+ Alerta con umbral 240 €"
+      ],
+      "metrics": {
+        "reads": 1300,
+        "looked": "—",
+        "fake": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "user",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir",
+          "state": "dim"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "user-api",
+          "from": "user",
+          "to": "api"
+        },
+        {
+          "id": "api-bd",
+          "from": "api",
+          "to": "bd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "user-api",
+            "api-bd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Leer",
+      "chapter": "solution",
+      "title": "Leer los precios sin saturar la tienda",
+      "body": "El scheduler deja en la cola lo que toca leer: la consola, con 500.000 alertas, cada pocos minutos; un producto con una sola, una vez al día. Los scrapers respetan un límite por tienda. Solo si el precio ha cambiado (1 de cada 10 lecturas) sale un evento.",
+      "changes": [
+        "+ Lecturas con prioridad",
+        "+ Evento solo si el precio cambia"
+      ],
+      "metrics": {
+        "reads": 1300,
+        "looked": "—",
+        "fake": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "user",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ]
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir",
+          "state": "dim"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "user-api",
+          "from": "user",
+          "to": "api"
+        },
+        {
+          "id": "api-bd",
+          "from": "api",
+          "to": "bd"
+        },
+        {
+          "id": "sched-scr",
+          "from": "sched",
+          "to": "scr"
+        },
+        {
+          "id": "scr-shop",
+          "from": "scr",
+          "to": "shop"
+        },
+        {
+          "id": "scr-chg",
+          "from": "scr",
+          "to": "chg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sched-scr"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-shop"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-chg"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        }
+      ],
+      "predict": {
+        "q": "La consola tiene 500.000 alertas activas y su precio baja de 260 € a 245 €. ¿Cuántas alertas lee el matcher?",
+        "options": [
+          "Las 500.000, para comparar cada una con 245 €",
+          "Solo las que tienen el umbral entre 245 y 260 €",
+          "Todas las de umbral por debajo de 245 €",
+          "Ninguna hasta el siguiente barrido de 15 minutos"
+        ],
+        "answer": 1,
+        "explain": "Las de umbral por encima de 260 € ya se dispararon y no están activas; las de menos de 245 € aún no se cumplen. El índice `(producto, umbral)` salta directo al tramo que el precio acaba de cruzar. No hay barrido: el cambio dispara la búsqueda."
+      }
+    },
+    {
+      "short": "Emparejar",
+      "chapter": "solution",
+      "title": "Un cambio de precio encuentra solo sus alertas",
+      "body": "La consola pasa de 260 € a 245 €. El matcher pide las alertas activas de ese producto con umbral de 245 € o más. En la misma transacción las marca `triggered` y apunta sus avisos, que salen por email o push.",
+      "callout": {
+        "type": "insight",
+        "text": "El trabajo crece con los cambios de precio, no con el número de alertas."
+      },
+      "changes": [
+        "~ Lee 300 alertas, no 500.000",
+        "+ Alerta disparada y aviso, a la vez"
+      ],
+      "metrics": {
+        "reads": 1300,
+        "looked": 300,
+        "fake": 0,
+        "dup": 0
+      },
+      "panel": {
+        "title": "La consulta",
+        "rows": [
+          {
+            "text": "WHERE product_id = consola AND activa"
+          },
+          {
+            "text": "AND target_price >= 245"
+          },
+          {
+            "text": "Lee 300 de 500.000",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ]
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "mail",
+          "kind": "client",
+          "label": "Tu email",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "sched-scr",
+          "from": "sched",
+          "to": "scr"
+        },
+        {
+          "id": "scr-shop",
+          "from": "scr",
+          "to": "shop"
+        },
+        {
+          "id": "scr-chg",
+          "from": "scr",
+          "to": "chg"
+        },
+        {
+          "id": "chg-match",
+          "from": "chg",
+          "to": "match"
+        },
+        {
+          "id": "match-bd",
+          "from": "match",
+          "to": "bd"
+        },
+        {
+          "id": "match-notif",
+          "from": "match",
+          "to": "notif"
+        },
+        {
+          "id": "notif-mail",
+          "from": "notif",
+          "to": "mail"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sched-scr"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-shop"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-chg"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "chg-match"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "match-bd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "match-notif",
+            "notif-mail"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "HTML nuevo",
+      "chapter": "case",
+      "title": "La tienda cambia su página",
+      "body": "El parser lee 29 € donde pone 299 €: un 90 % menos que ayer. Es antes un fallo de lectura que una ganga, así que se vuelve a leer con otro extractor (los datos estructurados primero) y no se publica nada hasta confirmarlo.",
+      "callout": {
+        "type": "warn",
+        "text": "Si de golpe fallan el 30 % de las lecturas de una tienda, ha cambiado su página: aviso al equipo."
+      },
+      "changes": [
+        "~ 29 € no pasa la validación",
+        "+ Segunda lectura antes de publicar"
+      ],
+      "metrics": {
+        "reads": 1300,
+        "looked": 0,
+        "fake": 0,
+        "dup": 0
+      },
+      "panel": {
+        "title": "Un precio raro",
+        "rows": [
+          {
+            "text": "Sin validar: 29 € dispara miles de alertas",
+            "tone": "bad"
+          },
+          {
+            "text": "Con validación: se relee, 299 €, nada que avisar",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir",
+          "state": "dim"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "mail",
+          "kind": "client",
+          "label": "Tu email",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "sched-scr",
+          "from": "sched",
+          "to": "scr"
+        },
+        {
+          "id": "scr-shop",
+          "from": "scr",
+          "to": "shop",
+          "state": "hot",
+          "label": "29 €?"
+        },
+        {
+          "id": "scr-chg",
+          "from": "scr",
+          "to": "chg",
+          "dashed": true
+        },
+        {
+          "id": "chg-match",
+          "from": "chg",
+          "to": "match"
+        },
+        {
+          "id": "match-bd",
+          "from": "match",
+          "to": "bd"
+        },
+        {
+          "id": "match-notif",
+          "from": "match",
+          "to": "notif"
+        },
+        {
+          "id": "notif-mail",
+          "from": "notif",
+          "to": "mail"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sched-scr"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-shop"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        }
+      ],
+      "predict": {
+        "q": "El servicio de avisos envía el email de la alerta `al_51`, se cae antes de apuntarlo y, al reiniciar, lo reintenta. ¿Cuántos emails recibe la persona?",
+        "options": [
+          "Dos: el reintento lo vuelve a enviar",
+          "Uno: la clave `al_51-1` dice que ese ya salió",
+          "Ninguno: el aviso se perdió en la caída",
+          "Uno por cada matcher que vio el cambio de precio"
+        ],
+        "answer": 1,
+        "explain": "El aviso lleva una clave de idempotencia, `al_51-1` (la alerta y su número de disparo): el reintento la repite y el servicio ve que ya salió. No se pierde porque se apuntó en la misma transacción que la alerta. Y solo un matcher pudo reclamarla: el `UPDATE … WHERE status = 'active'` cambia la fila una sola vez."
+      }
+    },
+    {
+      "short": "Reintento",
+      "chapter": "case",
+      "title": "Se cae justo después de enviar",
+      "body": "El servicio de avisos manda el email y se cae antes de apuntarlo. Al reiniciar, el aviso sigue pendiente y lo reintenta, con la misma clave `al_51-1`: ve que ese ya salió y no lo repite. Llega un email, no dos.",
+      "changes": [
+        "~ Reintento con la misma clave",
+        "~ Avisos repetidos: 0"
+      ],
+      "metrics": {
+        "reads": 1300,
+        "looked": 300,
+        "fake": 0,
+        "dup": 0
+      },
+      "panel": {
+        "title": "Un aviso, una vez",
+        "rows": [
+          {
+            "text": "1. Envía el email de al_51-1"
+          },
+          {
+            "text": "2. Se cae antes de apuntarlo",
+            "tone": "bad"
+          },
+          {
+            "text": "3. Reinicia y reintenta al_51-1"
+          },
+          {
+            "text": "4. Ya salió: no se repite",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ]
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ]
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir",
+          "mark": "good"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "mail",
+          "kind": "client",
+          "label": "Tu email",
+          "at": [
+            2,
+            2.5
+          ],
+          "items": [
+            "1 email"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "sched-scr",
+          "from": "sched",
+          "to": "scr"
+        },
+        {
+          "id": "scr-shop",
+          "from": "scr",
+          "to": "shop"
+        },
+        {
+          "id": "scr-chg",
+          "from": "scr",
+          "to": "chg"
+        },
+        {
+          "id": "chg-match",
+          "from": "chg",
+          "to": "match"
+        },
+        {
+          "id": "match-bd",
+          "from": "match",
+          "to": "bd"
+        },
+        {
+          "id": "match-notif",
+          "from": "match",
+          "to": "notif"
+        },
+        {
+          "id": "notif-mail",
+          "from": "notif",
+          "to": "mail"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sched-scr"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-shop"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-chg"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "chg-match"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "match-bd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "match-notif"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "notif-mail"
+          ],
+          "kind": "event",
+          "rate": 0.4,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Cada regla se guarda como un umbral.\n- Se lee más a menudo lo que tiene más alertas, con un límite por tienda.\n- Un cambio de precio solo lee las alertas que acaba de cruzar.\n- Un precio raro se vuelve a leer antes de avisar a nadie.\n- Alerta y aviso en la misma transacción, y una clave por aviso.",
+      "callout": {
+        "type": "insight",
+        "text": "En bolsa es lo mismo con listas ordenadas en memoria: el tramo entre el precio anterior y el nuevo."
+      },
+      "metrics": {
+        "reads": 1300,
+        "looked": 300,
+        "fake": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "user",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD alertas",
+          "at": [
+            2,
+            0
+          ],
+          "items": [
+            "240 €",
+            "250 €"
+          ]
+        },
+        {
+          "id": "match",
+          "kind": "worker",
+          "label": "Matcher",
+          "at": [
+            3,
+            0.62
+          ]
+        },
+        {
+          "id": "sched",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "scr",
+          "kind": "worker",
+          "label": "Scrapers",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "chg",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Avisos",
+          "at": [
+            3,
+            1.9
+          ],
+          "note": "sin repetir"
+        },
+        {
+          "id": "shop",
+          "kind": "external",
+          "label": "Tienda",
+          "at": [
+            0,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "user-api",
+          "from": "user",
+          "to": "api"
+        },
+        {
+          "id": "api-bd",
+          "from": "api",
+          "to": "bd"
+        },
+        {
+          "id": "sched-scr",
+          "from": "sched",
+          "to": "scr"
+        },
+        {
+          "id": "scr-shop",
+          "from": "scr",
+          "to": "shop"
+        },
+        {
+          "id": "scr-chg",
+          "from": "scr",
+          "to": "chg"
+        },
+        {
+          "id": "chg-match",
+          "from": "chg",
+          "to": "match"
+        },
+        {
+          "id": "match-bd",
+          "from": "match",
+          "to": "bd"
+        },
+        {
+          "id": "match-notif",
+          "from": "match",
+          "to": "notif"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sched-scr"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-shop"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "scr-chg"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "user-api",
+            "api-bd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "chg-match"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "match-bd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "match-notif"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}

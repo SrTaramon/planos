@@ -1,0 +1,897 @@
+{
+  "id": "L18",
+  "title": "Sincronizar, en acción",
+  "metrics": [
+    {
+      "id": "up",
+      "label": "Subes por cambio",
+      "unit": "MB",
+      "better": "low"
+    },
+    {
+      "id": "same",
+      "label": "Todos ven lo mismo"
+    }
+  ],
+  "legend": {
+    "heavy": "fichero entero (100 MB)",
+    "write": "bloque (4 MB)",
+    "event": "mensaje"
+  },
+  "goals": [
+    {
+      "text": "Por qué se parte el fichero en bloques con su hash",
+      "step": 2
+    },
+    {
+      "text": "Qué viaja cuando cambias una diapositiva",
+      "step": 3
+    },
+    {
+      "text": "Cómo se entera el móvil de que hay cambios",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa cuando dos ediciones chocan",
+      "step": 5
+    },
+    {
+      "text": "Cómo escriben dos personas a la vez sin romper el texto",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Todo entero",
+      "chapter": "problem",
+      "title": "Cambias una diapositiva y suben 100 MB",
+      "body": "Tienes sincronizada una presentación de 100 MB. Cambias una diapositiva, guardas y el portátil vuelve a subir el fichero **entero**. En el siguiente cambio, otra vez. Es lento y caro, y casi todo lo que viaja ya estaba en el servidor.",
+      "callout": {
+        "type": "insight",
+        "text": "Fíjate en lo que viaja: 100 MB por un cambio pequeño. Falta una forma de saber qué partes del fichero han cambiado."
+      },
+      "metrics": {
+        "up": 100,
+        "same": "sí"
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "presentación.pptx"
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "p-s",
+          "from": "portatil",
+          "to": "storage",
+          "bend": 0,
+          "label": "100 MB"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "p-s"
+          ],
+          "kind": "heavy",
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "Chunks",
+      "chapter": "technique",
+      "title": "Bloques de 4 MB con su hash como clave",
+      "body": "El cliente de sincronización parte el fichero en **chunks** de 4 MB: 25 bloques. Cada uno se identifica por el **hash** de su contenido (SHA-256) y se guarda en object storage con ese hash como clave. El fichero pasa a ser una lista de 25 hashes. La primera vez suben todos.",
+      "callout": {
+        "type": "insight",
+        "text": "Mismo contenido, misma clave: cada bloque se guarda una sola vez. Eso es la **deduplicación**."
+      },
+      "predict": {
+        "q": "Ahora cambias una sola diapositiva y vuelves a guardar. Con los bloques ya en el servidor, ¿cuánto tiene que subir el portátil?",
+        "options": [
+          "Los 100 MB: es un fichero nuevo",
+          "4 MB: solo el bloque que cambió",
+          "Nada: el servidor ya tiene el fichero",
+          "50 MB: los bloques desde la diapositiva hasta el final"
+        ],
+        "answer": 1,
+        "explain": "Los otros 24 bloques tienen el mismo hash, así que el servidor ya los tiene: solo falta el de la diapositiva. Que cambien todos los de detrás pasa si los cortes son de tamaño fijo y se desplazan; cortando según el contenido, no."
+      },
+      "changes": [
+        "+ 25 chunks de 4 MB",
+        "+ Clave de cada bloque = su hash",
+        "~ El fichero es una lista de hashes"
+      ],
+      "metrics": {
+        "up": 100,
+        "same": "sí"
+      },
+      "panel": {
+        "title": "Deduplicación",
+        "rows": [
+          {
+            "text": "Copias el fichero a otra carpeta: no sube nada",
+            "tone": "good"
+          },
+          {
+            "text": "1.000 personas guardan el mismo PDF de 50 MB"
+          },
+          {
+            "text": "El servidor guarda 50 MB, no 50 GB",
+            "tone": "good"
+          },
+          {
+            "text": "Vuelves a una versión vieja: sus bloques siguen ahí"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "25 bloques",
+          "items": [
+            "9f2c",
+            "41ab",
+            "7e03"
+          ]
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "clave = hash",
+          "items": [
+            "9f2c",
+            "41ab",
+            "7e03"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "p-s",
+          "from": "portatil",
+          "to": "storage",
+          "bend": 0,
+          "label": "25 × 4 MB"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "p-s"
+          ],
+          "kind": "write",
+          "rate": 2.5,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Delta sync",
+      "chapter": "solution",
+      "title": "Otra diapositiva: sube un solo bloque",
+      "body": "Cambias una diapositiva. El cliente vuelve a trocear y pregunta al **servicio de metadatos**: «de estos 25, ¿cuáles no tienes?». Solo falta `b5d1`. Lo sube (4 MB, no 100) y **después** registra la versión 8 con la lista nueva. Es la **delta sync**: viajan las diferencias.",
+      "callout": {
+        "type": "warn",
+        "text": "Primero los bloques, después la versión. Si la conexión se corta a medias quedan bloques sueltos, pero nunca una versión que apunte a bloques que no existen."
+      },
+      "changes": [
+        "+ Servicio de metadatos",
+        "~ Subes 4 MB, no 100: 25 veces menos",
+        "~ Versión 7 → 8",
+        "+ Móvil: su cursor sigue en 1.001"
+      ],
+      "metrics": {
+        "up": 4,
+        "same": "aún no"
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "25 bloques",
+          "items": [
+            "9f2c",
+            "b5d1",
+            "7e03"
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "service",
+          "label": "Metadatos",
+          "at": [
+            0,
+            1.75
+          ],
+          "note": "versiones",
+          "badge": "v8",
+          "mark": "good"
+        },
+        {
+          "id": "movil",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim",
+          "badge": "cursor 1.001"
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "clave = hash",
+          "items": [
+            "9f2c",
+            "41ab",
+            "b5d1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "p-m",
+          "from": "portatil",
+          "to": "meta",
+          "label": "¿qué falta?"
+        },
+        {
+          "id": "p-s",
+          "from": "portatil",
+          "to": "storage",
+          "bend": -0.22
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "p-m"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "p-s"
+          ],
+          "kind": "write",
+          "rate": 0.7,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Aviso",
+      "chapter": "solution",
+      "title": "El móvil se entera y baja lo que le falta",
+      "body": "El móvil tiene una conexión abierta con el **servicio de notificaciones** (long polling o WebSocket), que solo le dice «hay cambios». Pide a metadatos lo posterior a su **cursor** (1.001), ve la versión 8 y baja de object storage el único bloque que no tiene.",
+      "callout": {
+        "type": "tip",
+        "text": "Si el móvil pasa una semana apagado, no importa: al encenderse pide los cambios desde su cursor y se pone al día."
+      },
+      "changes": [
+        "+ Notificaciones",
+        "~ Cursor del móvil: 1.001 → 1.002",
+        "~ El móvil baja 1 bloque y pasa a la v8"
+      ],
+      "metrics": {
+        "up": 4,
+        "same": "sí"
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "25 bloques",
+          "items": [
+            "9f2c",
+            "b5d1",
+            "7e03"
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "service",
+          "label": "Metadatos",
+          "at": [
+            0,
+            1.75
+          ],
+          "note": "versiones",
+          "badge": "v8"
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Notificaciones",
+          "at": [
+            2,
+            1.75
+          ],
+          "note": "long polling o WS",
+          "mark": "good"
+        },
+        {
+          "id": "movil",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "cursor 1.002",
+          "mark": "good"
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "clave = hash",
+          "items": [
+            "9f2c",
+            "41ab",
+            "b5d1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "meta-notif",
+          "from": "meta",
+          "to": "notif",
+          "label": "hay cambios"
+        },
+        {
+          "id": "notif-m",
+          "from": "notif",
+          "to": "movil"
+        },
+        {
+          "id": "m-meta",
+          "from": "movil",
+          "to": "meta",
+          "label": "desde 1.001"
+        },
+        {
+          "id": "m-s",
+          "from": "movil",
+          "to": "storage",
+          "bend": 0.22
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "meta-notif",
+            "notif-m"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "m-meta"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "m-s"
+          ],
+          "kind": "req",
+          "back": "write",
+          "rate": 0.7,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Conflicto",
+      "chapter": "case",
+      "title": "Dos ediciones sobre la misma versión",
+      "body": "Editas `informe.docx` en el avión, sin red; tu compañera lo cambia en la oficina. Las dos ediciones dicen «esta es la 8, hecha sobre la 7», y el servidor solo acepta si la actual sigue siendo la 7. La oficina llega antes. La tuya **choca** y se guarda como **copia en conflicto**.",
+      "callout": {
+        "type": "insight",
+        "text": "Con un Word o una foto, el sistema no entiende el formato y no puede mezclar. Perder trabajo es lo peor que puede hacer, así que guarda las dos versiones."
+      },
+      "predict": {
+        "q": "Ahora es un editor como Google Docs. Luis tiene `El gato` y le llega la operación de Ana: «inserta \"s\" en la posición 4». Si la aplica tal cual, ¿qué ve?",
+        "options": [
+          "`El gatos`",
+          "`gatos`",
+          "`El gsato`",
+          "`El gato`, sin cambios"
+        ],
+        "answer": 2,
+        "explain": "En el texto de Luis, «El » ocupa las posiciones 0 a 2, así que la 4 cae entre la «g» y la «a». La posición se calculó sobre `gato`, no sobre su texto. Para llegar a `El gatos` hay que transformar la operación."
+      },
+      "changes": [
+        "+ Oficina: edita sobre la misma versión 7",
+        "~ Gana la 8 de la oficina: llegó antes",
+        "+ Tu edición, como copia en conflicto"
+      ],
+      "metrics": {
+        "up": 4,
+        "same": "sí"
+      },
+      "panel": {
+        "title": "Qué hacer con el choque",
+        "rows": [
+          {
+            "text": "Last-write-wins: la otra edición se pierde sin avisar",
+            "tone": "bad"
+          },
+          {
+            "text": "Copia en conflicto: se guardan las dos",
+            "tone": "good"
+          },
+          {
+            "text": "Fusión automática: solo si entiende el contenido"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "en el avión"
+        },
+        {
+          "id": "oficina",
+          "kind": "client",
+          "label": "Oficina",
+          "at": [
+            1,
+            0
+          ],
+          "note": "tu compañera"
+        },
+        {
+          "id": "meta",
+          "kind": "service",
+          "label": "Metadatos",
+          "at": [
+            0,
+            1.75
+          ],
+          "note": "informe.docx",
+          "items": [
+            "v8",
+            "copia"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "movil",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Notificaciones",
+          "at": [
+            2,
+            1.75
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "p-m",
+          "from": "portatil",
+          "to": "meta"
+        },
+        {
+          "id": "o-m",
+          "from": "oficina",
+          "to": "meta"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "o-m"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "p-m"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "A la vez",
+      "chapter": "case",
+      "title": "Dos personas escriben a la vez en `gato`",
+      "body": "En un editor como Google Docs no viajan ficheros sino **operaciones**. Ana y Luis ven `gato`. Ana escribe una «s» en la posición 4; a la vez, Luis escribe «El » en la 0. Ana aplica la de Luis y ve `El gatos`. Pero Luis aplica la de Ana tal cual y la «s» cae en la 4 de su texto: `El gsato`.",
+      "callout": {
+        "type": "warn",
+        "text": "Una copia en conflicto cada pocos segundos sería inservible. Y aplicar tal cual una operación ajena estropea el texto si alguien ha escrito delante."
+      },
+      "changes": [
+        "+ Ana y Luis, editando el mismo texto",
+        "~ Viajan operaciones, no ficheros",
+        "~ Luis acaba con «El gsato»"
+      ],
+      "metrics": {
+        "up": "unos bytes",
+        "same": "no"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "El gatos"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "El gsato",
+          "mark": "bad"
+        },
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "reenvía tal cual"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-s",
+          "from": "ana",
+          "to": "srv",
+          "label": "«s» en 4"
+        },
+        {
+          "id": "l-s",
+          "from": "luis",
+          "to": "srv",
+          "label": "llega «s» en 4"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "a-s",
+            "l-s"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "l-s",
+            "a-s"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        }
+      ]
+    },
+    {
+      "short": "OT y CRDT",
+      "chapter": "technique",
+      "title": "Transformar la operación antes de aplicarla",
+      "body": "Con **OT** (*operational transformation*), un servidor central decide el orden y **transforma** cada operación según las que se cruzaron con ella. Luis metió 3 caracteres delante, así que la «s» de la posición 4 pasa a la 7: `El gatos`. Los dos acaban con el mismo texto.",
+      "callout": {
+        "type": "tip",
+        "text": "Un **CRDT** lo resuelve de otra forma: cada carácter lleva un ID y se coloca respecto a sus vecinos, no por posición. Vale en cualquier orden, incluso sin servidor (Yjs, Automerge)."
+      },
+      "changes": [
+        "~ El servidor transforma, no solo reenvía",
+        "~ La «s»: de la posición 4 a la 7",
+        "~ Luis: El gsato → El gatos"
+      ],
+      "metrics": {
+        "up": "unos bytes",
+        "same": "sí"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "El gatos"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "El gatos",
+          "mark": "good"
+        },
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "transforma: 4 → 7",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-s",
+          "from": "ana",
+          "to": "srv",
+          "label": "«s» en 4"
+        },
+        {
+          "id": "l-s",
+          "from": "luis",
+          "to": "srv",
+          "label": "llega «s» en 7"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "a-s",
+            "l-s"
+          ],
+          "kind": "event",
+          "rate": 0.7,
+          "pop": true
+        },
+        {
+          "via": [
+            "l-s",
+            "a-s"
+          ],
+          "kind": "event",
+          "rate": 0.7,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Bloques con su hash como clave: el mismo contenido se guarda una vez.\n- Delta sync: solo suben los bloques que faltan, y antes que la versión.\n- Cada dispositivo se pone al día desde su cursor, avisado por notificaciones.\n- Un choque entre ficheros, mejor como copia en conflicto.\n- Para editar a la vez, operaciones con OT o CRDT.",
+      "callout": {
+        "type": "insight",
+        "text": "Si te preguntan por Dropbox o Drive: last-write-wins pierde datos sin avisar; propón versiones con copia en conflicto."
+      },
+      "metrics": {
+        "up": 4,
+        "same": "sí"
+      },
+      "nodes": [
+        {
+          "id": "portatil",
+          "kind": "client",
+          "label": "Portátil",
+          "at": [
+            0,
+            0
+          ],
+          "note": "25 bloques",
+          "items": [
+            "9f2c",
+            "b5d1",
+            "7e03"
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "service",
+          "label": "Metadatos",
+          "at": [
+            0,
+            1.75
+          ],
+          "note": "versiones",
+          "badge": "v8"
+        },
+        {
+          "id": "notif",
+          "kind": "service",
+          "label": "Notificaciones",
+          "at": [
+            2,
+            1.75
+          ],
+          "note": "long polling o WS"
+        },
+        {
+          "id": "movil",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "cursor 1.002"
+        },
+        {
+          "id": "storage",
+          "kind": "storage",
+          "label": "Object storage",
+          "at": [
+            1,
+            3.1
+          ],
+          "note": "clave = hash",
+          "items": [
+            "9f2c",
+            "41ab",
+            "b5d1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "p-m",
+          "from": "portatil",
+          "to": "meta"
+        },
+        {
+          "id": "p-s",
+          "from": "portatil",
+          "to": "storage",
+          "bend": -0.22
+        },
+        {
+          "id": "meta-notif",
+          "from": "meta",
+          "to": "notif",
+          "label": "hay cambios"
+        },
+        {
+          "id": "notif-m",
+          "from": "notif",
+          "to": "movil"
+        },
+        {
+          "id": "m-s",
+          "from": "movil",
+          "to": "storage",
+          "bend": 0.22
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "p-m"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "p-s"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "meta-notif",
+            "notif-m"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "m-s"
+          ],
+          "kind": "req",
+          "back": "write",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

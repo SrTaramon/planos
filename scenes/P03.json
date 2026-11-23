@@ -1,0 +1,964 @@
+{
+  "id": "P03",
+  "title": "La app del tiempo, en acción",
+  "metrics": [
+    {
+      "id": "prov",
+      "label": "Llamadas al proveedor",
+      "unit": "/min",
+      "better": "low"
+    },
+    {
+      "id": "rps",
+      "label": "Peticiones a tu API",
+      "unit": "/s"
+    },
+    {
+      "id": "err",
+      "label": "Errores en la app",
+      "unit": "%",
+      "better": "low"
+    },
+    {
+      "id": "age",
+      "label": "Antigüedad del dato"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué no se llama al proveedor en cada apertura",
+      "step": 1
+    },
+    {
+      "text": "Cómo una cache por zona baja las llamadas 26 veces",
+      "step": 2
+    },
+    {
+      "text": "Qué ve el usuario si el proveedor cae",
+      "step": 4
+    },
+    {
+      "text": "Cómo se evita una estampida en una zona nueva",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Ingenuo",
+      "chapter": "problem",
+      "title": "Si cada apertura llama al proveedor",
+      "body": "580 peticiones por segundo, cada una con su llamada al proveedor: **~34.700 por minuto**, 17 veces el límite de 2.000. El proveedor responde 429 a casi todo, cobras por cada usuario nuevo y, si él va lento, tu app también.",
+      "metrics": {
+        "prov": 34700,
+        "rps": 580,
+        "err": 94,
+        "age": "—"
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "50 M peticiones/día / 1.440 min ≈ 34.700/min"
+          },
+          {
+            "text": "Límite del plan: 2.000/min",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min",
+          "state": "hot",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-api",
+          "from": "app",
+          "to": "api"
+        },
+        {
+          "id": "api-prv",
+          "from": "api",
+          "to": "prv",
+          "bend": -1,
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-api",
+            "api-prv"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 4
+        }
+      ]
+    },
+    {
+      "short": "Ingesta",
+      "chapter": "solution",
+      "title": "La ingesta: cada zona, cada 15 minutos",
+      "body": "El scheduler reparte las zonas activas a lo largo de 15 minutos y los workers llaman al proveedor, traducen la respuesta a tu formato y la escriben en Redis (el último dato) y en la BD (el histórico). Nadie espera al proveedor.",
+      "changes": [
+        "+ Scheduler y workers de ingesta",
+        "+ Redis: el último dato de cada zona",
+        "~ Llamadas: 34.700 → ~1.330 por minuto"
+      ],
+      "metrics": {
+        "prov": 1330,
+        "rps": 580,
+        "err": 0,
+        "age": "≤ 15 min"
+      },
+      "panel": {
+        "title": "¿Cada cuánto?",
+        "rows": [
+          {
+            "text": "Cada 5 min: 4.000/min, el doble del límite",
+            "tone": "bad"
+          },
+          {
+            "text": "Cada 15 min: ~1.330/min, un tercio de margen",
+            "tone": "good"
+          },
+          {
+            "text": "Repartidas: ~22 llamadas por segundo"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD histórico",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            2.4,
+            0
+          ],
+          "note": "cada 15 min"
+        },
+        {
+          "id": "wrk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "ingesta",
+          "mark": "good"
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min"
+        },
+        {
+          "id": "rds",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1.2,
+            2.5
+          ],
+          "note": "último dato"
+        }
+      ],
+      "links": [
+        {
+          "id": "sch-wrk",
+          "from": "sch",
+          "to": "wrk"
+        },
+        {
+          "id": "wrk-prv",
+          "from": "wrk",
+          "to": "prv"
+        },
+        {
+          "id": "wrk-rds",
+          "from": "wrk",
+          "to": "rds"
+        },
+        {
+          "id": "wrk-bd",
+          "from": "wrk",
+          "to": "bd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sch-wrk",
+            "wrk-prv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "wrk-rds"
+          ],
+          "kind": "write",
+          "rate": 1.2,
+          "pop": true
+        },
+        {
+          "via": [
+            "wrk-bd"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Leer",
+      "chapter": "solution",
+      "title": "Leer: una clave por zona, en Redis o en la CDN",
+      "body": "La app redondea su posición a 1 decimal y pide `/api/weather?lat=40.4&lon=-3.7`. Miles de vecinos piden la misma URL: la CDN responde muchas, y las demás las lee la API de Redis, con su `updatedAt`.",
+      "changes": [
+        "+ CDN: la respuesta de cada zona, 5 min",
+        "~ La clave de la cache es la zona, no el GPS"
+      ],
+      "metrics": {
+        "prov": 1330,
+        "rps": 580,
+        "err": 0,
+        "age": "≤ 15 min"
+      },
+      "panel": {
+        "title": "La zona",
+        "rows": [
+          {
+            "text": "40.41677, -3.70379 → «40.4,-3.7» (~11 km)"
+          },
+          {
+            "text": "20.000 zonas × 5 KB ≈ 100 MB en memoria",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "5 min"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "rds",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1.2,
+            2.5
+          ],
+          "note": "último dato",
+          "mark": "good"
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD histórico",
+          "at": [
+            1.2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            2.4,
+            0
+          ],
+          "note": "cada 15 min",
+          "state": "dim"
+        },
+        {
+          "id": "wrk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "ingesta",
+          "state": "dim"
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-cdn",
+          "from": "app",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-api",
+          "from": "cdn",
+          "to": "api"
+        },
+        {
+          "id": "api-rds",
+          "from": "api",
+          "to": "rds"
+        },
+        {
+          "id": "sch-wrk",
+          "from": "sch",
+          "to": "wrk",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-prv",
+          "from": "wrk",
+          "to": "prv",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-rds",
+          "from": "wrk",
+          "to": "rds",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-bd",
+          "from": "wrk",
+          "to": "bd",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "app-cdn",
+            "cdn-api",
+            "api-rds"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        }
+      ],
+      "predict": {
+        "q": "Son las 8 de la mañana y el proveedor lleva 40 minutos devolviendo errores. ¿Qué ve quien abre la app?",
+        "options": [
+          "Un error: Redis caducó a los 15 minutos",
+          "El último dato bueno, con «Actualizado hace 40 min»",
+          "Una pantalla en blanco hasta que vuelva el proveedor",
+          "Datos de otra zona cercana"
+        ],
+        "answer": 1,
+        "explain": "La entrada no caduca con el refresco: el worker solo la sobrescribe cuando el proveedor responde bien. La app sigue leyendo el último dato y su `updatedAt` dice cuándo es. Con un TTL de 15 minutos, en cambio, a los 15 minutos de caída la app daría error."
+      }
+    },
+    {
+      "short": "Cae proveedor",
+      "chapter": "case",
+      "title": "El proveedor cae 40 minutos",
+      "body": "Los workers fallan y **no tocan** Redis: se queda el último dato bueno, y la app enseña «Actualizado hace 40 min». Reintentan con espera creciente y, si los fallos siguen, el **circuit breaker** deja de llamar un rato y prueba de vez en cuando.",
+      "callout": {
+        "type": "tip",
+        "text": "Como traduces a tu formato, un proveedor de reserva es cambiar de traductor: la app ni se entera."
+      },
+      "changes": [
+        "− Proveedor (caído)",
+        "~ Redis guarda el último dato bueno",
+        "~ Reintentos con backoff y circuit breaker"
+      ],
+      "metrics": {
+        "prov": "en pausa",
+        "rps": 580,
+        "err": 0,
+        "age": "40 min"
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "5 min"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "rds",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1.2,
+            2.5
+          ],
+          "note": "último dato",
+          "badge": "hace 40 min",
+          "mark": "good"
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD histórico",
+          "at": [
+            1.2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            2.4,
+            0
+          ],
+          "note": "cada 15 min",
+          "state": "dim"
+        },
+        {
+          "id": "wrk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "ingesta",
+          "badge": "backoff"
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min",
+          "state": "down"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-cdn",
+          "from": "app",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-api",
+          "from": "cdn",
+          "to": "api"
+        },
+        {
+          "id": "api-rds",
+          "from": "api",
+          "to": "rds"
+        },
+        {
+          "id": "sch-wrk",
+          "from": "sch",
+          "to": "wrk",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-prv",
+          "from": "wrk",
+          "to": "prv",
+          "state": "down"
+        },
+        {
+          "id": "wrk-rds",
+          "from": "wrk",
+          "to": "rds",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-bd",
+          "from": "wrk",
+          "to": "bd",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-cdn",
+            "cdn-api",
+            "api-rds"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "app-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "wrk-prv"
+          ],
+          "kind": "fail",
+          "rate": 0.4
+        }
+      ],
+      "predict": {
+        "q": "Un festival llena un pueblo que nadie había pedido: 5.000 personas abren la app en el mismo minuto. ¿Cuántas llamadas al proveedor hace tu sistema por esa zona nueva?",
+        "options": [
+          "5.000, una por persona",
+          "Ninguna hasta el próximo refresco de 15 min",
+          "Una: la primera petición coge el candado y las demás esperan su dato",
+          "96 al día, como cualquier zona activa"
+        ],
+        "answer": 2,
+        "explain": "La zona no está en Redis, así que se trae bajo demanda, pero con un candado: solo una petición lo consigue y llama; las demás leen el dato en cuanto llega. Sin candado serían 5.000 llamadas a la vez (una cache stampede). Desde entonces es una zona activa y entra en el refresco de cada 15 minutos."
+      }
+    },
+    {
+      "short": "Zona nueva",
+      "chapter": "case",
+      "title": "Una zona nueva: una sola llamada",
+      "body": "Miles de peticiones llegan a una zona que no está en Redis. Solo una consigue el **candado** (una clave en Redis que solo una puede crear) y llama al proveedor; las demás esperan y leen el dato en cuanto llega. La zona pasa a la lista de activas.",
+      "changes": [
+        "+ Candado por zona",
+        "~ 5.000 peticiones → 1 llamada",
+        "+ La zona entra en el refresco"
+      ],
+      "metrics": {
+        "prov": 1330,
+        "rps": 580,
+        "err": 0,
+        "age": "≤ 15 min"
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "5 min"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "rds",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1.2,
+            2.5
+          ],
+          "note": "último dato"
+        },
+        {
+          "id": "lck",
+          "kind": "lock",
+          "label": "Candado",
+          "at": [
+            1.2,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min"
+        },
+        {
+          "id": "wrk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "ingesta",
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            2.4,
+            0
+          ],
+          "note": "cada 15 min",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-cdn",
+          "from": "app",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-api",
+          "from": "cdn",
+          "to": "api"
+        },
+        {
+          "id": "api-rds",
+          "from": "api",
+          "to": "rds"
+        },
+        {
+          "id": "api-lck",
+          "from": "api",
+          "to": "lck"
+        },
+        {
+          "id": "api-prv",
+          "from": "api",
+          "to": "prv",
+          "bend": -1
+        },
+        {
+          "id": "wrk-prv",
+          "from": "wrk",
+          "to": "prv",
+          "state": "dim"
+        },
+        {
+          "id": "wrk-rds",
+          "from": "wrk",
+          "to": "rds",
+          "state": "dim"
+        },
+        {
+          "id": "sch-wrk",
+          "from": "sch",
+          "to": "wrk",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-cdn",
+            "cdn-api",
+            "api-lck"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            "api-prv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 600
+        },
+        {
+          "via": [
+            "api-rds"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Las llamadas al proveedor dependen de las zonas, no de los usuarios.\n- Ingesta y lectura solo se tocan en Redis.\n- Si el proveedor cae, se sirve el último dato con su hora.\n- Una zona nueva se trae una vez, con candado.",
+      "callout": {
+        "type": "insight",
+        "text": "Los datos no son tuyos: el sistema es un intermediario que los trae con orden y los sirve desde una cache."
+      },
+      "metrics": {
+        "prov": 1330,
+        "rps": 580,
+        "err": 0,
+        "age": "≤ 15 min"
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            1.25
+          ],
+          "note": "5 min"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "rds",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            1.2,
+            2.5
+          ],
+          "note": "último dato"
+        },
+        {
+          "id": "bd",
+          "kind": "db",
+          "label": "BD histórico",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            2.4,
+            0
+          ],
+          "note": "cada 15 min"
+        },
+        {
+          "id": "wrk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "ingesta"
+        },
+        {
+          "id": "prv",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "note": "límite 2.000/min"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-cdn",
+          "from": "app",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-api",
+          "from": "cdn",
+          "to": "api"
+        },
+        {
+          "id": "api-rds",
+          "from": "api",
+          "to": "rds"
+        },
+        {
+          "id": "sch-wrk",
+          "from": "sch",
+          "to": "wrk"
+        },
+        {
+          "id": "wrk-prv",
+          "from": "wrk",
+          "to": "prv"
+        },
+        {
+          "id": "wrk-rds",
+          "from": "wrk",
+          "to": "rds"
+        },
+        {
+          "id": "wrk-bd",
+          "from": "wrk",
+          "to": "bd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-cdn",
+            "cdn-api",
+            "api-rds"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "sch-wrk",
+            "wrk-prv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "wrk-rds"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        }
+      ]
+    }
+  ]
+}

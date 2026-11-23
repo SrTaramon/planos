@@ -1,0 +1,783 @@
+{
+  "id": "L21",
+  "title": "Transacciones, en acción",
+  "metrics": [
+    {
+      "id": "dup",
+      "label": "Reservas dobles",
+      "better": "low"
+    },
+    {
+      "id": "lock",
+      "label": "Bloquea filas"
+    }
+  ],
+  "legend": {
+    "event": "mensaje o compensación"
+  },
+  "goals": [
+    {
+      "text": "Cómo evita el doble un bloqueo pesimista",
+      "step": 2
+    },
+    {
+      "text": "Qué cambia con el bloqueo optimista",
+      "step": 3
+    },
+    {
+      "text": "Cómo reintentar sin reservar dos veces",
+      "step": 4
+    },
+    {
+      "text": "Qué hacer cuando la operación cruza varios servicios",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Dos a la vez",
+      "chapter": "problem",
+      "title": "Dos sesiones, una habitación, el mismo segundo",
+      "body": "Queda libre la habitación 42 para la noche del 14. Dos sesiones preguntan a la vez y las dos leen «libre». Cada una decide en su código e inserta su reserva. Con **Read Committed**, el nivel por defecto de Postgres, nada lo impide: es un **write skew**, y la 42 queda vendida dos veces.",
+      "callout": {
+        "type": "warn",
+        "text": "La I de ACID aísla «en la medida que elijas». El patrón peligroso es leer, decidir en el código y escribir."
+      },
+      "predict": {
+        "q": "Ahora A usa `SELECT … FOR UPDATE` y bloquea la fila de la 42; B llega un instante después con la misma consulta. ¿Qué le pasa a B?",
+        "options": [
+          "Lee «libre» y reserva también, como antes",
+          "Recibe un error al momento y tiene que reintentar",
+          "Espera; cuando A confirma, la fila ya no está libre y no reserva",
+          "Bloquea la fila a la vez que A y las dos reservan"
+        ],
+        "answer": 2,
+        "explain": "El bloqueo pesimista hace esperar al segundo hasta el COMMIT del primero; después Postgres vuelve a mirar la fila, que ya no cumple `status = 'free'`, y le devuelve 0 filas. El error al momento es lo del bloqueo optimista: falla al escribir."
+      },
+      "metrics": {
+        "dup": 1,
+        "lock": "no"
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Sesión A",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Sesión B",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "badge": "2 reservas",
+          "items": [
+            "981",
+            "982"
+          ],
+          "mark": "bad",
+          "state": "hot"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db",
+          "from": "a",
+          "to": "db",
+          "label": "«libre»"
+        },
+        {
+          "id": "b-db",
+          "from": "b",
+          "to": "db",
+          "label": "«libre»"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "a-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "a-db"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "b-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "b-db"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "FOR UPDATE",
+      "chapter": "technique",
+      "title": "Pesimista: bloquea la fila antes de mirar",
+      "body": "`SELECT … FOR UPDATE` bloquea la fila de la 42 hasta el `COMMIT`. A llega primero, la bloquea y reserva. B se queda **esperando** en su `FOR UPDATE`. Cuando A confirma, Postgres vuelve a mirar la fila, que ya no está libre, y a B le devuelve 0 filas.",
+      "callout": {
+        "type": "tip",
+        "text": "Encaja con mucha competencia por las mismas filas. El riesgo: esperas y deadlocks si bloqueas mucho o en distinto orden."
+      },
+      "changes": [
+        "+ Bloqueo en la fila 42",
+        "~ B espera hasta el COMMIT de A",
+        "~ Reservas dobles: 1 → 0"
+      ],
+      "metrics": {
+        "dup": 0,
+        "lock": "sí"
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Sesión A",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Sesión B",
+          "at": [
+            2,
+            0
+          ],
+          "note": "esperando"
+        },
+        {
+          "id": "lock",
+          "kind": "lock",
+          "label": "Fila 42",
+          "at": [
+            1,
+            0
+          ],
+          "badge": "de A",
+          "note": "hasta el COMMIT"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "badge": "reservada",
+          "items": [
+            "981"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-lock",
+          "from": "a",
+          "to": "lock"
+        },
+        {
+          "id": "b-lock",
+          "from": "b",
+          "to": "lock",
+          "state": "hot"
+        },
+        {
+          "id": "lock-db",
+          "from": "lock",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "a-lock",
+            "lock-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "b-lock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 2500,
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "version",
+      "chapter": "technique",
+      "title": "Optimista: no bloquea y comprueba al escribir",
+      "body": "Sin bloqueos: cada fila lleva una columna `version`. Las dos sesiones leen la 7 y escriben con `WHERE version = 7`. A llega primero: reserva y la fila pasa a la 8. El `UPDATE` de B cambia **0 filas**: alguien llegó antes. B vuelve a leer y ve que ya no está libre.",
+      "callout": {
+        "type": "insight",
+        "text": "Encaja cuando los choques son raros. Y debajo, la red de seguridad: con `UNIQUE (room_id, night)` el doble es imposible aunque el código falle."
+      },
+      "changes": [
+        "− Bloqueo",
+        "+ Columna version: 7 → 8",
+        "~ El UPDATE de B cambia 0 filas"
+      ],
+      "metrics": {
+        "dup": 0,
+        "lock": "no"
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Sesión A",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Sesión B",
+          "at": [
+            2,
+            0
+          ],
+          "note": "0 filas"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "badge": "version 8",
+          "items": [
+            "981"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db",
+          "from": "a",
+          "to": "db",
+          "label": "version = 7"
+        },
+        {
+          "id": "b-db",
+          "from": "b",
+          "to": "db",
+          "label": "version = 7",
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "a-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "b-db"
+          ],
+          "kind": "write",
+          "back": "fail",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Reintento",
+      "chapter": "case",
+      "title": "La respuesta se pierde y la app reintenta",
+      "body": "La app manda la reserva, la respuesta se pierde por el camino y vuelve a intentarlo. ¿Dos reservas? No: cada intento lleva la misma **idempotency key** (`b7e1…`), y la clave se guarda **en la misma transacción** que la reserva. Si ya existe, el servidor devuelve la respuesta guardada y no hace nada más.",
+      "callout": {
+        "type": "tip",
+        "text": "Si llegan dos reintentos a la vez, la primary key de la clave hace que el segundo espere al primero y luego falle: nunca hay dos reservas."
+      },
+      "predict": {
+        "q": "Ahora el viaje toca tres servicios: se reserva el hotel, se cobra y el billete de avión falla. Cada servicio tiene su propia base de datos. ¿Qué hace una saga?",
+        "options": [
+          "Un ROLLBACK de las tres bases de datos a la vez",
+          "Deja el hotel y el cobro: el billete se reintentará",
+          "Bloquea las tres filas hasta que el billete funcione",
+          "Deshace al revés: devuelve el dinero y cancela el hotel"
+        ],
+        "answer": 3,
+        "explain": "Cada paso ya hizo su COMMIT en su base de datos: no hay un ROLLBACK común. La saga ejecuta las compensaciones, al revés. Bloquear hasta que todo cuadre es lo que hace 2PC, y por eso se usa poco entre servicios."
+      },
+      "changes": [
+        "+ App y servicio de reservas",
+        "+ Idempotency key, en la misma transacción",
+        "~ El reintento recibe la reserva 981"
+      ],
+      "metrics": {
+        "dup": 0,
+        "lock": "no"
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ],
+          "note": "reintenta"
+        },
+        {
+          "id": "res",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "badge": "1 reserva",
+          "items": [
+            "b7e1",
+            "981"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-res",
+          "from": "cli",
+          "to": "res"
+        },
+        {
+          "id": "res-cli",
+          "from": "res",
+          "to": "cli",
+          "bend": 0.5
+        },
+        {
+          "id": "res-db",
+          "from": "res",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-res",
+            "res-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "res-cli"
+          ],
+          "kind": "resp",
+          "failAt": 0.5,
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Saga",
+      "chapter": "case",
+      "title": "Un viaje: hotel, cobro y billete",
+      "body": "Reservar un viaje toca hotel, pagos y vuelos, cada uno con su base de datos: ya no hay un `COMMIT` común. Una **saga** encadena transacciones locales: reservar la 42, cobrar, emitir el billete. El billete falla, así que se **compensa** al revés: devolver el dinero y cancelar la habitación.",
+      "callout": {
+        "type": "warn",
+        "text": "Una saga no bloquea nada, pero se ven estados intermedios (la 42 reservada y sin pagar), y cada paso y cada compensación tienen que poder repetirse sin duplicarse."
+      },
+      "changes": [
+        "+ Hotel, Pagos y Vuelos, cada uno con su BD",
+        "~ El billete falla",
+        "+ Compensaciones: devolver y cancelar"
+      ],
+      "metrics": {
+        "dup": 0,
+        "lock": "no"
+      },
+      "panel": {
+        "title": "Entre servicios",
+        "rows": [
+          {
+            "text": "2PC: todo o nada de verdad, pero bloquea mientras espera",
+            "tone": "bad"
+          },
+          {
+            "text": "Saga: pasos locales + compensaciones",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "res",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "hotel",
+          "kind": "service",
+          "label": "Hotel",
+          "at": [
+            0,
+            1.5
+          ],
+          "badge": "cancelada"
+        },
+        {
+          "id": "pagos",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            1,
+            3
+          ],
+          "badge": "devuelto"
+        },
+        {
+          "id": "vuelos",
+          "kind": "service",
+          "label": "Vuelos",
+          "at": [
+            2,
+            1.5
+          ],
+          "badge": "sin billete",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "res-hotel",
+          "from": "res",
+          "to": "hotel"
+        },
+        {
+          "id": "hotel-pagos",
+          "from": "hotel",
+          "to": "pagos"
+        },
+        {
+          "id": "pagos-vuelos",
+          "from": "pagos",
+          "to": "vuelos"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "res-hotel",
+            "hotel-pagos",
+            "pagos-vuelos"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.45
+        },
+        {
+          "via": [
+            "pagos-vuelos",
+            "hotel-pagos"
+          ],
+          "kind": "event",
+          "rate": 0.45,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Outbox",
+      "chapter": "solution",
+      "title": "Outbox: el mensaje, en la misma transacción",
+      "body": "Los pasos se avisan con mensajes por una cola. Si guardas la reserva y luego publicas, y el proceso cae entre medias, el mensaje se pierde. Con **outbox**, el mensaje va a la tabla `outbox` **en la misma transacción** que la reserva. Un **relay** aparte lo publica en la cola y lo marca como enviado.",
+      "callout": {
+        "type": "insight",
+        "text": "Si el relay cae antes de marcarlo, al volver lo reenvía: un mensaje puede llegar dos veces. Por eso Pagos tiene que ser idempotente."
+      },
+      "changes": [
+        "+ Tabla outbox, en la misma transacción",
+        "+ Relay y cola",
+        "~ Pagos ignora un mensaje repetido"
+      ],
+      "metrics": {
+        "dup": 0,
+        "lock": "no"
+      },
+      "nodes": [
+        {
+          "id": "res",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "note": "bookings + outbox",
+          "items": [
+            "981",
+            "msg"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            2,
+            1.5
+          ],
+          "note": "publica y marca"
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            2,
+            3
+          ]
+        },
+        {
+          "id": "pagos",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            1,
+            3
+          ],
+          "note": "idempotente"
+        }
+      ],
+      "links": [
+        {
+          "id": "res-db",
+          "from": "res",
+          "to": "db",
+          "label": "1 transacción"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay"
+        },
+        {
+          "id": "relay-cola",
+          "from": "relay",
+          "to": "cola"
+        },
+        {
+          "id": "cola-pagos",
+          "from": "cola",
+          "to": "pagos"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "res-db"
+          ],
+          "kind": "write",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "db-relay",
+            "relay-cola",
+            "cola-pagos"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Con Read Committed, leer, decidir en el código y escribir puede vender dos veces.\n- Pesimista (`FOR UPDATE`): el segundo espera. Optimista (`version`): el segundo falla y reintenta.\n- Una idempotency key en la misma transacción que el efecto hace seguros los reintentos.\n- Entre servicios: sagas con compensaciones y outbox.",
+      "callout": {
+        "type": "tip",
+        "text": "Pon las reglas importantes en la base de datos (`UNIQUE`, `CHECK`, foreign keys): una constraint no se la salta nadie."
+      },
+      "metrics": {
+        "dup": 0,
+        "lock": "no"
+      },
+      "nodes": [
+        {
+          "id": "res",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            1,
+            1.5
+          ],
+          "note": "bookings + outbox",
+          "items": [
+            "981",
+            "msg"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            2,
+            1.5
+          ],
+          "note": "publica y marca"
+        },
+        {
+          "id": "cola",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            2,
+            3
+          ]
+        },
+        {
+          "id": "pagos",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            1,
+            3
+          ],
+          "note": "idempotente"
+        }
+      ],
+      "links": [
+        {
+          "id": "res-db",
+          "from": "res",
+          "to": "db",
+          "label": "1 transacción"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay"
+        },
+        {
+          "id": "relay-cola",
+          "from": "relay",
+          "to": "cola"
+        },
+        {
+          "id": "cola-pagos",
+          "from": "cola",
+          "to": "pagos"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "res-db"
+          ],
+          "kind": "write",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "db-relay",
+            "relay-cola",
+            "cola-pagos"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ]
+    }
+  ]
+}

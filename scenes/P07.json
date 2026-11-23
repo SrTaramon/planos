@@ -131,7 +131,7 @@
             1.0,
             2.6
           ],
-          "note": "grandes",
+          "note": "por autor",
           "state": "dim"
         },
         {
@@ -324,7 +324,7 @@
             1.0,
             2.6
           ],
-          "note": "grandes"
+          "note": "por autor"
         },
         {
           "id": "act",
@@ -497,7 +497,7 @@
             1.0,
             2.6
           ],
-          "note": "grandes",
+          "note": "por autor",
           "state": "dim"
         },
         {
@@ -676,7 +676,7 @@
             1.0,
             2.6
           ],
-          "note": "grandes",
+          "note": "por autor",
           "state": "dim"
         },
         {
@@ -889,9 +889,8 @@
             1.0,
             2.6
           ],
-          "note": "grandes",
-          "mark": "good",
-          "load": 0.6
+          "note": "por autor",
+          "mark": "good"
         },
         {
           "id": "act",
@@ -1062,7 +1061,7 @@
             1.0,
             2.6
           ],
-          "note": "grandes"
+          "note": "por autor"
         },
         {
           "id": "act",

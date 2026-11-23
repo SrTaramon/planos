@@ -1,0 +1,1325 @@
+{
+  "id": "P10",
+  "title": "Los precios, en acción",
+  "metrics": [
+    {
+      "id": "ticks",
+      "label": "Ticks que entran/s"
+    },
+    {
+      "id": "out",
+      "label": "Salen (máx./s)"
+    },
+    {
+      "id": "ocean",
+      "label": "Cruza océanos",
+      "unit": "MB/s",
+      "better": "low"
+    },
+    {
+      "id": "age",
+      "label": "Precio en Tokio"
+    }
+  ],
+  "legend": {
+    "event": "tick o precio"
+  },
+  "goals": [
+    {
+      "text": "Cómo entra un tick y por qué no se desordena",
+      "step": 1
+    },
+    {
+      "text": "Por qué sale como mucho un precio por símbolo y segundo",
+      "step": 2
+    },
+    {
+      "text": "Cuántas veces cruza el océano un precio",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa si cae un handler o se corta una región",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Ticks",
+      "chapter": "solution",
+      "title": "Entra un tick y se procesa en orden",
+      "body": "Dos handlers por bolsa traducen cada tick a `símbolo, precio, seq…` y lo publican en el log. El símbolo decide la partición: todos los de AAPL van en orden al mismo procesador, que actualiza su último precio y sus velas. Los repetidos se descartan por `seq`.",
+      "callout": {
+        "type": "insight",
+        "text": "Un solo consumidor por símbolo: nadie pisa el precio de AAPL con uno más viejo."
+      },
+      "changes": [
+        "+ Handlers duplicados",
+        "+ Log repartido por símbolo"
+      ],
+      "metrics": {
+        "ticks": 100000,
+        "out": "—",
+        "ocean": "—",
+        "age": "—"
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fha",
+            "fha-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 5
+        }
+      ]
+    },
+    {
+      "short": "Agrupar",
+      "chapter": "solution",
+      "title": "Cada segundo, un precio por símbolo",
+      "body": "Un valor popular cambia decenas de veces por segundo y nadie lo lee en un móvil. El agrupador saca, cada segundo, el último precio de cada símbolo que ha cambiado: como mucho 50.000 por segundo, por agitado que esté el mercado.",
+      "changes": [
+        "+ Agrupador",
+        "~ Lo que sale ya no depende de los ticks"
+      ],
+      "metrics": {
+        "ticks": 100000,
+        "out": 50000,
+        "ocean": "—",
+        "age": "—"
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        },
+        {
+          "id": "proc-agg",
+          "from": "proc",
+          "to": "agg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fha",
+            "fha-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 5
+        },
+        {
+          "via": [
+            "proc-agg"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ],
+      "predict": {
+        "q": "En Asia hay 1 millón de usuarios y 200.000 siguen AAPL. ¿Cuántas veces cruza el océano cada precio nuevo de AAPL?",
+        "options": [
+          "200.000: una por usuario que lo sigue",
+          "Una por cada gateway de Asia",
+          "Una: hacia el relay de Asia, en el flujo agrupado",
+          "Una por tick, aunque AAPL cambie 100 veces por segundo"
+        ],
+        "answer": 2,
+        "explain": "El relay recibe el flujo agrupado una vez y lo reparte dentro de la región: el océano se cruza una vez por precio, no por usuario ni por gateway. Y como sale del agrupador, es como mucho un precio de AAPL por segundo, no uno por tick."
+      }
+    },
+    {
+      "short": "Asia",
+      "chapter": "solution",
+      "title": "El océano se cruza una vez por precio",
+      "body": "El relay de Asia recibe el flujo agrupado una sola vez y guarda la tabla entera de últimos precios. Los gateways de Tokio se suscriben a lo que miran sus usuarios y juntan los cambios de cada lista en un mensaje por segundo. Al abrir, la foto llega por REST.",
+      "changes": [
+        "+ Relay y gateways en Asia",
+        "~ Del centro a Asia: un solo flujo"
+      ],
+      "metrics": {
+        "ticks": 100000,
+        "out": 50000,
+        "ocean": 20,
+        "age": "hace 1 s"
+      },
+      "panel": {
+        "title": "Lo que cruza los océanos (4 regiones)",
+        "rows": [
+          {
+            "text": "Un mensaje por usuario: 5 M × 600 B ≈ 3 GB/s",
+            "tone": "bad"
+          },
+          {
+            "text": "Un flujo por región: 4 × 5 MB/s = 20 MB/s",
+            "tone": "good"
+          }
+        ]
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ]
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        },
+        {
+          "id": "proc-agg",
+          "from": "proc",
+          "to": "agg"
+        },
+        {
+          "id": "agg-relay",
+          "from": "agg",
+          "to": "relay",
+          "label": "océano"
+        },
+        {
+          "id": "relay-gw",
+          "from": "relay",
+          "to": "gw"
+        },
+        {
+          "id": "gw-apps",
+          "from": "gw",
+          "to": "apps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fha",
+            "fha-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 5
+        },
+        {
+          "via": [
+            "proc-agg",
+            "agg-relay",
+            "relay-gw",
+            "gw-apps"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Cae A",
+      "chapter": "case",
+      "title": "Se cae el handler A",
+      "body": "El handler B estaba conectado a la misma bolsa y mandaba los mismos ticks. Sigue haciéndolo: el log no se queda sin datos y nadie en Tokio nota nada. Cuando A vuelve, sus repetidos se descartan por `seq`.",
+      "changes": [
+        "− Handler A (caído)",
+        "~ Los precios siguen llegando"
+      ],
+      "metrics": {
+        "ticks": 100000,
+        "out": 50000,
+        "ocean": 20,
+        "age": "hace 1 s"
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ],
+          "state": "down"
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ]
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha",
+          "state": "down"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log",
+          "state": "down"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        },
+        {
+          "id": "proc-agg",
+          "from": "proc",
+          "to": "agg"
+        },
+        {
+          "id": "agg-relay",
+          "from": "agg",
+          "to": "relay",
+          "label": "océano"
+        },
+        {
+          "id": "relay-gw",
+          "from": "relay",
+          "to": "gw"
+        },
+        {
+          "id": "gw-apps",
+          "from": "gw",
+          "to": "apps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 4
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 4
+        },
+        {
+          "via": [
+            "proc-agg",
+            "agg-relay",
+            "relay-gw",
+            "gw-apps"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ],
+      "predict": {
+        "q": "Se corta durante un minuto el enlace entre el centro y Asia. ¿Qué ve una persona en Tokio?",
+        "options": [
+          "La pantalla vacía hasta que vuelva el enlace",
+          "El último precio con su hora («hace 20 s»)",
+          "Precios que van hacia atrás cuando vuelve el enlace",
+          "Un error, y la app se cierra y reintenta"
+        ],
+        "answer": 1,
+        "explain": "El relay guarda la tabla entera de últimos precios: los gateways y la API de la región siguen sirviendo el último conocido, con su hora. Al volver el enlace, un precio con un `seq` más viejo que el pintado se descarta: nunca hacia atrás."
+      }
+    },
+    {
+      "short": "Corte",
+      "chapter": "case",
+      "title": "Asia se queda sin enlace con el centro",
+      "body": "El relay conserva la tabla entera, así que Tokio sigue viendo el último precio con su hora («hace 20 s») en vez de una pantalla vacía. Mientras, el relay se reconecta o toma el flujo de otra región. Las demás regiones no notan nada.",
+      "callout": {
+        "type": "tip",
+        "text": "Mejor un precio con «hace 20 s» que ninguno: es el requisito de disponibilidad."
+      },
+      "changes": [
+        "− Enlace centro → Asia",
+        "~ Tokio: el último precio, con su hora"
+      ],
+      "metrics": {
+        "ticks": 100000,
+        "out": 50000,
+        "ocean": 0,
+        "age": "hace 20 s"
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ]
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        },
+        {
+          "id": "proc-agg",
+          "from": "proc",
+          "to": "agg"
+        },
+        {
+          "id": "agg-relay",
+          "from": "agg",
+          "to": "relay",
+          "state": "down",
+          "dashed": true
+        },
+        {
+          "id": "relay-gw",
+          "from": "relay",
+          "to": "gw"
+        },
+        {
+          "id": "gw-apps",
+          "from": "gw",
+          "to": "apps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fha",
+            "fha-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 5
+        },
+        {
+          "via": [
+            "proc-agg"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "gw-apps"
+          ],
+          "kind": "resp",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- El símbolo es la clave de partición: cada valor, en orden.\n- El agrupador saca como mucho un precio por símbolo y segundo.\n- Cada región recibe el flujo una vez y guarda la tabla (5 MB).\n- Handlers duplicados y `seq`: ni huecos ni repetidos.\n- Sin enlace, el último precio con su hora.",
+      "callout": {
+        "type": "insight",
+        "text": "El estado es diminuto; el reto es distribuirlo."
+      },
+      "metrics": {
+        "ticks": 100000,
+        "out": 50000,
+        "ocean": 20,
+        "age": "hace 1 s"
+      },
+      "zones": [
+        {
+          "label": "Centro",
+          "from": [
+            0.1,
+            0
+          ],
+          "to": [
+            2.9,
+            1.15
+          ]
+        },
+        {
+          "label": "Región Asia",
+          "from": [
+            1,
+            2.5
+          ],
+          "to": [
+            3,
+            2.6
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ext",
+          "kind": "external",
+          "label": "Bolsas",
+          "at": [
+            0,
+            0.575
+          ]
+        },
+        {
+          "id": "fha",
+          "kind": "service",
+          "label": "Handler A",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "fhb",
+          "kind": "service",
+          "label": "Handler B",
+          "at": [
+            1,
+            1.15
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0.575
+          ],
+          "items": [
+            "AAPL",
+            "SAN",
+            "7203"
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agrupador",
+          "at": [
+            3,
+            1.15
+          ]
+        },
+        {
+          "id": "apps",
+          "kind": "users",
+          "label": "Apps Tokio",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "service",
+          "label": "Gateways",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "service",
+          "label": "Relay Asia",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "tabla: 5 MB"
+        }
+      ],
+      "links": [
+        {
+          "id": "ext-fha",
+          "from": "ext",
+          "to": "fha"
+        },
+        {
+          "id": "ext-fhb",
+          "from": "ext",
+          "to": "fhb"
+        },
+        {
+          "id": "fha-log",
+          "from": "fha",
+          "to": "log"
+        },
+        {
+          "id": "fhb-log",
+          "from": "fhb",
+          "to": "log"
+        },
+        {
+          "id": "log-proc",
+          "from": "log",
+          "to": "proc"
+        },
+        {
+          "id": "proc-agg",
+          "from": "proc",
+          "to": "agg"
+        },
+        {
+          "id": "agg-relay",
+          "from": "agg",
+          "to": "relay",
+          "label": "océano"
+        },
+        {
+          "id": "relay-gw",
+          "from": "relay",
+          "to": "gw"
+        },
+        {
+          "id": "gw-apps",
+          "from": "gw",
+          "to": "apps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ext-fha",
+            "fha-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ext-fhb",
+            "fhb-log"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-proc"
+          ],
+          "kind": "event",
+          "rate": 5
+        },
+        {
+          "via": [
+            "proc-agg",
+            "agg-relay",
+            "relay-gw",
+            "gw-apps"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ]
+    }
+  ]
+}
