@@ -120,9 +120,10 @@
     if (!unit) return out;
     if (unit.kind === 'lesson') {
       (unit.glossary || []).forEach((g, i) => out.push({ id: `${unit.id}:g${i}`, unitId: unit.id, type: 'term', front: g.term, back: g.def }));
-      (unit.checks || []).forEach((c, i) => out.push({ id: `${unit.id}:c${i}`, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain }));
+      (unit.checks || []).forEach((c, i) => out.push({ id: `${unit.id}:c${i}`, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain, scene: c.scene || null }));
     } else {
       (unit.considerations || []).forEach((c, i) => out.push({ id: `${unit.id}:q${i}`, unitId: unit.id, type: 'qa', front: c.q, back: c.a }));
+      (unit.checks || []).forEach((c, i) => out.push({ id: `${unit.id}:c${i}`, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain, scene: c.scene || null }));
     }
     return out;
   }

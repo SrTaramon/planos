@@ -18,10 +18,14 @@ Usa siempre la app del icono: el progreso y las notas se guardan en ella, en el 
 - La ruta está en `data/path.json` y cada unidad en `data/units/<id>.json`.
 - **El aviso de cada mañana** lo envía una tarea programada de Claude con Web Push (`tools/send-push.mjs`, sin dependencias; su test reproduce el ejemplo del RFC 8291). El aviso llega vacío y el texto («Hoy en Planos…») lo calcula el propio iPhone con su progreso (`core.js`). La clave privada y la suscripción no están en este repositorio.
 
-## Publicar unidades nuevas
+- **«Míralo en acción»**: cada lección (y cada problema, al terminarlo) tiene una escena: un plano animado que se recorre paso a paso, con paquetes que viajan, piezas que se saturan o se caen, cifras que mejoran o empeoran y preguntas para predecir lo que pasará. El motor es `scene.js` (SVG y `requestAnimationFrame`, sin dependencias) y las escenas están en `scenes/`. Cómo se escriben: [`scenes/README.md`](scenes/README.md).
+- Las preguntas («Comprueba que lo tienes», «Ponte a prueba») son casos nuevos, no frases del texto, y algunas llevan un mini plano. Entran en el repaso espaciado.
+
+## Publicar
 
 ```
-node tools/build.mjs <carpeta con L01.json, P01.json…> <path.json>
+node tools/build.mjs                                   # escenas nuevas o cambios en data/units
+node tools/build.mjs <carpeta con L01.json…> <path.json>  # unidades nuevas desde otra carpeta
 ```
 
-Valida cada unidad (`tools/validate.cjs`), escribe `data/` y pone una versión nueva en `sw.js`, para que la app instalada descargue lo nuevo.
+Valida las unidades (`tools/validate.cjs`) y las escenas (`tools/validate-scene.cjs`), escribe `data/` y pone una versión nueva en `sw.js`, para que la app instalada descargue lo nuevo. `node tools/check-scenes.mjs scenes/L11.json --shots <carpeta>` dibuja cada paso como en un iPhone y avisa si se pisan textos (necesita Playwright).

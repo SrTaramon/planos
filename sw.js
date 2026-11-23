@@ -1,9 +1,9 @@
 /* Planos service worker: la app y las lecciones sin conexión, y el aviso de cada mañana. */
 importScripts('./core.js');
 
-const VERSION = '2026-11-03-d5eb7777';
+const VERSION = '2026-11-23-94cd0072';
 const CACHE = 'planos-' + VERSION;
-const SHELL = ['./', './index.html', './app.js', './core.js', './fonts.css', './manifest.webmanifest',
+const SHELL = ['./', './index.html', './app.js', './core.js', './scene.js', './fonts.css', './manifest.webmanifest',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './data/path.json', './data/index.json'];
 
 self.addEventListener('install', (event) => {
@@ -12,7 +12,8 @@ self.addEventListener('install', (event) => {
     const index = await (await fetch('./data/index.json', { cache: 'no-store' })).json();
     const fonts = Array.isArray(index.fonts) ? index.fonts.map((f) => './fonts/' + f) : [];
     const units = index.units.map((id) => `./data/units/${id}.json`);
-    await cache.addAll([...SHELL, ...fonts, ...units].map((u) => new Request(u, { cache: 'no-store' })));
+    const scenes = (Array.isArray(index.scenes) ? index.scenes : []).map((id) => `./data/scenes/${id}.json`);
+    await cache.addAll([...SHELL, ...fonts, ...units, ...scenes].map((u) => new Request(u, { cache: 'no-store' })));
     await self.skipWaiting();
   })());
 });

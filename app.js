@@ -1,6 +1,7 @@
 /* Planos: la app. Lee la ruta y las unidades de ./data, guarda el progreso en el iPhone (IndexedDB),
    gestiona la instalación y el aviso de cada mañana, el repaso espaciado, la lectura en voz alta,
-   el simulacro de entrevista con Claude, el glosario con buscador y la página de progreso (racha, calendario y logros). */
+   el simulacro de entrevista con Claude, el glosario con buscador, la página de progreso (racha, calendario y logros) y las escenas animadas
+   de cada lección («Míralo en acción», con scene.js). */
 (() => {
   'use strict';
   const C = window.PlanosCore;
@@ -31,6 +32,9 @@
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
     stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg>',
     cards: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="14" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 4h11a3 3 0 0 1 3 3v10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    replay: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     flame: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5c-3.9 0-6.8-2.8-6.8-6.6 0-3.4 2.2-5.4 3.8-7.6.3 1.7 1.2 2.9 2.4 3.4.1-3.4 1.6-5.8 3.2-8.2.7 3.2 5.2 6.2 5.2 11.6 0 4.3-3.1 7.4-7.8 7.4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 21.5c-1.8 0-3-1.3-3-3 0-1.8 1.4-2.8 2.3-4.3.9 1.3 3.8 2.4 3.8 4.5 0 1.6-1.3 2.8-3.1 2.8z" fill="currentColor"/></svg>',
     rest: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 1 1 9.4 4a6.6 6.6 0 0 0 10.6 10.6z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
     medal: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.6 10.3 6 3h4l2 4.6L14 3h4l-2.6 7.3M12 12.6l.8 1.6 1.7.2-1.2 1.2.3 1.7-1.6-.8-1.6.8.3-1.7-1.2-1.2 1.7-.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
@@ -54,6 +58,7 @@
   const S = {
     status: 'loading', path: null, ready: new Set(), version: '', units: {}, progress: {},
     cards: {}, reviewLog: {}, reviewInfo: null, rev: null, seenBadges: null, cal: null,
+    scenes: {}, sceneIds: new Set(), sc: null,
     search: { q: '', ready: false, terms: [], docs: [] },
     view: { name: 'home' }, ui: {}, reg: null,
     push: { supported: false, permission: 'default', subscribed: false, code: null, sent: false, busy: false },
@@ -304,7 +309,7 @@
     }
     const card = r.items[r.i];
     let front = `<div class="flash-meta"><span class="mono-label">${CARD_LABEL[card.type]}</span><button class="link small-link" data-open-from="${esc(card.unitId)}">${esc(unitTitle(card.unitId))}</button></div>`;
-    front += card.type === 'term' ? `<p class="flash-term">${esc(card.front)}</p><p class="muted">¿Qué significa? Piénsalo y mira la respuesta.</p>` : `<p class="flash-q">${inline(card.front)}</p>`;
+    front += card.type === 'term' ? `<p class="flash-term">${esc(card.front)}</p><p class="muted">¿Qué significa? Piénsalo y mira la respuesta.</p>` : `<p class="flash-q">${inline(card.front)}</p>${miniPlan(card.scene, card.front)}`;
     let body = '';
     let actions = '';
     const grades = (opts) => '<div class="grade-btns">' + opts.map((g) => `<button data-act="rev-grade" data-g="${g}" class="g-${g}">${{ again: 'Otra vez', good: 'Bien', easy: 'Fácil' }[g]}<small>${gradeLabelDays(card, g)}</small></button>`).join('') + '</div>';
@@ -751,6 +756,184 @@
       streakSection(st) + weekSection(st, act, today) + calendarSection(st, act, today) + totalsSection(st, act) + badgesSection();
   }
 
+  // ---------- scenes («Míralo en acción») ----------
+  const CHAPTER = { problem: 'Problema', technique: 'Técnica', solution: 'Solución', case: 'Caso', recap: 'Repaso' };
+  const SC_CALLOUT = { insight: 'Idea clave', tip: 'Truco', warn: 'Ojo' };
+  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function fmtMetric(v, d) {
+    if (v == null || v === '') return '—';
+    if (typeof v !== 'number') return esc(v);
+    const n = v.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+    return d.unit ? `${n}${d.unit === '%' ? ' %' : ' ' + esc(d.unit)}` : n;
+  }
+  function sceneMetrics(sc, i) {
+    const defs = Array.isArray(sc.metrics) ? sc.metrics : [];
+    if (!defs.length) return '';
+    const cur = sc.steps[i].metrics || {};
+    const prev = i > 0 ? sc.steps[i - 1].metrics || {} : {};
+    return '<div class="sc-metrics">' + defs.map((d) => {
+      const v = cur[d.id];
+      const p = prev[d.id];
+      let tone = '';
+      let delta = '';
+      if (typeof v === 'number' && typeof p === 'number' && v !== p) {
+        const up = v > p;
+        if (d.better === 'high' || d.better === 'low') tone = (d.better === 'high') === up ? 'good' : 'bad';
+        delta = `<span class="dl">${up ? ICON.up : ICON.down}<span class="sr">${up ? 'sube' : 'baja'}${tone ? (tone === 'good' ? ', mejor' : ', peor') : ''}</span></span>`;
+      }
+      return `<div class="mt ${tone}"><span class="ml">${esc(d.label)}</span><span class="mv">${fmtMetric(v, d)}${delta}</span></div>`;
+    }).join('') + '</div>';
+  }
+  function changesList(list) {
+    if (!Array.isArray(list) || !list.length) return '';
+    return '<div class="sc-changes"><span class="mono-label">Qué cambia</span><ul>' + list.map((c) => {
+      const m = /^\s*([+~−-])\s*(.*)$/.exec(c) || [null, '~', c];
+      const kind = m[1] === '+' ? 'add' : m[1] === '~' ? 'mod' : 'del';
+      return `<li class="ch-${kind}"><span class="sg" aria-label="${{ add: 'Nuevo', mod: 'Cambia', del: 'Se quita' }[kind]}">${m[1] === '-' ? '−' : m[1]}</span><span>${inline(m[2])}</span></li>`;
+    }).join('') + '</ul></div>';
+  }
+  function sceneInner(sc, i) {
+    const st = sc.steps[i];
+    const n = sc.steps.length;
+    const still = reducedMotion();
+    const ctrl = (still ? '' : `<button class="icon-btn sm" data-act="sc-pause" aria-label="${S.sc.paused ? 'Seguir la animación' : 'Pausar la animación'}">${S.sc.paused ? ICON.play : ICON.pause}</button>`) +
+      `<button class="icon-btn sm" data-act="sc-replay" aria-label="Volver a empezar la animación">${ICON.replay}</button>`;
+    const legend = PlanosScene.legend(sc, i).map((l) => `<span class="lg-i"><span class="lg lg-${esc(l.kind)}" aria-hidden="true"></span>${esc(l.label)}</span>`).join('');
+    const panel = st.panel && Array.isArray(st.panel.rows)
+      ? `<div class="sc-panel">${st.panel.title ? `<span class="mono-label">${esc(st.panel.title)}</span>` : ''}<ul>${st.panel.rows.map((r) => `<li class="${r.tone ? 't-' + esc(r.tone) : ''}">${inline(r.text)}</li>`).join('')}</ul></div>` : '';
+    const steps = sc.steps.map((s, k) => `<li><button data-act="sc-go" data-i="${k}" class="${k === i ? 'on' : k < i ? 'past' : ''}"${k === i ? ' aria-current="step"' : ''}><span class="d">${k + 1}</span><span class="s">${esc(s.short)}</span></button></li>`).join('');
+    const call = st.callout && st.callout.text ? `<div class="sc-call c-${esc(st.callout.type || 'insight')}"><span class="mono-label">${SC_CALLOUT[st.callout.type] || 'Idea clave'}</span><div class="prose">${md(st.callout.text)}</div></div>` : '';
+    const goals = Array.isArray(sc.goals) && sc.goals.length
+      ? `<div class="sc-goals"><span class="mono-label">Lo que verás</span><ul>${sc.goals.map((g) => `<li class="${i + 1 >= g.step ? 'ok' : ''}"><span class="gk" aria-hidden="true">${i + 1 >= g.step ? ICON.check : ''}</span><button class="link" data-act="sc-go" data-i="${Math.max(0, g.step - 1)}">${esc(g.text)}</button></li>`).join('')}</ul></div>` : '';
+    let predict = '';
+    let nextLabel = 'Siguiente';
+    if (st.predict && i < n - 1) {
+      const q = st.predict;
+      const chosen = S.sc.answers?.[i];
+      const answered = Number.isInteger(chosen);
+      const opts = q.options.map((o, k) => {
+        let cls = 'opt';
+        if (answered && k === q.answer) cls += ' right';
+        else if (answered && k === chosen) cls += ' wrong';
+        return `<button class="${cls}" data-act="sc-predict" data-k="${k}" ${answered ? 'disabled' : ''}><span class="k">${'ABCD'[k]}</span><span>${inline(o)}</span></button>`;
+      }).join('');
+      predict = `<div class="sc-predict"><span class="mono-label">¿Qué crees que pasará?</span><p class="q">${inline(q.q)}</p>${opts}` +
+        (answered ? `<div class="explain prose">${chosen === q.answer ? '<p><strong>Eso es.</strong></p>' : '<p><strong>No exactamente.</strong> Míralo en el siguiente paso.</p>'}${md(q.explain)}</div>` : '') + '</div>';
+      nextLabel = answered ? 'Verlo' : 'Siguiente';
+    }
+    const next = i < n - 1
+      ? `<button class="btn small grow" data-act="sc-next"><span class="t">${nextLabel}: ${esc(sc.steps[i + 1].short)}</span>${ICON.chev}</button>`
+      : '<button class="btn small grow" data-act="sc-done"><span class="t">Seguir con la lección</span></button>';
+    const label = /^P/.test(S.sc.id) ? 'La solución, en acción' : 'Míralo en acción';
+    return `<div class="sc-head"><span class="mono-label">${label} · paso ${i + 1} de ${n}</span>${CHAPTER[st.chapter] ? `<span class="chap chap-${esc(st.chapter)}">${CHAPTER[st.chapter]}</span>` : ''}</div>` +
+      `<h2 id="scene-h" class="sc-title">${esc(st.title)}</h2>` + sceneMetrics(sc, i) +
+      `<div class="sc-stage" id="sc-stage">${PlanosScene.svg(sc, i, { still, label: st.title })}<div class="sc-ctrl">${ctrl}</div></div>` +
+      (legend ? `<div class="sc-legend">${legend}</div>` : '') + panel +
+      `<ol class="sc-steps" aria-label="Pasos">${steps}</ol>` +
+      `<div class="prose sc-body">${md(st.body)}</div>` + call + changesList(st.changes) + predict +
+      `<div class="sc-nav"><button class="btn alt small" data-act="sc-prev" ${i === 0 ? 'disabled' : ''}>${ICON.back}Atrás</button>${next}</div>` + goals;
+  }
+  function sceneCard(u) {
+    const sc = S.scenes[u.id];
+    if (!sc || !S.sc || S.sc.id !== u.id) return '';
+    return `<section class="card scene-card" id="scene-card" aria-labelledby="scene-h">${sceneInner(sc, S.sc.i)}</section>`;
+  }
+  let sceneObserver = null;
+  let minis = [];
+  function mountMinis() {
+    minis.forEach((m) => m.stop());
+    minis = [];
+    if (reducedMotion()) return;
+    for (const el of app.querySelectorAll('.mini-stage')) {
+      const svg = el.querySelector('svg');
+      let plan = null;
+      try { plan = JSON.parse(el.dataset.mini); } catch (e) { plan = null; }
+      if (!svg || !plan) continue;
+      const a = new PlanosScene.Animator(svg, { steps: [plan] }, 0);
+      a.start();
+      minis.push(a);
+    }
+  }
+  function mountScene() {
+    mountMinis();
+    if (S.sc?.anim) { S.sc.anim.stop(); S.sc.anim = null; }
+    if (sceneObserver) { sceneObserver.disconnect(); sceneObserver = null; }
+    const stage = document.getElementById('sc-stage');
+    if (!stage || !S.sc || S.view.name !== 'unit') return;
+    const sc = S.scenes[S.sc.id];
+    const svg = stage.querySelector('svg');
+    if (!sc || !svg) return;
+    // Deslizar el dedo sobre el plano cambia de paso.
+    let x0 = null;
+    let y0 = null;
+    stage.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    stage.addEventListener('touchend', (e) => {
+      if (x0 == null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) > 50 && Math.abs(dy) < 40) sceneGo(S.sc.i + (dx < 0 ? 1 : -1));
+    }, { passive: true });
+    const strip = document.querySelector('.sc-steps');
+    const on = strip?.querySelector('.on');
+    if (strip && on) strip.scrollLeft = on.parentElement.offsetLeft - strip.clientWidth / 2 + on.parentElement.offsetWidth / 2;
+    if (reducedMotion()) return;
+    const anim = new PlanosScene.Animator(svg, sc, S.sc.i);
+    anim.start();
+    if (S.sc.paused || document.visibilityState === 'hidden') anim.pause();
+    S.sc.anim = anim;
+    if ('IntersectionObserver' in window) {
+      sceneObserver = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && !S.sc?.paused) anim.resume();
+          else if (!e.isIntersecting) anim.pause();
+        }
+      });
+      sceneObserver.observe(stage);
+    }
+  }
+  function sceneGo(k) {
+    if (!S.sc) return;
+    const sc = S.scenes[S.sc.id];
+    if (!sc || k < 0 || k >= sc.steps.length || k === S.sc.i) return;
+    S.sc.i = k;
+    saveProgress(S.sc.id, { sceneAt: k });
+    const card = document.getElementById('scene-card');
+    if (!card) { render(); return; }
+    card.innerHTML = sceneInner(sc, k);
+    mountScene();
+    const top = card.getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.6) card.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }
+  function scenePause() {
+    if (!S.sc?.anim) return;
+    S.sc.paused = !S.sc.paused;
+    if (S.sc.paused) S.sc.anim.pause(); else S.sc.anim.resume();
+    const btn = document.querySelector('[data-act="sc-pause"]');
+    if (btn) { btn.innerHTML = S.sc.paused ? ICON.play : ICON.pause; btn.setAttribute('aria-label', S.sc.paused ? 'Seguir la animación' : 'Pausar la animación'); }
+  }
+  function scenePredict(k) {
+    if (!S.sc) return;
+    S.sc.answers = S.sc.answers || {};
+    if (Number.isInteger(S.sc.answers[S.sc.i])) return;
+    S.sc.answers[S.sc.i] = k;
+    const card = document.getElementById('scene-card');
+    const sc = S.scenes[S.sc.id];
+    if (!card || !sc) return;
+    // Only the question and the button change: the plan keeps moving.
+    const fresh = document.createElement('div');
+    fresh.innerHTML = sceneInner(sc, S.sc.i);
+    for (const sel of ['.sc-predict', '.sc-nav']) {
+      const a = card.querySelector(sel);
+      const b = fresh.querySelector(sel);
+      if (a && b) a.replaceWith(b);
+    }
+  }
+  function sceneDone() {
+    const first = document.querySelector('.section');
+    if (first) first.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }
+
   // ---------- home ----------
   function header() {
     const total = outline().length;
@@ -904,6 +1087,9 @@
     if (!isReady(id)) return;
     ttsStop();
     try { await loadUnit(id); } catch (e) { toast('No se ha podido abrir. Revisa la conexión.'); return; }
+    if (S.sceneIds.has(id) && !S.scenes[id]) S.scenes[id] = await getJSON(`./data/scenes/${id}.json`).catch(() => null);
+    const sc = S.scenes[id];
+    S.sc = sc ? { id, i: Math.max(0, Math.min(sc.steps.length - 1, Number(prog(id)?.sceneAt) || 0)), paused: false, anim: null, answers: {} } : null;
     S.view = { name: 'unit', id, from: from || null };
     S.ui = { checks: {}, hints: {}, ask: '' };
     if (!prog(id)) saveProgress(id, { status: 'started' });
@@ -943,6 +1129,11 @@
       (ttsSupported() ? `<div class="tts" id="tts">${ttsBar()}</div>` : '') + '</header>';
   }
 
+  // Un mini plano (un paso de escena) dentro de una pregunta.
+  function miniPlan(plan, label) {
+    if (!plan || !Array.isArray(plan.nodes)) return '';
+    return `<div class="sc-stage mini-stage" data-mini="${esc(JSON.stringify(plan))}">${PlanosScene.svg({ steps: [plan] }, 0, { still: reducedMotion(), label })}</div>`;
+  }
   function checksBlock(u) {
     if (!Array.isArray(u.checks) || !u.checks.length) return '';
     const items = u.checks.map((c, i) => {
@@ -955,9 +1146,11 @@
         return `<button class="${cls}" data-act="check" data-i="${i}" data-k="${k}" ${answered ? 'disabled' : ''}><span class="k">${'ABCD'[k]}</span><span>${inline(o)}</span></button>`;
       }).join('');
       const fb = answered ? `<div class="explain prose">${chosen === c.answer ? '<p><strong>Eso es.</strong></p>' : '<p><strong>Casi.</strong> La buena es la marcada en verde.</p>'}${md(c.explain)}</div>` : '';
-      return `<div class="check"><p class="q">${inline(c.q)}</p>${opts}${fb}</div>`;
+      return `<div class="check"><p class="q">${inline(c.q)}</p>${miniPlan(c.scene, c.q)}${opts}${fb}</div>`;
     }).join('');
-    return `<section class="card"><div class="sec-head"><h2>Comprueba que lo tienes</h2><span class="muted">Sin nota: solo para ti</span></div><div class="checks">${items}</div></section>`;
+    const title = u.kind === 'problem' ? 'Ponte a prueba' : 'Comprueba que lo tienes';
+    const sub = u.kind === 'problem' ? 'Casos nuevos con lo que has diseñado' : 'Sin nota: solo para ti';
+    return `<section class="card"><div class="sec-head"><h2>${title}</h2><span class="muted">${sub}</span></div><div class="checks">${items}</div></section>`;
   }
 
   function feelBlock(u) {
@@ -996,7 +1189,7 @@
       (used.length ? `<p class="muted" style="margin-top:12px">Lo usarás en: ${used.map((x) => esc(x.title)).join(' · ')}</p>` : '') + '</section>';
     const res = Array.isArray(u.resources) && u.resources.length
       ? `<section class="card"><div class="sec-head"><h2>Para profundizar</h2><span class="muted">Opcional</span></div><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a></li>`).join('')}</ul></section>` : '';
-    return unitHead(u) + `<p class="lead">${inline(u.hook)}</p>` + sections + gloss + checksBlock(u) + ideas + res + feelBlock(u) + askBlock();
+    return unitHead(u) + `<p class="lead">${inline(u.hook)}</p>` + sceneCard(u) + sections + gloss + checksBlock(u) + ideas + res + feelBlock(u) + askBlock();
   }
 
   function problemState(u) {
@@ -1037,7 +1230,7 @@
     const finished = st.at >= u.steps.length || st.all;
     const toggle = !finished ? '<button class="link" data-act="all">Prefiero leerlo todo seguido</button>' : '';
     const final = finished
-      ? `<section class="card"><div class="sec-head"><h2>El plano completo</h2></div>${diagram(u.final.diagram, u.id)}<ul class="ideas" style="margin-top:14px">${u.final.summary.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>` +
+      ? `<section class="card"><div class="sec-head"><h2>El plano completo</h2></div>${diagram(u.final.diagram, u.id)}<ul class="ideas" style="margin-top:14px">${u.final.summary.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>` + sceneCard(u) + checksBlock(u) +
         `<section class="card"><div class="sec-head"><h2>Las preguntas de la web</h2><span class="muted">Lo que conviene saber de este problema</span></div>${u.considerations.map((c) => `<details class="qa"><summary><span>${inline(c.q)}</span>${ICON.chev}</summary><div class="prose">${md(c.a)}</div></details>`).join('')}</section>` +
         `<section class="card"><div class="sec-head"><h2>En la entrevista</h2></div><ul class="ideas">${u.interview.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>` +
         (u.resources.length ? `<section class="card"><div class="sec-head"><h2>Para profundizar</h2><span class="muted">Las soluciones que recomienda systemdesign.io</span></div><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a>${r.label ? ` <small>· ${esc(r.label)}</small>` : ''}</li>`).join('')}</ul></section>` : '') +
@@ -1066,6 +1259,7 @@
       S.view = { name: 'home' };
       renderHome();
     }
+    mountScene();
     if (fk) {
       const el = app.querySelector(`[data-fk="${fk}"]`);
       if (el) { el.focus({ preventScroll: true }); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) { /* not a text field */ } }
@@ -1226,6 +1420,13 @@
       case 'tts-stop': ttsStop(); break;
       case 'tts-rate': ttsRate(); break;
       case 'search': openSearch(); break;
+      case 'sc-go': sceneGo(Number(t.dataset.i)); break;
+      case 'sc-prev': if (S.sc) sceneGo(S.sc.i - 1); break;
+      case 'sc-next': if (S.sc) sceneGo(S.sc.i + 1); break;
+      case 'sc-done': sceneDone(); break;
+      case 'sc-replay': mountScene(); break;
+      case 'sc-pause': scenePause(); break;
+      case 'sc-predict': scenePredict(Number(t.dataset.k)); break;
       case 'progress': if (S.view.name !== 'progress') openProgress(fromHere()); break;
       case 'cal-prev': if (S.cal) { S.cal.month = monthAdd(S.cal.month, -1); render(); } break;
       case 'cal-next': if (S.cal) { S.cal.month = monthAdd(S.cal.month, 1); render(); } break;
@@ -1275,9 +1476,21 @@
       S.reg?.update().catch(() => {});
       refreshPush();
       if (S.view.name === 'home') refreshReview();
+      S.sc?.anim && !S.sc.paused && S.sc.anim.resume();
     } else {
       ttsStop();
+      S.sc?.anim?.pause();
     }
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (S.view.name !== 'unit' || !S.sc || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+    const card = document.getElementById('scene-card');
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) return;
+    if (ev.key === 'ArrowRight') { sceneGo(S.sc.i + 1); ev.preventDefault(); }
+    if (ev.key === 'ArrowLeft') { sceneGo(S.sc.i - 1); ev.preventDefault(); }
   });
 
   async function init() {
@@ -1290,6 +1503,7 @@
       ]);
       S.path = path;
       S.ready = new Set(index.units);
+      S.sceneIds = new Set(Array.isArray(index.scenes) ? index.scenes : []);
       S.version = index.version;
       S.progress = progress || {};
       S.cards = cards || {};

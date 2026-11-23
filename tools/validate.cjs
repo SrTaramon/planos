@@ -5,6 +5,16 @@ const CALLOUTS = ['tip', 'trap', 'interview', 'example'];
 const DIFF = ['Muy fácil', 'Fácil', 'Media', 'Difícil', 'Muy difícil'];
 let failed = 0;
 
+// Comprobaciones («Comprueba que lo tienes» en las lecciones, «Ponte a prueba» en los problemas): opción
+// múltiple, con un mini plano opcional (el mismo formato que un paso de escena: nodes, links, flows…).
+const { checkQuestion, checkMini } = require('./validate-scene.cjs');
+function checkChecks(list, bad) {
+  (Array.isArray(list) ? list : []).forEach((c, i) => {
+    checkQuestion(c, 'check ' + i, bad);
+    if (c && c.scene) checkMini(c.scene, `check ${i} scene`, bad);
+  });
+}
+
 function checkDiagram(d, where, bad) {
   if (!d) return;
   if (!Array.isArray(d.layers) || d.layers.length < 1 || d.layers.length > 7) { bad.push(where + ': diagram.layers (1-7)'); return; }
@@ -40,10 +50,8 @@ for (const f of process.argv.slice(2)) {
     });
     if (!Array.isArray(u.glossary) || u.glossary.length < 2) bad.push('glossary (2+)');
     (u.glossary || []).forEach((g, i) => { if (!g.term || !g.def) bad.push('glossary ' + i); });
-    if (!Array.isArray(u.checks) || u.checks.length < 2 || u.checks.length > 4) bad.push('checks (2-4)');
-    (u.checks || []).forEach((c, i) => {
-      if (!c.q || !Array.isArray(c.options) || c.options.length < 2 || !Number.isInteger(c.answer) || c.answer < 0 || c.answer >= c.options.length || !c.explain) bad.push('check ' + i);
-    });
+    if (!Array.isArray(u.checks) || u.checks.length < 2 || u.checks.length > 5) bad.push('checks (2-5)');
+    checkChecks(u.checks, bad);
     if (!Array.isArray(u.keyIdeas) || u.keyIdeas.length < 3) bad.push('keyIdeas (3+)');
   } else if (u.kind === 'problem') {
     if (!/^P\d{2}$/.test(u.id)) bad.push('id must look like P07');
@@ -68,6 +76,8 @@ for (const f of process.argv.slice(2)) {
     else checkDiagram(u.final.diagram, 'final', bad);
     if (!Array.isArray(u.considerations) || !u.considerations.length) bad.push('considerations');
     (u.considerations || []).forEach((c, i) => { if (!c.q || !c.a) bad.push('consideration ' + i); });
+    if (u.checks != null && (!Array.isArray(u.checks) || u.checks.length > 5)) bad.push('checks (0-5)');
+    checkChecks(u.checks, bad);
     if (!Array.isArray(u.interview) || u.interview.length < 2) bad.push('interview (2+)');
     if (!Array.isArray(u.resources)) bad.push('resources');
   } else {
