@@ -1,0 +1,1261 @@
+{
+  "id": "P16",
+  "title": "Los likes, en acción",
+  "metrics": [
+    {
+      "id": "fam",
+      "label": "Likes a su foto",
+      "unit": "/s"
+    },
+    {
+      "id": "row",
+      "label": "Escrituras a su fila",
+      "unit": "/s",
+      "better": "low"
+    },
+    {
+      "id": "key",
+      "label": "Lecturas de su clave",
+      "unit": "/s",
+      "better": "low"
+    },
+    {
+      "id": "dup",
+      "label": "Perdidos o dobles",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué el like no toca el contador",
+      "step": 1
+    },
+    {
+      "text": "Cómo 1.700 likes se vuelven una escritura",
+      "step": 2
+    },
+    {
+      "text": "Qué frena 50.000 lecturas a una clave",
+      "step": 3
+    },
+    {
+      "text": "Cómo aguanta el pico de un famoso",
+      "step": 4
+    },
+    {
+      "text": "Por qué no se cuenta dos veces tras un fallo",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Dar like",
+      "chapter": "solution",
+      "title": "El like, primero en la tabla de verdad",
+      "body": "`PUT …/likes/me` va al shard del usuario. El `INSERT … ON CONFLICT DO NOTHING` solo devuelve fila si el like es nuevo, y en la misma transacción deja un `+1` en el outbox. Un publicador lo lleva al log. El contador no se toca.",
+      "changes": [
+        "+ Tabla likes, por user_id",
+        "+ Outbox → log"
+      ],
+      "metrics": {
+        "fam": 1700,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id",
+          "mark": "good"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi",
+          "state": "dim"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg",
+          "state": "dim"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt",
+          "state": "dim"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache",
+          "state": "dim"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache",
+          "state": "dim"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true,
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Sumar",
+      "chapter": "solution",
+      "title": "Un delta por segundo, no un UPDATE por like",
+      "body": "El agregador lee la partición de la foto y suma en memoria durante un segundo. Después escribe un solo `count + 1.700` en `post_counters`, con el offset hasta el que llega (`upto`), y pone el número nuevo en la cache.",
+      "changes": [
+        "+ Agregador",
+        "~ Escrituras a la fila: una por segundo"
+      ],
+      "metrics": {
+        "fam": 1700,
+        "row": 1,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "load": 0.3,
+          "mark": "good"
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ],
+          "badge": "upto 9.812"
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi",
+          "state": "dim"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache",
+          "state": "dim"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "agg-cnt"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "agg-cache"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Leer",
+      "chapter": "solution",
+      "title": "Su foto, leída 50.000 veces por segundo",
+      "body": "Cada servidor de la API de lectura guarda el número 2 segundos en su memoria. Con 200 servidores, a Redis le llegan como mucho 100 lecturas por segundo de esa clave. Tu propio like sale de tu shard de `likes`, y la app ya sumó 1 al pulsar.",
+      "changes": [
+        "+ Cache local de 2 s",
+        "~ Lecturas a su clave: 100/s"
+      ],
+      "metrics": {
+        "fam": 1700,
+        "row": 1,
+        "key": 100,
+        "dup": 0
+      },
+      "panel": {
+        "title": "La hot key de su foto",
+        "rows": [
+          {
+            "text": "Sin cache local: 50.000 lecturas/s a una clave",
+            "tone": "bad"
+          },
+          {
+            "text": "200 servidores × 1 lectura cada 2 s"
+          },
+          {
+            "text": "= como mucho 100 lecturas/s a Redis",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "badge": "local 2 s",
+          "mark": "good"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ],
+          "badge": "upto 9.812"
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "agg-cnt"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "agg-cache"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "usr-rapi"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "rapi-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "La cantante sube otra foto y, en el pico, le llegan 10.000 likes por segundo. ¿Cuántas escrituras por segundo recibe su fila de `post_counters`?",
+        "options": [
+          "10.000: una por like",
+          "500: se reparten entre 20 subcontadores",
+          "Ninguna hasta el recuento nocturno",
+          "Una: el agregador suma el segundo y escribe un delta"
+        ],
+        "answer": 3,
+        "explain": "Los likes no tocan el contador: dejan un evento en el log. El agregador de esa partición los suma en memoria y escribe un `+N` por segundo, con 1.700 o con 10.000 likes. Los subcontadores son el refuerzo por si un solo agregador no bastara."
+      }
+    },
+    {
+      "short": "Famoso",
+      "chapter": "case",
+      "title": "En el pico: 10.000 likes por segundo a una foto",
+      "body": "Los likes vienen de millones de usuarios distintos, así que se reparten entre todos los shards de `likes`. Su partición del log solo añade al final, y el agregador suma 10.000 números por segundo en memoria. La fila sigue recibiendo una escritura por segundo.",
+      "changes": [
+        "~ Likes a su foto: 1.700/s → 10.000/s",
+        "~ Escrituras a su fila: siguen en 1/s"
+      ],
+      "metrics": {
+        "fam": 10000,
+        "row": 1,
+        "key": 100,
+        "dup": 0
+      },
+      "panel": {
+        "title": "La fila del contador",
+        "rows": [
+          {
+            "text": "Un UPDATE por like: 10.000/s",
+            "tone": "bad"
+          },
+          {
+            "text": "Lo que aguanta una fila disputada: ~1.000/s"
+          },
+          {
+            "text": "Con el agregador: 1 escritura/s",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "badge": "local 2 s"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id",
+          "load": 0.35
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "load": 0.45
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ],
+          "badge": "upto 9.812",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 6
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 6
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 6
+        },
+        {
+          "via": [
+            "agg-cnt"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "agg-cache"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "usr-rapi"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "rapi-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "El agregador escribe `+347` con `upto` 9.812 y se cae antes de apuntar su offset, que se queda en 9.500. Otro relee desde el 9.500. ¿Qué pasa con esos 312 eventos?",
+        "options": [
+          "Los vuelve a sumar: el contador se pasa en 347",
+          "Se los salta: el contador ya los incluye, lo dice `upto`",
+          "Se pierden: el agregador viejo se los llevó",
+          "El contador se pone a cero y se recuenta desde `likes`"
+        ],
+        "answer": 1,
+        "explain": "La fila guarda hasta qué evento llega (`upto` = 9.812) en el mismo `UPDATE` que el `+347`. El nuevo agregador relee desde el 9.500, ve que hasta el 9.812 ya están dentro y empieza a sumar en el 9.813. Sin `upto`, sí los sumaría dos veces."
+      }
+    },
+    {
+      "short": "Cae",
+      "chapter": "case",
+      "title": "Se cae el agregador",
+      "body": "Otro agregador toma su partición y relee el log desde el último offset apuntado. Los eventos hasta `upto` ya están en el contador y se salta; desde el siguiente, suma. Mientras tanto, el número se queda quieto unos segundos y nadie pierde su like.",
+      "changes": [
+        "~ Agregador nuevo en su partición",
+        "~ Relee desde el offset 9.500"
+      ],
+      "metrics": {
+        "fam": 1700,
+        "row": 1,
+        "key": 100,
+        "dup": 0
+      },
+      "panel": {
+        "title": "Al retomar",
+        "rows": [
+          {
+            "text": "Offset apuntado: 9.500"
+          },
+          {
+            "text": "Contador: +347, upto 9.812"
+          },
+          {
+            "text": "9.501 … 9.812: ya incluidos, se saltan",
+            "tone": "good"
+          },
+          {
+            "text": "Desde el 9.813: se suman",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "badge": "local 2 s"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador 2",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "badge": "desde 9.500",
+          "mark": "good"
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ],
+          "badge": "upto 9.812"
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 5
+        },
+        {
+          "via": [
+            "agg-cnt"
+          ],
+          "kind": "write",
+          "rate": 0.4,
+          "pop": true
+        },
+        {
+          "via": [
+            "usr-rapi"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "rapi-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- La verdad es la tabla `likes`, por `user_id`: un like por persona.\n- El contador no se toca en cada like: eventos, y un delta por segundo.\n- Las lecturas salen de una cache, con cache local para la hot key.\n- Si cae el agregador, `upto` evita likes perdidos o dobles.",
+      "callout": {
+        "type": "insight",
+        "text": "Cada pieza rápida se puede rehacer desde la de abajo: si `post_counters` se rompe, se recuenta desde `likes`."
+      },
+      "metrics": {
+        "fam": 1700,
+        "row": 1,
+        "key": 100,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "usr",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "wapi",
+          "kind": "service",
+          "label": "API likes",
+          "at": [
+            0.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rapi",
+          "kind": "service",
+          "label": "API lectura",
+          "at": [
+            2.5,
+            1.2
+          ],
+          "badge": "local 2 s"
+        },
+        {
+          "id": "likes",
+          "kind": "db",
+          "label": "likes+outbox",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "por user_id"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            2.5,
+            2.4
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "cnt",
+          "kind": "db",
+          "label": "post_counters",
+          "at": [
+            2.5,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "usr-wapi",
+          "from": "usr",
+          "to": "wapi"
+        },
+        {
+          "id": "usr-rapi",
+          "from": "usr",
+          "to": "rapi"
+        },
+        {
+          "id": "wapi-likes",
+          "from": "wapi",
+          "to": "likes"
+        },
+        {
+          "id": "likes-log",
+          "from": "likes",
+          "to": "log"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "agg-cnt",
+          "from": "agg",
+          "to": "cnt"
+        },
+        {
+          "id": "agg-cache",
+          "from": "agg",
+          "to": "cache"
+        },
+        {
+          "id": "rapi-cache",
+          "from": "rapi",
+          "to": "cache"
+        },
+        {
+          "id": "cache-cnt",
+          "from": "cache",
+          "to": "cnt",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "usr-wapi",
+            "wapi-likes"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "likes-log"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "agg-cnt"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "agg-cache"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "usr-rapi"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "rapi-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}
