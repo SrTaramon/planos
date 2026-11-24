@@ -1,0 +1,1185 @@
+{
+  "id": "P23",
+  "title": "El historial, en acción",
+  "metrics": [
+    {
+      "id": "rev",
+      "label": "Revisión actual"
+    },
+    {
+      "id": "apply",
+      "label": "Deltas a aplicar",
+      "better": "low"
+    },
+    {
+      "id": "saved",
+      "label": "Ocupa el guardado"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué un guardado ocupa 0,5 KB y no 20",
+      "step": 1
+    },
+    {
+      "text": "Cómo sale una versión vieja sin leerlo todo",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa con el vandalismo al restaurar",
+      "step": 4
+    },
+    {
+      "text": "Qué hace el editor cuando dos guardan a la vez",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Guardar",
+      "chapter": "solution",
+      "title": "Ana guarda: la 43, con 0,5 KB",
+      "body": "Ana cambia un párrafo y guarda con `baseRevision: 42`. El servicio sube el delta al almacén y, en una transacción, la página pasa a la 43 y se añade su fila en `revisions`. Nada se reescribe: la 42 sigue igual.",
+      "changes": [
+        "+ Revisión 43: un delta de 0,5 KB",
+        "~ current_rev: 42 → 43"
+      ],
+      "metrics": {
+        "rev": 43,
+        "apply": 0,
+        "saved": "0,5 KB"
+      },
+      "panel": {
+        "title": "Lo que se guarda",
+        "rows": [
+          {
+            "text": "Página: 20 KB; el cambio, un párrafo"
+          },
+          {
+            "text": "Copia completa: 20 KB por guardado",
+            "tone": "bad"
+          },
+          {
+            "text": "Delta: 0,5 KB",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ],
+          "items": [
+            "rev 43"
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ],
+          "items": [
+            "Δ 43"
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc",
+          "label": "base 42"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-svc",
+          "from": "cdn",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-svc",
+            [
+              "svc-store",
+              "svc-pg"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Detrás",
+      "chapter": "solution",
+      "title": "Mil lecturas por cada edición",
+      "body": "Tras guardar, el servicio publica «9f3a2c1b va por la 43». Unos workers invalidan esa página en la CDN y ponen al día la búsqueda, sin que Ana espere. Los lectores, unos 1.000 por edición, leen de la CDN: casi no llegan al servicio.",
+      "changes": [
+        "+ Evento «va por la 43»",
+        "~ CDN invalidada; búsqueda al día en segundos"
+      ],
+      "metrics": {
+        "rev": 43,
+        "apply": 0,
+        "saved": "0,5 KB"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn",
+          "label": "invalidar"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-svc",
+          "from": "cdn",
+          "to": "svc",
+          "label": "miss"
+        },
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "svc-q",
+            [
+              "q-cdn",
+              "q-idx"
+            ]
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "lect-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3.5
+        },
+        {
+          "via": [
+            "cdn-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "Ver la 17",
+      "chapter": "solution",
+      "title": "Abrir la 17: un snapshot y 16 deltas",
+      "body": "Luis quiere ver la versión 17. Hay un snapshot cada 20 revisiones (la 1, la 21, la 41…): el servicio lee el de la 1 y le aplica 16 deltas. Como la 17 no cambiará nunca, el resultado se cachea sin caducidad.",
+      "changes": [
+        "+ Snapshot 1 + deltas 2-17",
+        "+ La 17, en cache para siempre"
+      ],
+      "metrics": {
+        "rev": 43,
+        "apply": 16,
+        "saved": "0,5 KB"
+      },
+      "panel": {
+        "title": "Un snapshot cada 20",
+        "rows": [
+          {
+            "text": "Snapshots: 1, 21, 41, 61…"
+          },
+          {
+            "text": "La 17 = snapshot 1 + 16 deltas"
+          },
+          {
+            "text": "Nunca más de 19 deltas",
+            "tone": "good"
+          },
+          {
+            "text": "Solo deltas desde la 1: cada vez más lento",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ],
+          "badge": "1 + 16 Δ"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ],
+          "items": [
+            "snap 1",
+            "Δ 2-17"
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc",
+          "label": "versión 17"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "svc-cdn",
+          "from": "svc",
+          "to": "cdn",
+          "label": "sin caducidad"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "luis-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 900,
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "svc-store"
+          ],
+          "kind": "heavy",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "svc-cdn"
+          ],
+          "kind": "write",
+          "rate": 0.4,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Alguien vacía la página: la 44 está en blanco. Ana restaura la 43. ¿Cómo queda el historial?",
+        "options": [
+          "La 44 se borra y la página vuelve a apuntar a la 43",
+          "Se añade la 45 con el contenido de la 43, y la 44 sigue en el historial",
+          "La 43 se copia encima de la 44",
+          "Se borran la 44 y todas las que vinieron después"
+        ],
+        "answer": 1,
+        "explain": "Las revisiones no se editan ni se borran: restaurar es guardar una revisión nueva, la 45, con el contenido de la 43. El vandalismo se queda en el historial, como en un `git revert`. Y con el hash del contenido, la 45 apunta al mismo objeto que la 43: no ocupa más."
+      }
+    },
+    {
+      "short": "Restaurar",
+      "chapter": "case",
+      "title": "Vandalismo: se restaura con una revisión nueva",
+      "body": "La 44 deja la página en blanco. Ana restaura la 43: el servicio guarda la 45 con su contenido. La 44 sigue en el historial, y el hash del contenido hace que la 45 apunte al mismo objeto que la 43.",
+      "callout": {
+        "type": "tip",
+        "text": "Restaurar es como `git revert`: no se reescribe la historia, se añade algo que la deshace."
+      },
+      "changes": [
+        "+ Revisión 45 = contenido de la 43",
+        "~ La 44 se queda en el historial",
+        "~ Espacio nuevo: 0 KB (mismo hash)"
+      ],
+      "metrics": {
+        "rev": 45,
+        "apply": 0,
+        "saved": "0 KB"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ],
+          "items": [
+            "44 ✗",
+            "45=43"
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ],
+          "note": "45 → objeto de 43"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc",
+          "label": "restaurar 43"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-svc",
+          "from": "cdn",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-svc",
+            "svc-pg"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "Ana y Luis abren la 45. Ana guarda primero: 46. Luis guarda después con `baseRevision: 45`; ha tocado otro párrafo. ¿Qué pasa?",
+        "options": [
+          "Se guarda la de Luis como 46 y lo de Ana se pierde",
+          "La página se bloquea para Luis hasta que Ana salga",
+          "409, y el editor junta solo los dos cambios, porque tocan párrafos distintos",
+          "Se crean dos revisiones 46, una de cada uno"
+        ],
+        "answer": 2,
+        "explain": "Luis parte de la 45, pero la página ya va por la 46: la escritura condicional no toca ninguna fila y da 409. El editor compara la base con las dos versiones (fusión a tres bandas) y, como tocan párrafos distintos, junta los dos cambios. Solo si chocan en el mismo párrafo elige Luis. Nadie bloquea la página."
+      }
+    },
+    {
+      "short": "Choque",
+      "chapter": "case",
+      "title": "Dos guardan a la vez: 409 y fusión",
+      "body": "Ana guarda la 46. El guardado de Luis llega con `baseRevision: 45` y el `UPDATE … WHERE current_rev = 45` no toca nada: 409. El editor le enseña lo de Ana, fusiona a tres bandas y Luis guarda la 47 con los dos cambios.",
+      "changes": [
+        "+ Ana guarda la 46",
+        "~ Luis, desde la 45 → 409",
+        "+ Fusión a tres bandas: la 47"
+      ],
+      "metrics": {
+        "rev": 47,
+        "apply": 0,
+        "saved": "0,5 KB"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ],
+          "mark": "good",
+          "note": "409 → fusión"
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ],
+          "items": [
+            "46",
+            "47"
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc"
+        },
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc",
+          "label": "base 45",
+          "state": "hot"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-svc",
+          "from": "cdn",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-svc",
+            "svc-pg"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "luis-svc"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "luis-svc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Cada guardado añade una revisión; ninguna se reescribe.\n- Un snapshot cada 20 y deltas: ninguna versión pide más de 19.\n- Restaurar es una revisión nueva; con el hash, no ocupa.\n- Los choques se detectan con `baseRevision` y se fusionan.\n- CDN y búsqueda se ponen al día por la cola.",
+      "callout": {
+        "type": "insight",
+        "text": "Una versión vieja no cambia nunca: su URL se cachea para siempre. Lo que caduca es la página actual."
+      },
+      "metrics": {
+        "rev": 47,
+        "apply": 0,
+        "saved": "0,5 KB"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "lect",
+          "kind": "users",
+          "label": "Lectores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Documentos",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN / cache",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0.4,
+            2.8
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "storage",
+          "label": "Contenido",
+          "at": [
+            1.6,
+            2.8
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.8
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            3,
+            4.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-svc",
+          "from": "ana",
+          "to": "svc"
+        },
+        {
+          "id": "luis-svc",
+          "from": "luis",
+          "to": "svc"
+        },
+        {
+          "id": "lect-cdn",
+          "from": "lect",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-svc",
+          "from": "cdn",
+          "to": "svc"
+        },
+        {
+          "id": "svc-pg",
+          "from": "svc",
+          "to": "pg"
+        },
+        {
+          "id": "svc-store",
+          "from": "svc",
+          "to": "store"
+        },
+        {
+          "id": "svc-q",
+          "from": "svc",
+          "to": "q"
+        },
+        {
+          "id": "q-cdn",
+          "from": "q",
+          "to": "cdn"
+        },
+        {
+          "id": "q-idx",
+          "from": "q",
+          "to": "idx"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "lect-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "ana-svc",
+            [
+              "svc-store",
+              "svc-pg"
+            ]
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "svc-q",
+            [
+              "q-cdn",
+              "q-idx"
+            ]
+          ],
+          "kind": "event",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

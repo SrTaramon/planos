@@ -1,0 +1,1397 @@
+{
+  "id": "P32",
+  "title": "El Marketplace, en acción",
+  "metrics": [
+    {
+      "id": "status",
+      "label": "Anuncio lst_42"
+    },
+    {
+      "id": "qps",
+      "label": "Búsquedas por segundo"
+    },
+    {
+      "id": "lag",
+      "label": "Retraso del buscador",
+      "unit": "s",
+      "better": "low"
+    },
+    {
+      "id": "cdn",
+      "label": "Miniaturas",
+      "unit": "GB/s"
+    }
+  ],
+  "legend": {
+    "event": "cambio de un anuncio",
+    "heavy": "foto"
+  },
+  "goals": [
+    {
+      "text": "Por qué las fotos no pasan por la API",
+      "step": 1
+    },
+    {
+      "text": "Cómo llega un anuncio nuevo al buscador",
+      "step": 2
+    },
+    {
+      "text": "Qué pasa si se cae el indexador",
+      "step": 4
+    },
+    {
+      "text": "Por qué un anuncio vendido no engaña al comprador",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Publicar",
+      "chapter": "solution",
+      "title": "Publicar la bici: las fotos, directas al storage",
+      "body": "El vendedor crea el anuncio en borrador y pide una pre-signed URL por foto: las sube directamente al object storage, sin pasar por la API. Un worker hace las miniaturas, borra el EXIF (puede llevar el GPS de su casa) y la moderación las revisa. Después, `publish`: el anuncio pasa a `active` en la base de datos.",
+      "changes": [
+        "+ lst_42 en borrador",
+        "+ Fotos al storage con pre-signed URL",
+        "~ draft → active"
+      ],
+      "metrics": {
+        "status": "active",
+        "qps": 5800,
+        "lag": "—",
+        "cdn": 2.3
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix",
+          "state": "dim"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sel-s3"
+          ],
+          "kind": "heavy",
+          "rate": 1.2,
+          "pop": true
+        },
+        {
+          "via": [
+            "sel-api",
+            "api-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Al buscador",
+      "chapter": "solution",
+      "title": "La base de datos manda; el buscador la sigue",
+      "body": "El cambio sale por el outbox (o por CDC) a una cola, y el indexador lo aplica en el buscador: un documento con el texto, la categoría, el precio y el punto. En un par de segundos ya sale en las búsquedas: es la eventual consistency que se acepta.",
+      "changes": [
+        "+ Cola de cambios (outbox o CDC)",
+        "+ Indexador → buscador",
+        "~ Retraso del buscador: ~2 s"
+      ],
+      "metrics": {
+        "status": "active",
+        "qps": 5800,
+        "lag": 2,
+        "cdn": 2.3
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ]
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed",
+          "state": "dim"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "db-q",
+            "q-ix",
+            "ix-idx"
+          ],
+          "kind": "event",
+          "rate": 1.4,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Buscar",
+      "chapter": "solution",
+      "title": "«Bici de carretera, hasta 300 €, a 10 km»",
+      "body": "Una sola consulta al buscador: los filtros (activo, categoría, precio ≤ 300 €, a menos de 10 km por celdas geográficas) descartan casi todo, y el texto solo se puntúa en lo que queda. Al abrir un anuncio, su ficha se lee de la base de datos. Las miniaturas llegan de la CDN.",
+      "changes": [
+        "+ Texto, distancia y filtros en una consulta",
+        "+ La ficha, desde la base de datos",
+        "+ Las miniaturas, desde la CDN"
+      ],
+      "metrics": {
+        "status": "active",
+        "qps": 5800,
+        "lag": 2,
+        "cdn": 2.3
+      },
+      "predict": {
+        "q": "Ahora el indexador se cae 20 minutos. ¿Qué notan compradores y vendedores?",
+        "options": [
+          "Las búsquedas fallan: el buscador depende del indexador",
+          "Buscar va normal; lo publicado en esos 20 minutos no sale hasta que el indexador vuelve y se pone al día",
+          "Se pierden los anuncios publicados mientras estaba caído",
+          "Nada: la API escribe también en el buscador directamente"
+        ],
+        "answer": 1,
+        "explain": "El buscador sigue sirviendo lo que ya tenía. Los cambios esperan en la cola, y el indexador los aplica al volver: nada se pierde, solo llega tarde. La ficha se lee de la base de datos, así que un anuncio nuevo existe aunque aún no salga al buscar."
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix",
+          "state": "dim"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed",
+          "state": "dim"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "buy-api",
+            "api-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            "buy-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "s3-cdn",
+            "cdn-buy"
+          ],
+          "kind": "resp",
+          "rate": 2
+        }
+      ]
+    },
+    {
+      "short": "Cae indexador",
+      "chapter": "case",
+      "title": "Se cae el indexador 20 minutos",
+      "body": "El buscador sigue respondiendo con lo que tenía. Los cambios se acumulan en la cola, sin perderse. Mientras, un anuncio recién publicado no sale al buscar, pero su ficha funciona: se lee de la base de datos. Al volver, el indexador se pone al día en unos minutos.",
+      "changes": [
+        "− Indexador (caído)",
+        "~ La cola guarda los cambios",
+        "~ Retraso del buscador: 2 s → 20 min"
+      ],
+      "metrics": {
+        "status": "active",
+        "qps": 5800,
+        "lag": 1200,
+        "cdn": 2.3
+      },
+      "predict": {
+        "q": "Ya vuelve el indexador. Ahora el vendedor marca la bici como vendida, y durante unos segundos el buscador aún la tiene. ¿Qué ve un comprador que la encuentra y abre su ficha?",
+        "options": [
+          "La ficha como disponible, y puede escribir hasta que el buscador se actualice",
+          "Un error 404, hasta que el buscador se ponga al día",
+          "«Vendido»: la ficha se lee de la base de datos, no del buscador",
+          "Nada: la bici sale del buscador en el mismo instante"
+        ],
+        "answer": 2,
+        "explain": "El buscador es una copia que va unos segundos por detrás, pero la ficha se lee siempre de la fuente de verdad. La bici puede salir un momento más en una lista; al abrirla, la base de datos dice «Vendido» y no deja escribir. Borrarla a la vez en los dos sitios desde la API es la doble escritura que acaba desacordada."
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ],
+          "load": 0.75,
+          "badge": "esperan"
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ],
+          "state": "down"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix",
+          "state": "down"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx",
+          "state": "down"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed",
+          "state": "dim"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sel-api",
+            "api-db",
+            "db-q"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "buy-api",
+            "api-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        }
+      ]
+    },
+    {
+      "short": "Vendida",
+      "chapter": "case",
+      "title": "La bici se vende; el buscador va 2 s por detrás",
+      "body": "El vendedor la marca `sold`. El cambio va por la cola y en un par de segundos sale del buscador. Quien la encuentre en esos segundos y abra la ficha la lee de la base de datos, la fuente de verdad: ve «Vendido» y no puede escribir. Lo que importa se confirma siempre ahí.",
+      "changes": [
+        "~ lst_42: active → sold",
+        "~ El buscador aún la tiene ~2 s",
+        "+ La ficha confirma en la BD: «Vendido»"
+      ],
+      "metrics": {
+        "status": "sold",
+        "qps": 5800,
+        "lag": 2,
+        "cdn": 2.3
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ],
+          "mark": "good",
+          "badge": "sold"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ]
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed",
+          "state": "dim"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sel-api",
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "db-q",
+            "q-ix",
+            "ix-idx"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "buy-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Domingo",
+      "chapter": "case",
+      "title": "Domingo por la tarde: el triple de búsquedas",
+      "body": "Las búsquedas se triplican. La API y el buscador crecen con más réplicas; 60 GB de anuncios activos no cambian. Lo que más pesa son las miniaturas: las sirve la CDN desde el borde, y al object storage solo llega lo que la CDN no tiene. Ni la API ni la base de datos ven una foto.",
+      "changes": [
+        "~ Búsquedas: 5.800 → ~17.400 por segundo",
+        "~ Miniaturas: 2,3 → ~7 GB/s",
+        "+ Réplicas del buscador"
+      ],
+      "metrics": {
+        "status": "sold",
+        "qps": 17400,
+        "lag": 2,
+        "cdn": 7
+      },
+      "panel": {
+        "title": "La cuenta del pico (×3)",
+        "rows": [
+          {
+            "text": "5.800 × 3 ≈ 17.400 búsquedas por segundo"
+          },
+          {
+            "text": "× 20 miniaturas × 20 KB ≈ 7 GB/s, por la CDN",
+            "tone": "good"
+          },
+          {
+            "text": "Anuncios activos: 60 GB, igual que antes",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ],
+          "load": 0.6
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ],
+          "load": 0.7,
+          "badge": "+ réplicas"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ],
+          "load": 0.8,
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix",
+          "state": "dim"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed",
+          "state": "dim"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "buy-api",
+            "api-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 5
+        },
+        {
+          "via": [
+            "cdn-buy"
+          ],
+          "kind": "resp",
+          "rate": 5
+        },
+        {
+          "via": [
+            "s3-cdn"
+          ],
+          "kind": "resp",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- La base de datos es la fuente de verdad; el buscador, una copia que se puede reconstruir.\n- Los cambios llegan por una cola: segundos de retraso, y nada se pierde si el indexador cae.\n- Una consulta junta texto, distancia y filtros; la ficha confirma en la base de datos.\n- Las fotos van directas al storage y salen por la CDN.",
+      "callout": {
+        "type": "insight",
+        "text": "Con ~500 lecturas por escritura, lo caro se hace al escribir (índice, miniaturas) para que leer sea barato."
+      },
+      "metrics": {
+        "status": "sold",
+        "qps": 5800,
+        "lag": 2,
+        "cdn": 2.3
+      },
+      "nodes": [
+        {
+          "id": "sel",
+          "kind": "client",
+          "label": "Vendedor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "buy",
+          "kind": "users",
+          "label": "Compradores",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD anuncios",
+          "at": [
+            0.75,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Buscador",
+          "at": [
+            2.25,
+            1.2
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cambios",
+          "at": [
+            0.75,
+            2.4
+          ]
+        },
+        {
+          "id": "ix",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            2.25,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "Fotos",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "sel-api",
+          "from": "sel",
+          "to": "api"
+        },
+        {
+          "id": "buy-api",
+          "from": "buy",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-idx",
+          "from": "api",
+          "to": "idx"
+        },
+        {
+          "id": "db-q",
+          "from": "db",
+          "to": "q"
+        },
+        {
+          "id": "q-ix",
+          "from": "q",
+          "to": "ix"
+        },
+        {
+          "id": "ix-idx",
+          "from": "ix",
+          "to": "idx"
+        },
+        {
+          "id": "sel-s3",
+          "from": "sel",
+          "to": "s3",
+          "label": "pre-signed"
+        },
+        {
+          "id": "s3-cdn",
+          "from": "s3",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-buy",
+          "from": "cdn",
+          "to": "buy"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "sel-api",
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "db-q",
+            "q-ix",
+            "ix-idx"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "buy-api",
+            "api-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            "sel-s3"
+          ],
+          "kind": "heavy",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "s3-cdn",
+            "cdn-buy"
+          ],
+          "kind": "resp",
+          "rate": 2
+        }
+      ]
+    }
+  ]
+}

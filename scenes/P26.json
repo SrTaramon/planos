@@ -1,0 +1,1008 @@
+{
+  "id": "P26",
+  "title": "La reserva, en acción",
+  "metrics": [
+    {
+      "id": "free",
+      "label": "Dobles libres"
+    },
+    {
+      "id": "over",
+      "label": "Reservas de más",
+      "better": "low"
+    },
+    {
+      "id": "ana",
+      "label": "Reserva de Ana"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué buscar y reservar van por caminos distintos",
+      "step": 1
+    },
+    {
+      "text": "Cómo se aparta la habitación mientras pagas",
+      "step": 2
+    },
+    {
+      "text": "Por qué nunca se vende dos veces la última doble",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa cuando el pago y la caducidad chocan",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Buscar",
+      "chapter": "solution",
+      "title": "Buscar no toca la base de datos principal",
+      "body": "Ana busca en Sevilla del 4 al 7 de diciembre. La búsqueda sale del índice, la cache y las réplicas, que pueden ir unos segundos tarde: «quedan 3 dobles». Por cada reserva hay unas 100 búsquedas y fichas.",
+      "changes": [
+        "+ Búsqueda: índice, cache y réplicas",
+        "~ Pueden ir unos segundos tarde"
+      ],
+      "metrics": {
+        "free": 3,
+        "over": 0,
+        "ana": "—"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas",
+          "badge": "quedan 3"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ],
+          "items": [
+            "37/40"
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-srch",
+          "from": "ana",
+          "to": "srch"
+        },
+        {
+          "id": "srch-idx",
+          "from": "srch",
+          "to": "idx"
+        },
+        {
+          "id": "prim-idx",
+          "from": "prim",
+          "to": "idx",
+          "dashed": true,
+          "label": "segundos"
+        },
+        {
+          "id": "ana-book",
+          "from": "ana",
+          "to": "book",
+          "state": "dim"
+        },
+        {
+          "id": "book-prim",
+          "from": "book",
+          "to": "prim",
+          "state": "dim"
+        },
+        {
+          "id": "ana-pay",
+          "from": "ana",
+          "to": "pay",
+          "state": "dim"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-srch",
+            "srch-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "prim-idx"
+          ],
+          "kind": "event",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Reservar",
+      "chapter": "solution",
+      "title": "El hold: tres noches en una transacción",
+      "body": "Ana pulsa «Reservar» con su idempotency key. En la primaria, un `UPDATE` condicional suma 1 a las noches del 4, el 5 y el 6, solo si queda sitio, y crea la reserva `held`, que caduca en 10 minutos. El 7 no cuenta: es el día de salida.",
+      "changes": [
+        "+ Reserva r_981: held, 10 minutos",
+        "~ Dobles libres: 3 → 2",
+        "~ El índice aún dice 3"
+      ],
+      "metrics": {
+        "free": 2,
+        "over": 0,
+        "ana": "held"
+      },
+      "panel": {
+        "title": "La transacción",
+        "rows": [
+          {
+            "text": "UPDATE … SET total_reserved = total_reserved + 1"
+          },
+          {
+            "text": "… WHERE total_reserved < total_inventory"
+          },
+          {
+            "text": "3 filas tocadas (4, 5 y 6): COMMIT",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ],
+          "badge": "hold 10 min"
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas",
+          "badge": "quedan 3"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ],
+          "items": [
+            "4 dic",
+            "5 dic",
+            "6 dic"
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-book",
+          "from": "ana",
+          "to": "book",
+          "label": "Idempotency-Key"
+        },
+        {
+          "id": "book-prim",
+          "from": "book",
+          "to": "prim"
+        },
+        {
+          "id": "ana-srch",
+          "from": "ana",
+          "to": "srch",
+          "state": "dim"
+        },
+        {
+          "id": "srch-idx",
+          "from": "srch",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "prim-idx",
+          "from": "prim",
+          "to": "idx",
+          "dashed": true
+        },
+        {
+          "id": "ana-pay",
+          "from": "ana",
+          "to": "pay",
+          "state": "dim"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-book",
+            "book-prim"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Pagar",
+      "chapter": "solution",
+      "title": "Paga dentro del plazo: confirmada",
+      "body": "Ana paga. El servicio de pagos comprueba que el hold sigue vivo, cobra a través del proveedor y pasa la reserva a `confirmed` con un `UPDATE … WHERE status = 'held'`. La tarjeta nunca toca tu sistema.",
+      "changes": [
+        "+ Cobro con el proveedor",
+        "~ held → confirmed"
+      ],
+      "metrics": {
+        "free": 2,
+        "over": 0,
+        "ana": "confirmed"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ],
+          "badge": "confirmada"
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas",
+          "state": "dim"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ],
+          "items": [
+            "r_981 ✓"
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-pay",
+          "from": "ana",
+          "to": "pay"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov",
+          "label": "cobro"
+        },
+        {
+          "id": "pay-prim",
+          "from": "pay",
+          "to": "prim"
+        },
+        {
+          "id": "ana-srch",
+          "from": "ana",
+          "to": "srch",
+          "state": "dim"
+        },
+        {
+          "id": "srch-idx",
+          "from": "srch",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "ana-book",
+          "from": "ana",
+          "to": "book",
+          "state": "dim"
+        },
+        {
+          "id": "book-prim",
+          "from": "book",
+          "to": "prim",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-pay",
+            "pay-prov"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "pay-prim"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Nochevieja: queda una doble para las tres noches. Ana y Luis pulsan «Reservar» a la vez. Con el `UPDATE` condicional, ¿qué pasa?",
+        "options": [
+          "Entran las dos: cada una leyó que quedaba una",
+          "Fallan las dos por un deadlock",
+          "Entra una; el UPDATE de la otra no encuentra sitio, hace ROLLBACK y le dice «ya no quedan»",
+          "Entra una, y la otra espera en cola hasta que la primera pague"
+        ],
+        "answer": 2,
+        "explain": "La comprobación va dentro de la escritura (`WHERE total_reserved < total_inventory`). El UPDATE de Luis espera al de Ana, vuelve a evaluar la condición con el dato nuevo y no toca ninguna noche: ROLLBACK. «Cada una leyó que quedaba una» es el fallo de leer primero y escribir después, que aquí no se hace."
+      }
+    },
+    {
+      "short": "La última",
+      "chapter": "case",
+      "title": "Nochevieja: dos a por la última doble",
+      "body": "Queda una doble y Ana y Luis reservan a la vez. El `UPDATE` de Luis espera al de Ana, vuelve a mirar la condición y no encuentra sitio: toca 0 filas de 3, `ROLLBACK`. A Luis se le dice «ya no quedan»; Ana tiene su hold.",
+      "callout": {
+        "type": "insight",
+        "text": "Por si algo se escapa, un `CHECK (total_reserved <= total_inventory)` hace que la base de datos rechace cualquier escritura que se pase."
+      },
+      "changes": [
+        "+ Luis, a la vez que Ana",
+        "~ UPDATE de Luis: 0 filas → ROLLBACK",
+        "~ Dobles libres: 1 → 0"
+      ],
+      "metrics": {
+        "free": 0,
+        "over": 0,
+        "ana": "held"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ],
+          "badge": "hold 10 min"
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "ya no quedan"
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas",
+          "state": "dim"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ]
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ],
+          "mark": "good",
+          "items": [
+            "llena"
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-book",
+          "from": "ana",
+          "to": "book"
+        },
+        {
+          "id": "luis-book",
+          "from": "luis",
+          "to": "book"
+        },
+        {
+          "id": "book-prim",
+          "from": "book",
+          "to": "prim"
+        },
+        {
+          "id": "ana-srch",
+          "from": "ana",
+          "to": "srch",
+          "state": "dim"
+        },
+        {
+          "id": "srch-idx",
+          "from": "srch",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-book",
+            "book-prim"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "luis-book",
+            "book-prim"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.7
+        }
+      ],
+      "predict": {
+        "q": "El pago de Ana termina a los 10 minutos y 2 segundos, justo cuando el job pasa por los holds caducados. ¿Qué pasa?",
+        "options": [
+          "Las dos cosas: la reserva queda confirmada y la doble vuelve al inventario",
+          "Gana siempre el pago: el dinero ya está cobrado",
+          "Gana siempre el job, y el cobro se queda sin reserva",
+          "Gana el primero que cambia el estado desde `held`; si pierde el pago, se devuelve el dinero"
+        ],
+        "answer": 3,
+        "explain": "Los dos escriben con `WHERE status = 'held'`: el primero cambia la fila y el segundo ve 0. Si gana el job, la doble vuelve al inventario y el pago, al ver 0 filas, devuelve el dinero. Aplicar las dos sería lo peor: una reserva confirmada sobre una habitación que se puede vender otra vez."
+      }
+    },
+    {
+      "short": "Caduca",
+      "chapter": "case",
+      "title": "10 minutos sin pagar: el job gana la carrera",
+      "body": "El job llega primero: `UPDATE … SET status = 'expired' WHERE status = 'held' AND expires_at < now()` cambia la fila y, en la misma transacción, devuelve la doble al inventario. El pago llega 2 segundos tarde, ve 0 filas y devuelve el dinero.",
+      "changes": [
+        "+ Job: held → expired",
+        "~ Dobles libres: 0 → 1",
+        "~ El pago ve 0 filas → devolución"
+      ],
+      "metrics": {
+        "free": 1,
+        "over": 0,
+        "ana": "expired"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "luis",
+          "kind": "client",
+          "label": "Luis",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas",
+          "state": "dim"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ],
+          "items": [
+            "expired"
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "clock",
+          "label": "Job cada min",
+          "at": [
+            1.5,
+            4
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "job-prim",
+          "from": "job",
+          "to": "prim"
+        },
+        {
+          "id": "pay-prim",
+          "from": "pay",
+          "to": "prim",
+          "label": "0 filas",
+          "state": "hot"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov",
+          "label": "devolución"
+        },
+        {
+          "id": "ana-pay",
+          "from": "ana",
+          "to": "pay"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "job-prim"
+          ],
+          "kind": "write",
+          "rate": 0.7,
+          "pop": true
+        },
+        {
+          "via": [
+            "ana-pay",
+            "pay-prim"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "pay-prov"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Buscar va al índice, la cache y las réplicas; reservar, siempre a la primaria.\n- Un `UPDATE` condicional por noche: nunca más reservas que habitaciones.\n- El hold aparta la doble 10 minutos; un job devuelve las caducadas.\n- Cada cambio de estado es condicional: gana uno y el otro se entera.",
+      "metrics": {
+        "free": 1,
+        "over": 0,
+        "ana": "expired"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "srch",
+          "kind": "service",
+          "label": "Búsqueda",
+          "at": [
+            0,
+            1.4
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            0,
+            2.8
+          ],
+          "note": "+ cache y réplicas"
+        },
+        {
+          "id": "book",
+          "kind": "service",
+          "label": "Reservas",
+          "at": [
+            1.5,
+            1.4
+          ]
+        },
+        {
+          "id": "prim",
+          "kind": "db",
+          "label": "BD primaria",
+          "at": [
+            1.5,
+            2.8
+          ]
+        },
+        {
+          "id": "pay",
+          "kind": "service",
+          "label": "Pagos",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            3,
+            2.8
+          ]
+        },
+        {
+          "id": "job",
+          "kind": "clock",
+          "label": "Job cada min",
+          "at": [
+            1.5,
+            4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-srch",
+          "from": "ana",
+          "to": "srch"
+        },
+        {
+          "id": "srch-idx",
+          "from": "srch",
+          "to": "idx"
+        },
+        {
+          "id": "ana-book",
+          "from": "ana",
+          "to": "book"
+        },
+        {
+          "id": "book-prim",
+          "from": "book",
+          "to": "prim"
+        },
+        {
+          "id": "ana-pay",
+          "from": "ana",
+          "to": "pay"
+        },
+        {
+          "id": "pay-prov",
+          "from": "pay",
+          "to": "prov"
+        },
+        {
+          "id": "pay-prim",
+          "from": "pay",
+          "to": "prim"
+        },
+        {
+          "id": "prim-idx",
+          "from": "prim",
+          "to": "idx",
+          "dashed": true
+        },
+        {
+          "id": "job-prim",
+          "from": "job",
+          "to": "prim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-srch",
+            "srch-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "ana-book",
+            "book-prim"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "prim-idx"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "job-prim"
+          ],
+          "kind": "write",
+          "rate": 0.2
+        }
+      ]
+    }
+  ]
+}

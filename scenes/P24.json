@@ -1,0 +1,1178 @@
+{
+  "id": "P24",
+  "title": "La descarga, en acción",
+  "metrics": [
+    {
+      "id": "done",
+      "label": "Descargado",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "redo",
+      "label": "Bajado otra vez",
+      "unit": "MB",
+      "better": "low"
+    },
+    {
+      "id": "hit",
+      "label": "Hit de la CDN",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "origin",
+      "label": "Al origen",
+      "unit": "Gbps",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué los bytes no pasan por tu API",
+      "step": 1
+    },
+    {
+      "text": "Cómo sobrevive una descarga a un corte",
+      "step": 3
+    },
+    {
+      "text": "Qué se repite si un trozo llega mal",
+      "step": 4
+    },
+    {
+      "text": "Por qué la firma puede tirar el hit rate a cero",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Pedir",
+      "chapter": "solution",
+      "title": "download() devuelve una tarea, no el fichero",
+      "body": "La app pide la lección 3, de 2 GB. La librería crea la tarea y pregunta a la API: permiso, tamaño, SHA-256 y una URL firmada que caduca. Los bytes no pasarán por la API.",
+      "changes": [
+        "+ Tarea: en cola → descargando",
+        "+ GET /files/f_81 → URL firmada"
+      ],
+      "metrics": {
+        "done": 0,
+        "redo": 0,
+        "hit": 90,
+        "origin": 3.7
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lib",
+          "kind": "worker",
+          "label": "Librería",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "sql",
+          "kind": "db",
+          "label": "SQLite",
+          "at": [
+            0,
+            2.8
+          ],
+          "items": [
+            "tarea"
+          ]
+        },
+        {
+          "id": "disk",
+          "kind": "storage",
+          "label": "Disco",
+          "at": [
+            1,
+            2.8
+          ],
+          "note": "leccion-3.part",
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-lib",
+          "from": "app",
+          "to": "lib"
+        },
+        {
+          "id": "lib-api",
+          "from": "lib",
+          "to": "api",
+          "label": "/files/f_81"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta"
+        },
+        {
+          "id": "lib-sql",
+          "from": "lib",
+          "to": "sql"
+        },
+        {
+          "id": "lib-disk",
+          "from": "lib",
+          "to": "disk",
+          "state": "dim"
+        },
+        {
+          "id": "lib-cdn",
+          "from": "lib",
+          "to": "cdn",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-lib"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "lib-api",
+            "api-meta"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Trozos",
+      "chapter": "solution",
+      "title": "250 trozos de 8 MB, varios a la vez",
+      "body": "La librería pide trozos de 8 MB a la CDN con `Range` y escribe cada uno en su sitio del `.part`. Primero el trozo a disco y después la marca en SQLite. Con 64 KB de buffer por conexión, la RAM no pasa de medio MB.",
+      "changes": [
+        "+ Range: bytes=0-7999999 → 206",
+        "+ Trozos en paralelo, cada uno en su sitio",
+        "~ Descargado: 0 → 40 %"
+      ],
+      "metrics": {
+        "done": 40,
+        "redo": 0,
+        "hit": 90,
+        "origin": 3.7
+      },
+      "panel": {
+        "title": "El fichero de 2 GB",
+        "rows": [
+          {
+            "text": "2.000 MB / 8 MB = 250 trozos"
+          },
+          {
+            "text": "A 20 Mbps: unos 13 minutos"
+          },
+          {
+            "text": "1.º el trozo a disco; 2.º la marca en SQLite",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "lib",
+          "kind": "worker",
+          "label": "Librería",
+          "at": [
+            1,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "sql",
+          "kind": "db",
+          "label": "SQLite",
+          "at": [
+            0,
+            2.8
+          ],
+          "items": [
+            "100/250"
+          ]
+        },
+        {
+          "id": "disk",
+          "kind": "storage",
+          "label": "Disco",
+          "at": [
+            1,
+            2.8
+          ],
+          "note": "leccion-3.part"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-lib",
+          "from": "app",
+          "to": "lib",
+          "state": "dim"
+        },
+        {
+          "id": "lib-api",
+          "from": "lib",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta",
+          "state": "dim"
+        },
+        {
+          "id": "lib-cdn",
+          "from": "lib",
+          "to": "cdn",
+          "label": "Range"
+        },
+        {
+          "id": "lib-disk",
+          "from": "lib",
+          "to": "disk"
+        },
+        {
+          "id": "lib-sql",
+          "from": "lib",
+          "to": "sql"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "lib-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        },
+        {
+          "via": [
+            "lib-disk"
+          ],
+          "kind": "write",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "lib-sql"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "cdn-bkt"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        }
+      ],
+      "predict": {
+        "q": "Al 90 %, el metro entra en un túnel y el sistema cierra la app. Al volver, ¿cuánto se vuelve a bajar?",
+        "options": [
+          "Los 2 GB: la descarga vuelve a empezar",
+          "Lo que faltaba y los trozos que iban a medias: unos 200 MB",
+          "Todo lo bajado, para comprobar que está bien",
+          "Nada: el sistema mantiene la conexión abierta en el túnel"
+        ],
+        "answer": 1,
+        "explain": "SQLite dice qué trozos están escritos y marcados: 225 de 250. Se piden los otros 25 con `Range`; los que iban por la mitad se repiten enteros, pero son pocos (como mucho 4, 32 MB). Sin ese estado en disco, el corte tiraría 1,8 GB a la basura."
+      }
+    },
+    {
+      "short": "Corte",
+      "chapter": "case",
+      "title": "Corte en el metro: sigue por el trozo 226",
+      "body": "La red cae al 90 % y el sistema cierra la app. Al volver, la librería lee SQLite: 225 trozos hechos. Pide los 25 que faltan. Ha pasado tanto rato que la URL firmada ha caducado: la CDN responde 403, la librería pide otra a la API y sigue.",
+      "changes": [
+        "~ Esperando red → descargando",
+        "+ 225 trozos hechos: no se repiten",
+        "~ 403: URL caducada → pide otra"
+      ],
+      "metrics": {
+        "done": 90,
+        "redo": 32,
+        "hit": 90,
+        "origin": 3.7
+      },
+      "panel": {
+        "rows": [
+          {
+            "text": "Sin estado en disco: 1,8 GB a la basura",
+            "tone": "bad"
+          },
+          {
+            "text": "Con trozos: se repiten los 4 en vuelo, ≤ 32 MB",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lib",
+          "kind": "worker",
+          "label": "Librería",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "sql",
+          "kind": "db",
+          "label": "SQLite",
+          "at": [
+            0,
+            2.8
+          ],
+          "items": [
+            "225/250"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "disk",
+          "kind": "storage",
+          "label": "Disco",
+          "at": [
+            1,
+            2.8
+          ],
+          "note": "leccion-3.part"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-lib",
+          "from": "app",
+          "to": "lib"
+        },
+        {
+          "id": "lib-sql",
+          "from": "lib",
+          "to": "sql"
+        },
+        {
+          "id": "lib-api",
+          "from": "lib",
+          "to": "api",
+          "label": "URL nueva"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta"
+        },
+        {
+          "id": "lib-cdn",
+          "from": "lib",
+          "to": "cdn",
+          "label": "desde 1,8 GB"
+        },
+        {
+          "id": "lib-disk",
+          "from": "lib",
+          "to": "disk"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "lib-sql"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "lib-cdn"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "lib-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "lib-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "lib-disk"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        }
+      ]
+    },
+    {
+      "short": "Verificar",
+      "chapter": "solution",
+      "title": "Un trozo llega mal: se repite solo ese",
+      "body": "Cada trozo se compara con su hash, de la lista que dio la API. El 117 no cuadra: se tira y se pide otra vez, 8 MB. Cuando los 250 cuadran, el `.part` se renombra a `leccion-3.mp4` de una vez: la app nunca ve medio vídeo.",
+      "changes": [
+        "~ Trozo 117: hash distinto → se repite",
+        "~ .part → .mp4 (renombrado atómico)",
+        "~ Descargado: 100 %"
+      ],
+      "metrics": {
+        "done": 100,
+        "redo": 40,
+        "hit": 90,
+        "origin": 3.7
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "lib",
+          "kind": "worker",
+          "label": "Librería",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "sql",
+          "kind": "db",
+          "label": "SQLite",
+          "at": [
+            0,
+            2.8
+          ],
+          "items": [
+            "250/250"
+          ]
+        },
+        {
+          "id": "disk",
+          "kind": "storage",
+          "label": "Disco",
+          "at": [
+            1,
+            2.8
+          ],
+          "note": "leccion-3.mp4",
+          "mark": "good"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-lib",
+          "from": "app",
+          "to": "lib"
+        },
+        {
+          "id": "lib-cdn",
+          "from": "lib",
+          "to": "cdn",
+          "label": "trozo 117"
+        },
+        {
+          "id": "lib-disk",
+          "from": "lib",
+          "to": "disk"
+        },
+        {
+          "id": "lib-sql",
+          "from": "lib",
+          "to": "sql"
+        },
+        {
+          "id": "lib-api",
+          "from": "lib",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "lib-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "lib-disk"
+          ],
+          "kind": "write",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "lib-sql"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        }
+      ],
+      "predict": {
+        "q": "Sale una lección nueva y miles de apps la bajan a la vez, cada una con su URL firmada (`?Expires=…&Signature=…`). Si la CDN usa la URL entera como clave de cache, ¿qué hit rate tiene?",
+        "options": [
+          "Casi el 100 %: todas piden el mismo fichero",
+          "El 90 %, como siempre",
+          "El 50 %: la mitad de las URLs se repiten",
+          "Cerca del 0 %: cada URL es distinta y todas van al origen"
+        ],
+        "answer": 3,
+        "explain": "Para la cache, dos URLs distintas son dos ficheros distintos. Como cada usuario tiene su firma, ninguna petición encuentra la copia de otra y todas acaban en el bucket. La solución: comprobar la firma en el edge y dejarla fuera de la clave."
+      }
+    },
+    {
+      "short": "Estreno",
+      "chapter": "case",
+      "title": "Estreno: la firma rompe la cache",
+      "body": "Miles de apps piden la lección nueva a la vez, cada una con su firma. Si la CDN usa la URL entera como clave, cada petición es un fichero distinto: el hit rate cae a cero y todo llega al bucket.",
+      "callout": {
+        "type": "warn",
+        "text": "Con 400 TB al día, un hit rate de 0 % son ~37 Gbps contra el origen, en vez de ~3,7."
+      },
+      "changes": [
+        "+ Miles de apps a la vez",
+        "~ Hit: 90 % → 0 %",
+        "~ Al origen: 3,7 → 37 Gbps"
+      ],
+      "metrics": {
+        "done": "—",
+        "redo": "—",
+        "hit": 0,
+        "origin": 37
+      },
+      "nodes": [
+        {
+          "id": "many",
+          "kind": "users",
+          "label": "Miles de apps",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ],
+          "state": "hot",
+          "load": 0.95,
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "many-cdn",
+          "from": "many",
+          "to": "cdn",
+          "label": "URL + firma"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt",
+          "state": "hot",
+          "label": "miss"
+        },
+        {
+          "id": "many-api",
+          "from": "many",
+          "to": "api"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "many-cdn",
+            "cdn-bkt"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "many-api",
+            "api-meta"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Arreglo",
+      "chapter": "solution",
+      "title": "La firma, en el edge y fuera de la clave",
+      "body": "El edge comprueba la firma y la deja fuera de la clave: todos comparten la copia de `f_81/v7`, que no cambia nunca y vive con un TTL largo. Un origin shield entre los edges y el bucket hace que, ante un miss, no vayan todos a la vez al origen.",
+      "changes": [
+        "~ Clave de cache: f_81/v7, sin firma",
+        "+ Origin shield",
+        "~ Hit: 0 → 90 %; al origen: 37 → 3,7 Gbps"
+      ],
+      "metrics": {
+        "done": "—",
+        "redo": "—",
+        "hit": 90,
+        "origin": 3.7
+      },
+      "nodes": [
+        {
+          "id": "many",
+          "kind": "users",
+          "label": "Miles de apps",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "sh",
+          "kind": "cache",
+          "label": "Shield",
+          "at": [
+            3,
+            2.8
+          ]
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ],
+          "load": 0.15
+        }
+      ],
+      "links": [
+        {
+          "id": "many-cdn",
+          "from": "many",
+          "to": "cdn",
+          "label": "f_81/v7"
+        },
+        {
+          "id": "cdn-sh",
+          "from": "cdn",
+          "to": "sh"
+        },
+        {
+          "id": "sh-bkt",
+          "from": "sh",
+          "to": "bkt"
+        },
+        {
+          "id": "many-api",
+          "from": "many",
+          "to": "api"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "many-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "cdn-sh",
+            "sh-bkt"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "many-api",
+            "api-meta"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Dos caminos: metadatos por la API; bytes, de la CDN a la app.\n- Trozos con `Range`, cada uno en su sitio y marcado después de escribirlo.\n- Tras un corte solo se repite lo que iba a medias.\n- Un hash por trozo y un renombrado atómico al final.\n- La firma, fuera de la clave de cache.",
+      "metrics": {
+        "done": 100,
+        "redo": 40,
+        "hit": 90,
+        "origin": 3.7
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lib",
+          "kind": "worker",
+          "label": "Librería",
+          "at": [
+            1,
+            1.4
+          ]
+        },
+        {
+          "id": "sql",
+          "kind": "db",
+          "label": "SQLite",
+          "at": [
+            0,
+            2.8
+          ]
+        },
+        {
+          "id": "disk",
+          "kind": "storage",
+          "label": "Disco",
+          "at": [
+            1,
+            2.8
+          ],
+          "note": "leccion-3.part"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "meta",
+          "kind": "db",
+          "label": "Fichas",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            3,
+            1.4
+          ]
+        },
+        {
+          "id": "bkt",
+          "kind": "storage",
+          "label": "Bucket",
+          "at": [
+            3,
+            4.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-lib",
+          "from": "app",
+          "to": "lib"
+        },
+        {
+          "id": "lib-api",
+          "from": "lib",
+          "to": "api"
+        },
+        {
+          "id": "api-meta",
+          "from": "api",
+          "to": "meta"
+        },
+        {
+          "id": "lib-cdn",
+          "from": "lib",
+          "to": "cdn"
+        },
+        {
+          "id": "cdn-bkt",
+          "from": "cdn",
+          "to": "bkt"
+        },
+        {
+          "id": "lib-disk",
+          "from": "lib",
+          "to": "disk"
+        },
+        {
+          "id": "lib-sql",
+          "from": "lib",
+          "to": "sql"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "lib-api",
+            "api-meta"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "lib-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "lib-disk"
+          ],
+          "kind": "write",
+          "rate": 2
+        },
+        {
+          "via": [
+            "cdn-bkt"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        }
+      ]
+    }
+  ]
+}

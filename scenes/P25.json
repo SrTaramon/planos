@@ -1,0 +1,1239 @@
+{
+  "id": "P25",
+  "title": "El enjambre, en acción",
+  "metrics": [
+    {
+      "id": "up",
+      "label": "Tu subida",
+      "unit": "Mbps",
+      "better": "high"
+    },
+    {
+      "id": "c412",
+      "label": "Copias de la 412",
+      "better": "high"
+    },
+    {
+      "id": "bad",
+      "label": "Piezas tiradas",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Qué sabe el tracker y qué no",
+      "step": 1
+    },
+    {
+      "text": "Por qué se pide antes la pieza más rara",
+      "step": 2
+    },
+    {
+      "text": "Por qué compartir es la forma más rápida de bajar",
+      "step": 3
+    },
+    {
+      "text": "Qué cuesta una pieza manipulada",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Entrar",
+      "chapter": "solution",
+      "title": "Del .torrent al enjambre",
+      "body": "Bajas el `.torrent` de la web del estudio, por HTTPS. Te anuncias al tracker con su info hash y `left` = 4 GiB, y te da una lista de peers (también podrías preguntar a la DHT, sin servidor). Los bytes del parche nunca pasan por él.",
+      "changes": [
+        "+ .torrent: 1.024 piezas, 20 KiB de hashes",
+        "+ announce → lista de peers"
+      ],
+      "metrics": {
+        "up": 0,
+        "c412": 1,
+        "bad": 0
+      },
+      "panel": {
+        "title": "El .torrent",
+        "rows": [
+          {
+            "text": "4 GiB / 4 MiB = 1.024 piezas"
+          },
+          {
+            "text": "1.024 hashes × 20 bytes = 20 KiB"
+          },
+          {
+            "text": "El info hash protege todos los hashes",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "items": [
+            "7",
+            "98",
+            "5"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "you-web",
+          "from": "you",
+          "to": "web",
+          "label": "HTTPS"
+        },
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk",
+          "label": "announce"
+        },
+        {
+          "id": "you-dht",
+          "from": "you",
+          "to": "dht",
+          "state": "dim",
+          "dashed": true
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa",
+          "state": "dim"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb",
+          "state": "dim"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "you-trk"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "La más rara",
+      "chapter": "solution",
+      "title": "Rarest first: antes la 412",
+      "body": "Los vecinos te mandan su bitfield. Ya tienes una pieza cogida al azar, la 7, para empezar a intercambiar. Ahora toca la más rara: la 412 solo la tiene B. Si B se fuera, desaparecería; en cuanto la tengas, habrá dos copias.",
+      "changes": [
+        "+ Bitfields de A, B y C",
+        "~ Pides la 412: solo hay una copia",
+        "~ Copias de la 412: 1 → 2"
+      ],
+      "metrics": {
+        "up": 0,
+        "c412": 2,
+        "bad": 0
+      },
+      "panel": {
+        "rows": [
+          {
+            "text": "Pieza 7: la tienen A, B y C"
+          },
+          {
+            "text": "Pieza 98: A y C · pieza 5: solo C"
+          },
+          {
+            "text": "Pieza 412: solo B → de las primeras",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "items": [
+            "7",
+            "98",
+            "5"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc"
+        },
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-pb"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5,
+          "pop": true
+        },
+        {
+          "via": [
+            [
+              "you-pa",
+              "you-pc"
+            ]
+          ],
+          "kind": "event",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Toma y daca",
+      "chapter": "solution",
+      "title": "Tit-for-tat: sirves a quien te sirve",
+      "body": "Verificas la 412 con su SHA-1 y mandas `have` a tus vecinos. A te pide la 412 y tú a él la 98: cambiáis. Cada 10 segundos atiendes (`unchoke`) a los que más rápido te dan datos; al resto, `choke`. Tu subida ya trabaja para el enjambre.",
+      "changes": [
+        "+ have 412",
+        "~ Tu subida: 0 → 20 Mbps",
+        "+ choke a quien no te da nada"
+      ],
+      "metrics": {
+        "up": 20,
+        "c412": 3,
+        "bad": 0
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "items": [
+            "7",
+            "98",
+            "5"
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "label": "choke",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-pa"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "you-pa"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "you-pb"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "Llega Peer D sin ninguna pieza. Con tit-for-tat, cada peer atiende a quien mejor le da, y D no da nada. ¿Cómo consigue su primera pieza?",
+        "options": [
+          "Se la manda el tracker, que conoce todas las piezas",
+          "Con el optimistic unchoke: cada 30 s, cada peer atiende a un vecino al azar",
+          "No puede: espera a que alguien termine el fichero entero",
+          "Hace `choke` a todos hasta que alguien le atiende"
+        ],
+        "answer": 1,
+        "explain": "Cada 30 segundos, cada peer atiende a un vecino al azar aunque no le dé nada. Así entra quien acaba de llegar, y de paso cada uno prueba vecinos nuevos por si alguno es más rápido. El tracker no sirve piezas: solo sabe quién está."
+      }
+    },
+    {
+      "short": "Llega D",
+      "chapter": "case",
+      "title": "Un recién llegado: el unchoke optimista",
+      "body": "D no tiene nada que ofrecer. Cada 30 segundos eliges un vecino al azar y lo atiendes igualmente: esta vez, D. Recibe una pieza cualquiera, la 7, y ya puede empezar a intercambiar.",
+      "changes": [
+        "+ Peer D, sin piezas",
+        "~ Unchoke optimista: atiendes a D",
+        "+ D ya tiene la 7"
+      ],
+      "metrics": {
+        "up": 20,
+        "c412": 3,
+        "bad": 0
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "items": [
+            "7",
+            "98",
+            "5"
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pd",
+          "kind": "client",
+          "label": "Peer D",
+          "at": [
+            2.4,
+            3
+          ],
+          "items": [
+            "7"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "you-pd",
+          "from": "you",
+          "to": "pd",
+          "label": "al azar"
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "label": "choke",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-pd"
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "you-pa"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "Te falta la 5, que solo tiene C. Se la pides y C te la manda con unos bytes cambiados a propósito. ¿Qué pasa?",
+        "options": [
+          "Su SHA-1 no cuadra con el del .torrent: la tiras, bloqueas a C y la pides a otro",
+          "Se estropea el fichero y hay que bajarlo entero otra vez",
+          "Nadie lo nota hasta comprobar el fichero entero al final",
+          "TCP detecta el cambio y C la reenvía bien"
+        ],
+        "answer": 0,
+        "explain": "Cada pieza se comprueba al completarla contra su hash del `.torrent`, que viene protegido por el info hash. Una pieza mala cuesta esa pieza, 4 MiB. TCP solo protege de errores en el cable: C manda otros bytes a propósito, y llegan sin error."
+      }
+    },
+    {
+      "short": "Pieza mala",
+      "chapter": "case",
+      "title": "C manda una pieza falsa",
+      "body": "La 5 llega de C, pero su SHA-1 no coincide con el del `.torrent`. La tiras, apuntas que venía de C y lo bloqueas: solo pierdes 4 MiB. Pero C era el único que la tenía: en el enjambre no queda ninguna copia buena.",
+      "changes": [
+        "~ Pieza 5: hash distinto → se tira",
+        "− Peer C (bloqueado)",
+        "~ Piezas tiradas: 0 → 1"
+      ],
+      "metrics": {
+        "up": 20,
+        "c412": 3,
+        "bad": 1
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "items": [
+            "7",
+            "98",
+            "5"
+          ],
+          "state": "down",
+          "mark": "bad"
+        },
+        {
+          "id": "pd",
+          "kind": "client",
+          "label": "Peer D",
+          "at": [
+            2.4,
+            3
+          ],
+          "items": [
+            "7"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "label": "pieza 5 ✗",
+          "state": "down"
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pd",
+          "from": "you",
+          "to": "pd"
+        },
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-pc"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            [
+              "you-pa",
+              "you-pb",
+              "you-pd"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Seeder",
+      "chapter": "case",
+      "title": "El seeder del estudio cubre el hueco",
+      "body": "Sin una copia buena de la 5, nadie terminaría. Por eso el estudio no lo deja al azar: tiene seeders propios, siempre encendidos y con el fichero entero, que dan antes las piezas que escasean. Ahora tú tienes la 5 y la compartes.",
+      "changes": [
+        "+ Seeder propio, con el fichero entero",
+        "~ Pieza 5: del seeder, verificada",
+        "~ Ya vuelve a haber copias de la 5"
+      ],
+      "metrics": {
+        "up": 20,
+        "c412": 3,
+        "bad": 1
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "items": [
+            "98",
+            "412",
+            "5"
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "state": "down"
+        },
+        {
+          "id": "pd",
+          "kind": "client",
+          "label": "Peer D",
+          "at": [
+            2.4,
+            3
+          ],
+          "items": [
+            "7",
+            "5"
+          ]
+        },
+        {
+          "id": "seed",
+          "kind": "service",
+          "label": "Seeder propio",
+          "at": [
+            1.5,
+            4
+          ],
+          "items": [
+            "todas"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "you-seed",
+          "from": "you",
+          "to": "seed",
+          "label": "pieza 5"
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pd",
+          "from": "you",
+          "to": "pd",
+          "label": "pieza 5"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "you-seed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "you-pd"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "you-pa"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- El `.torrent` lleva un hash por pieza; el info hash lo protege todo.\n- El tracker (o la DHT) dice quién está; los bytes van entre peers.\n- Rarest first reparte antes lo que escasea.\n- Tit-for-tat premia a quien sube; el unchoke optimista deja entrar.\n- Una pieza mala cuesta 4 MiB; los seeders propios cubren huecos.",
+      "callout": {
+        "type": "insight",
+        "text": "Con un servidor, cada usuario nuevo es carga; aquí, también es capacidad."
+      },
+      "metrics": {
+        "up": 20,
+        "c412": 3,
+        "bad": 1
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web HTTPS",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracker",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "dht",
+          "kind": "service",
+          "label": "DHT",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "you",
+          "kind": "client",
+          "label": "Tú",
+          "at": [
+            1.5,
+            1.3
+          ]
+        },
+        {
+          "id": "pa",
+          "kind": "client",
+          "label": "Peer A",
+          "at": [
+            0.25,
+            1.8
+          ],
+          "items": [
+            "7",
+            "98",
+            "412"
+          ]
+        },
+        {
+          "id": "pb",
+          "kind": "client",
+          "label": "Peer B",
+          "at": [
+            2.75,
+            1.8
+          ],
+          "items": [
+            "7",
+            "412"
+          ]
+        },
+        {
+          "id": "pc",
+          "kind": "client",
+          "label": "Peer C",
+          "at": [
+            0.6,
+            3
+          ],
+          "state": "down"
+        },
+        {
+          "id": "pd",
+          "kind": "client",
+          "label": "Peer D",
+          "at": [
+            2.4,
+            3
+          ],
+          "items": [
+            "7",
+            "5"
+          ]
+        },
+        {
+          "id": "seed",
+          "kind": "service",
+          "label": "Seeder propio",
+          "at": [
+            1.5,
+            4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "you-trk",
+          "from": "you",
+          "to": "trk"
+        },
+        {
+          "id": "you-dht",
+          "from": "you",
+          "to": "dht",
+          "dashed": true
+        },
+        {
+          "id": "you-pa",
+          "from": "you",
+          "to": "pa"
+        },
+        {
+          "id": "you-pb",
+          "from": "you",
+          "to": "pb"
+        },
+        {
+          "id": "you-pd",
+          "from": "you",
+          "to": "pd"
+        },
+        {
+          "id": "you-seed",
+          "from": "you",
+          "to": "seed"
+        },
+        {
+          "id": "you-pc",
+          "from": "you",
+          "to": "pc",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "you-pa",
+              "you-pb",
+              "you-pd",
+              "you-seed"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "you-trk"
+          ],
+          "kind": "ping",
+          "rate": 0.3
+        }
+      ]
+    }
+  ]
+}

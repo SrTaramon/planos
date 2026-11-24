@@ -1,0 +1,1263 @@
+{
+  "id": "P29",
+  "title": "El límite de pantallas, en acción",
+  "metrics": [
+    {
+      "id": "screens",
+      "label": "Pantallas"
+    },
+    {
+      "id": "hb",
+      "label": "Heartbeat cada",
+      "unit": "s"
+    },
+    {
+      "id": "writes",
+      "label": "Escrituras (mundo)",
+      "unit": "M/s",
+      "better": "low"
+    },
+    {
+      "id": "free",
+      "label": "Hueco sin avisar",
+      "unit": "s",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "write": "heartbeat"
+  },
+  "goals": [
+    {
+      "text": "Por qué dos play a la vez no entran los dos",
+      "step": 2
+    },
+    {
+      "text": "Cómo se libera el hueco de una tele que no avisa",
+      "step": 4
+    },
+    {
+      "text": "Por qué perder un nodo de Redis no corta los vídeos",
+      "step": 5
+    },
+    {
+      "text": "Qué hace el sistema si la región de origen no contesta",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Play",
+      "chapter": "solution",
+      "title": "La tele pulsa play",
+      "body": "La tele pide un stream. El servicio lee el límite del plan (2 pantallas) en la cache y ejecuta el script en el shard de la cuenta: borra lo caducado, cuenta y entra. Solo entonces sale la licencia, y el vídeo llega desde la CDN, sin pasar por el contador.",
+      "changes": [
+        "+ Stream de la tele en el sorted set",
+        "+ Licencia, y vídeo desde la CDN",
+        "~ Pantallas: 0 → 1 de 2"
+      ],
+      "metrics": {
+        "screens": "1 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "predict": {
+        "q": "Queda un hueco libre y el móvil y la tablet pulsan play en el mismo instante. Con el script en Redis, ¿qué pasa?",
+        "options": [
+          "Entran los dos, y el siguiente heartbeat echa a uno",
+          "No entra ninguno: los dos scripts se bloquean",
+          "Entra uno; el otro recibe un 409 con la lista de quién está viendo",
+          "Entra el que tenga mejor conexión, y el otro espera en cola"
+        ],
+        "answer": 2,
+        "explain": "Redis ejecuta cada script entero, sin intercalar otro: el primero entra y el segundo ya cuenta «2 de 2». Con tres llamadas sueltas (borrar, contar, añadir) los dos contarían «1 de 2» y entrarían: esa es la carrera que el script cierra."
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "items": [
+            "tele"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab",
+          "state": "dim"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "tv-svc",
+            "svc-rd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "svc-lic"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "cdn-tv"
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Carrera",
+      "chapter": "case",
+      "title": "Un hueco libre, dos play a la vez",
+      "body": "El móvil y la tablet pulsan play en el mismo instante. Redis ejecuta el script entero sin intercalar nada: el móvil entra y la tablet ya ve la cuenta llena. Recibe un `409` con la lista de quién está viendo («Tele · desde las 21:05») y un botón para parar uno.",
+      "callout": {
+        "type": "warn",
+        "text": "Con tres llamadas sueltas (borrar, contar, añadir), los dos contarían «1 de 2» y entrarían a la vez."
+      },
+      "changes": [
+        "+ Stream del móvil",
+        "~ Tablet: 409, con quién está viendo",
+        "~ Pantallas: 1 → 2 de 2"
+      ],
+      "metrics": {
+        "screens": "2 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "mark": "bad",
+          "badge": "409"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "items": [
+            "tele",
+            "móvil"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab",
+          "state": "dim"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic",
+          "state": "dim"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ph-svc",
+            "svc-rd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "tab-svc",
+            "svc-rd"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 1
+        },
+        {
+          "via": [
+            [
+              "cdn-tv",
+              "cdn-ph"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Heartbeat",
+      "chapter": "solution",
+      "title": "Cada 30 s, «sigo viendo»",
+      "body": "Cada reproductor manda un heartbeat cada 30 s, que lleva su caducidad 90 s más allá. En todo el mundo, con 30 millones viendo, es **1 millón de escrituras por segundo**: un Redis con sharding por cuenta, de al menos 10 nodos. El vídeo sigue llegando de la CDN.",
+      "changes": [
+        "+ Heartbeat cada 30 s",
+        "~ Lease: caduca a los 90 s"
+      ],
+      "metrics": {
+        "screens": "2 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "panel": {
+        "title": "El intervalo, un trade-off",
+        "rows": [
+          {
+            "text": "10 s: 3 M escrituras/s · libera en ~30 s",
+            "tone": "bad"
+          },
+          {
+            "text": "30 s: 1 M/s · libera en ~90 s",
+            "tone": "good"
+          },
+          {
+            "text": "60 s: 500.000/s · libera en ~3 min"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ]
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "items": [
+            "tele",
+            "móvil"
+          ],
+          "load": 0.55,
+          "badge": "10+ nodos"
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab",
+          "state": "dim"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic",
+          "state": "dim"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "tv-svc",
+              "ph-svc"
+            ],
+            "svc-rd"
+          ],
+          "kind": "write",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            [
+              "cdn-tv",
+              "cdn-ph"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Enchufe",
+      "chapter": "case",
+      "title": "La tele se apaga desde el enchufe",
+      "body": "La tele no avisa: deja de mandar heartbeats. Nadie borra su stream, pero su lease caduca solo, y el script del siguiente play lo quita. A los 90 s como mucho, la tablet vuelve a pulsar play y esta vez entra.",
+      "changes": [
+        "− Tele (sin avisar)",
+        "~ Su lease caduca en 90 s como mucho",
+        "+ Stream de la tablet"
+      ],
+      "metrics": {
+        "screens": "2 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "predict": {
+        "q": "Ahora cae el nodo de Redis de esta cuenta, y su réplica no tenía los últimos streams: la cuenta parece vacía. ¿Qué pasa con el vídeo del móvil y el de la tablet?",
+        "options": [
+          "Siguen: su siguiente heartbeat no encuentra el lease y vuelve a pedir hueco",
+          "Se paran los dos: el siguiente heartbeat responde 410",
+          "Siguen 90 s, hasta que caduca el lease, y luego se paran",
+          "Se paran al momento: la licencia depende de Redis"
+        ],
+        "answer": 0,
+        "explain": "El heartbeat renueva o vuelve a pedir: si su stream no está, ejecuta el mismo script del play y, con la cuenta vacía, entra sin que nadie lo note. Si respondiera 410 sin más, la caída de un nodo pararía a la vez todos los vídeos de sus cuentas."
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ],
+          "state": "down"
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ]
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "items": [
+            "móvil",
+            "tablet"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv",
+          "state": "down"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc",
+          "state": "down"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic",
+          "state": "dim"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "tab-svc",
+            "svc-rd"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "ph-svc",
+            "svc-rd"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "cdn-ph",
+              "cdn-tab"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Cae Redis",
+      "chapter": "case",
+      "title": "Cae el nodo de Redis de la cuenta",
+      "body": "La réplica toma el relevo, pero sin los últimos streams. El siguiente heartbeat del móvil no encuentra su lease: ejecuta el script del play y vuelve a entrar, sin sustituir a nadie. La tablet, igual. Nadie ve un corte. Solo recibe `410` quien de verdad no cabe o se paró a propósito.",
+      "changes": [
+        "− Nodo de Redis de la cuenta",
+        "~ La réplica pasa a primaria, vacía",
+        "~ Heartbeat: renueva o vuelve a pedir",
+        "~ Vídeos parados: ninguno"
+      ],
+      "metrics": {
+        "screens": "2 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ]
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "state": "down"
+        },
+        {
+          "id": "rep",
+          "kind": "cache",
+          "label": "Réplica",
+          "at": [
+            3,
+            3.4
+          ],
+          "mark": "good",
+          "items": [
+            "móvil",
+            "tablet"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic",
+          "state": "dim"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd",
+          "state": "down"
+        },
+        {
+          "id": "svc-rep",
+          "from": "svc",
+          "to": "rep"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "ph-svc",
+              "tab-svc"
+            ],
+            "svc-rep"
+          ],
+          "kind": "write",
+          "rate": 1.4,
+          "pop": true
+        },
+        {
+          "via": [
+            [
+              "cdn-ph",
+              "cdn-tab"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Sin región",
+      "chapter": "case",
+      "title": "La región de origen no contesta",
+      "body": "La cuenta vive en Europa y la tablet ve desde Nueva York. Si la región de origen no responde, no se puede contar. El servicio elige **fail-open**: deja ver sin contar, lo registra y vuelve a contar en cuanto la región responde. Una pantalla de más unos minutos es mejor que dejar sin vídeo a quien paga.",
+      "callout": {
+        "type": "insight",
+        "text": "Fail-closed sería no dejar ver a ninguna cuenta de esa región: millones de clientes que pagan, sin servicio, para evitar unas pocas pantallas de más."
+      },
+      "changes": [
+        "− Región de origen (sin respuesta)",
+        "~ Play: pasa sin contar, y se registra",
+        "~ Pantallas: sin contar"
+      ],
+      "metrics": {
+        "screens": "sin contar",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ]
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado",
+          "badge": "fail-open",
+          "mark": "good"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rep",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            3,
+            3.4
+          ],
+          "state": "down"
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv",
+          "state": "dim"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic"
+        },
+        {
+          "id": "svc-rep",
+          "from": "svc",
+          "to": "rep",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "tab-svc",
+            "svc-rep"
+          ],
+          "kind": "req",
+          "fail": true,
+          "rate": 1
+        },
+        {
+          "via": [
+            "svc-lic"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "cdn-ph",
+              "cdn-tab"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ],
+      "zones": [
+        {
+          "label": "Región de origen",
+          "from": [
+            2.7,
+            3.4
+          ],
+          "to": [
+            3,
+            3.4
+          ],
+          "tone": "bad"
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Se cuentan streams: un lease por reproducción, en un sorted set por cuenta.\n- Un script atómico borra lo caducado, cuenta y entra: sin carreras.\n- El heartbeat renueva cada 30 s; quien muere sin avisar libera su hueco en 90 s.\n- Si se pierde un lease, el heartbeat vuelve a pedir; si la región no contesta, fail-open.",
+      "callout": {
+        "type": "insight",
+        "text": "El vídeo nunca pasa por el contador: el permiso se pide al empezar y se renueva aparte, mientras la CDN sigue mandando el vídeo."
+      },
+      "metrics": {
+        "screens": "2 de 2",
+        "hb": 30,
+        "writes": 1,
+        "free": 90
+      },
+      "nodes": [
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN de vídeo",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "tv",
+          "kind": "client",
+          "label": "Tele",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "ph",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            1.5,
+            1.1
+          ]
+        },
+        {
+          "id": "tab",
+          "kind": "client",
+          "label": "Tablet",
+          "at": [
+            3,
+            1.1
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Streams",
+          "at": [
+            1.5,
+            2.2
+          ],
+          "note": "sin estado"
+        },
+        {
+          "id": "lic",
+          "kind": "service",
+          "label": "Licencias",
+          "at": [
+            3,
+            2.2
+          ]
+        },
+        {
+          "id": "rd",
+          "kind": "cache",
+          "label": "Leases",
+          "at": [
+            1.5,
+            3.4
+          ],
+          "note": "sorted set",
+          "items": [
+            "tele",
+            "móvil"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "cdn-tv",
+          "from": "cdn",
+          "to": "tv"
+        },
+        {
+          "id": "cdn-ph",
+          "from": "cdn",
+          "to": "ph"
+        },
+        {
+          "id": "cdn-tab",
+          "from": "cdn",
+          "to": "tab",
+          "state": "dim"
+        },
+        {
+          "id": "tv-svc",
+          "from": "tv",
+          "to": "svc"
+        },
+        {
+          "id": "ph-svc",
+          "from": "ph",
+          "to": "svc"
+        },
+        {
+          "id": "tab-svc",
+          "from": "tab",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-lic",
+          "from": "svc",
+          "to": "lic"
+        },
+        {
+          "id": "svc-rd",
+          "from": "svc",
+          "to": "rd"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "tv-svc",
+              "ph-svc"
+            ],
+            "svc-rd"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "svc-lic"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            [
+              "cdn-tv",
+              "cdn-ph"
+            ]
+          ],
+          "kind": "resp",
+          "rate": 2.5
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1589 @@
+{
+  "id": "P30",
+  "title": "Las transferencias, en acción",
+  "metrics": [
+    {
+      "id": "ana",
+      "label": "Saldo de Ana",
+      "unit": "€"
+    },
+    {
+      "id": "state",
+      "label": "Última transferencia"
+    },
+    {
+      "id": "sum",
+      "label": "Suma de apuntes",
+      "unit": "€"
+    },
+    {
+      "id": "shop",
+      "label": "Cuenta de la tienda",
+      "unit": "abonos/s",
+      "better": "high"
+    }
+  ],
+  "legend": {
+    "write": "apunte en el ledger",
+    "event": "orden al banco"
+  },
+  "goals": [
+    {
+      "text": "Cómo mueve el dinero una sola transacción",
+      "step": 1
+    },
+    {
+      "text": "Cómo sale el dinero hacia otro banco sin perderse",
+      "step": 2
+    },
+    {
+      "text": "Por qué dos cargos a la vez no dejan un saldo negativo",
+      "step": 4
+    },
+    {
+      "text": "Qué hacer cuando el banco no contesta",
+      "step": 5
+    },
+    {
+      "text": "Cómo aguanta una cuenta que recibe miles de pagos",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Interna",
+      "chapter": "solution",
+      "title": "Ana paga 250 € a Luis, en la misma fintech",
+      "body": "Una sola transacción: la fila de `transfers` con su idempotency key, el cargo condicional (`balance >= 25000`), el abono y dos apuntes que suman cero. Al hacer COMMIT queda `settled`. Si algo falla antes, no queda nada a medias.",
+      "changes": [
+        "+ tr_789: settled",
+        "~ Ana: 800 → 550 €",
+        "+ 2 apuntes que suman cero"
+      ],
+      "metrics": {
+        "ana": 550,
+        "state": "settled",
+        "sum": 0,
+        "shop": "—"
+      },
+      "panel": {
+        "title": "Los apuntes de tr_789",
+        "rows": [
+          {
+            "text": "acc_ana   −25000"
+          },
+          {
+            "text": "acc_luis  +25000"
+          },
+          {
+            "text": "Suma: 0",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox",
+          "state": "dim"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw",
+          "state": "dim"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank",
+          "state": "dim"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Externa",
+      "chapter": "solution",
+      "title": "250 € a un proveedor de otro banco",
+      "body": "Aquí no hay transacción que abarque a los dos bancos. En la misma transacción van los apuntes (Ana −250, «En tránsito» +250) y una fila del outbox. El relay la publica en la cola, y el worker manda la orden al banco socio con nuestro id, `tr_790`, como referencia.",
+      "changes": [
+        "~ Ana: 550 → 300 €, En tránsito +250",
+        "+ Fila del outbox → cola → worker",
+        "~ tr_790: pending → submitted"
+      ],
+      "metrics": {
+        "ana": 300,
+        "state": "submitted",
+        "sum": 0,
+        "shop": "—"
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "+ outbox"
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "db-relay",
+            "relay-q",
+            "q-bw",
+            "bw-bank"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Llega",
+      "chapter": "solution",
+      "title": "El banco confirma; la empresa lo ve",
+      "body": "El banco socio confirma que el dinero ha llegado. El worker avanza el estado con un update condicional (`WHERE status = 'submitted'`) y escribe los apuntes finales: «En tránsito» −250, «Enviado» +250. La empresa recibe su webhook; si consulta el estado o el saldo, lo lee de la base de datos.",
+      "changes": [
+        "~ tr_790: submitted → settled",
+        "+ En tránsito −250, Enviado +250",
+        "+ Webhook transfer.settled"
+      ],
+      "metrics": {
+        "ana": 300,
+        "state": "settled",
+        "sum": 0,
+        "shop": "—"
+      },
+      "predict": {
+        "q": "Ana tiene 300 € y llegan en el mismo instante dos transferencias suyas de 250 €, con claves de idempotencia distintas. ¿Qué pasa?",
+        "options": [
+          "Pasan las dos y Ana queda en −200 €; la conciliación lo detecta al día siguiente",
+          "Se rechazan las dos: mismos datos, parecen un reintento",
+          "Pasa la primera; la segunda espera la fila, ve 50 € y se deshace con un 422",
+          "Pasan las dos, pero la segunda queda en pending hasta que haya saldo"
+        ],
+        "answer": 2,
+        "explain": "El `UPDATE … WHERE balance >= 25000` bloquea la fila de Ana. La segunda espera, vuelve a evaluar la condición con 50 € y no cambia nada: ROLLBACK y 422. Con claves distintas son dos pagos de verdad, no un reintento. Y el saldo negativo no llega a existir: no hace falta que nadie lo arregle."
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox",
+          "state": "dim"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw",
+          "state": "dim"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "bw-bank",
+            "bw-db"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Dos a la vez",
+      "chapter": "case",
+      "title": "Dos cargos de 250 € con 300 € en la cuenta",
+      "body": "Las dos transacciones llegan juntas. La primera bloquea la fila de Ana y descuenta. La segunda espera, vuelve a evaluar `balance >= 25000` con 50 € y no toca nada: ROLLBACK y `422`. Sin leer primero y escribir después, el saldo nunca baja de cero.",
+      "callout": {
+        "type": "tip",
+        "text": "Si una transferencia toca dos cuentas, se bloquean siempre en el mismo orden (por id): Ana → Luis y Luis → Ana a la vez no se esperarán para siempre."
+      },
+      "changes": [
+        "~ Ana: 300 → 50 €",
+        "~ La segunda: 422, sin cambiar nada",
+        "~ Saldo negativo: nunca"
+      ],
+      "metrics": {
+        "ana": 50,
+        "state": "settled",
+        "sum": 0,
+        "shop": "—"
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "fila de Ana",
+          "mark": "good"
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox",
+          "state": "dim"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw",
+          "state": "dim"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank",
+          "state": "dim"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.9
+        },
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "fail",
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "Timeout",
+      "chapter": "case",
+      "title": "El banco socio no contesta",
+      "body": "Ana manda 40 € a otro banco (`tr_792`). La orden sale, pero la llamada se queda sin respuesta: no es ni sí ni no. Reenviarla a ciegas podría pagar dos veces. El worker **pregunta** al banco por su referencia: la orden sí había entrado, así que pasa a `submitted` sin mandarla otra vez.",
+      "callout": {
+        "type": "warn",
+        "text": "Una llamada tiene tres resultados: sí, no y no lo sé. Ante un «no lo sé» se pregunta por la referencia; nunca se reenvía a ciegas."
+      },
+      "changes": [
+        "+ tr_792: 40 € hacia otro banco",
+        "~ Timeout: ni sí ni no",
+        "~ Se pregunta por la referencia",
+        "~ tr_792: pending → submitted"
+      ],
+      "metrics": {
+        "ana": 10,
+        "state": "submitted",
+        "sum": 0,
+        "shop": "—"
+      },
+      "predict": {
+        "q": "Una tienda online recibe en su cuenta 2.000 pagos por segundo el día de una oferta. Cada abono bloquea la fila de la cuenta 5 ms. ¿Qué pasa?",
+        "options": [
+          "Nada: la base de datos aguanta 600 por segundo de media",
+          "La cuenta llega a unos 200 por segundo: la cola de esperas crece sin parar",
+          "Postgres detecta deadlocks y aborta la mitad",
+          "Los abonos se rechazan con 422 por saldo"
+        ],
+        "answer": 1,
+        "explain": "Con la fila bloqueada 5 ms, caben 1 s / 5 ms = 200 abonos por segundo, uno detrás de otro. Llegan 2.000: cada segundo se quedan esperando 1.800 más. Que la base de datos aguante el total no ayuda: todos quieren la misma fila. No hay deadlock (todos bloquean lo mismo): hay cola."
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ],
+          "badge": "timeout",
+          "mark": "bad"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw",
+          "state": "dim"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank",
+          "label": "¿tr_792?"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "db-relay",
+            "relay-q",
+            "q-bw",
+            "bw-bank"
+          ],
+          "kind": "event",
+          "fail": true,
+          "failAt": 0.92,
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "bw-bank"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Fila caliente",
+      "chapter": "case",
+      "title": "2.000 pagos por segundo a la misma tienda",
+      "body": "Cada abono bloquea la fila de la tienda 5 ms: caben unos 200 por segundo. Llegan 2.000. Las transacciones se quedan esperando su turno, la latencia crece y acaban saltando timeouts. El resto de cuentas va bien: el problema es una sola fila.",
+      "changes": [
+        "~ Abonos que llegan: 2.000/s",
+        "~ La fila da para ~200/s",
+        "~ La cola crece 1.800 por segundo"
+      ],
+      "metrics": {
+        "ana": 10,
+        "state": "settled",
+        "sum": 0,
+        "shop": 200
+      },
+      "panel": {
+        "title": "La cuenta de la tienda",
+        "rows": [
+          {
+            "text": "1 s / 5 ms con la fila bloqueada = 200/s",
+            "tone": "bad"
+          },
+          {
+            "text": "Llegan 2.000/s: esperan 1.800 más cada segundo",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "load": 0.8
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "hot",
+          "load": 0.98,
+          "badge": "+1.800/s"
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db",
+          "state": "hot"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox",
+          "state": "dim"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw",
+          "state": "dim"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank",
+          "state": "dim"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 6,
+          "wait": 900
+        }
+      ]
+    },
+    {
+      "short": "Solo apuntes",
+      "chapter": "solution",
+      "title": "Los abonos solo apuntan; el saldo, cada segundo",
+      "body": "Los abonos solo insertan su apunte, sin tocar `balance`: no se esperan entre ellos. Un proceso suma los nuevos cada segundo. Un abono no puede dejar el saldo en negativo, así que no necesita bloquear nada. Los cargos de la tienda, muchos menos, siguen pasando por la fila y ven el saldo un segundo tarde: prudente, nunca peligroso.",
+      "changes": [
+        "− Bloqueo de la fila en cada abono",
+        "+ Apuntes sueltos; el saldo, cada segundo",
+        "~ La tienda: 200 → 2.000 abonos/s"
+      ],
+      "metrics": {
+        "ana": 10,
+        "state": "settled",
+        "sum": 0,
+        "shop": 2000
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "load": 0.6
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "load": 0.55,
+          "badge": "solo apuntes",
+          "mark": "good"
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox",
+          "state": "dim"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw",
+          "state": "dim"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank",
+          "state": "dim"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "emp-gw",
+            "gw-svc",
+            "svc-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 6,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Ledger de partida doble: los apuntes suman cero y nunca se borran.\n- Cargo condicional en la transacción: dos cargos a la vez no dejan un saldo negativo.\n- Hacia otro banco: outbox, cola, nuestra referencia y estados que solo avanzan.\n- Ante un timeout se pregunta. Cada día, la conciliación cruza el ledger con el extracto del banco.",
+      "callout": {
+        "type": "insight",
+        "text": "Las cifras son pequeñas (600 por segundo caben en una base de datos): lo difícil es que cada euro esté siempre en un solo sitio."
+      },
+      "metrics": {
+        "ana": 10,
+        "state": "settled",
+        "sum": 0,
+        "shop": 2000
+      },
+      "nodes": [
+        {
+          "id": "emp",
+          "kind": "client",
+          "label": "Empresa",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gw",
+          "kind": "lb",
+          "label": "API gateway",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "svc",
+          "kind": "service",
+          "label": "Transferencias",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "rec",
+          "kind": "worker",
+          "label": "Conciliación",
+          "at": [
+            3,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Ledger",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "bank",
+          "kind": "external",
+          "label": "Banco socio",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "relay",
+          "kind": "worker",
+          "label": "Relay",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "bw",
+          "kind": "worker",
+          "label": "Worker banco",
+          "at": [
+            3,
+            3.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "emp-gw",
+          "from": "emp",
+          "to": "gw",
+          "state": "dim"
+        },
+        {
+          "id": "gw-svc",
+          "from": "gw",
+          "to": "svc",
+          "state": "dim"
+        },
+        {
+          "id": "svc-db",
+          "from": "svc",
+          "to": "db"
+        },
+        {
+          "id": "db-relay",
+          "from": "db",
+          "to": "relay",
+          "label": "outbox"
+        },
+        {
+          "id": "relay-q",
+          "from": "relay",
+          "to": "q"
+        },
+        {
+          "id": "q-bw",
+          "from": "q",
+          "to": "bw"
+        },
+        {
+          "id": "bw-bank",
+          "from": "bw",
+          "to": "bank"
+        },
+        {
+          "id": "bw-db",
+          "from": "bw",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "rec-db",
+          "from": "rec",
+          "to": "db"
+        },
+        {
+          "id": "rec-bank",
+          "from": "rec",
+          "to": "bank"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "rec-db"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "rec-bank"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "db-relay",
+            "relay-q",
+            "q-bw",
+            "bw-bank"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "svc-db"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}

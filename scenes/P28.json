@@ -1,0 +1,1356 @@
+{
+  "id": "P28",
+  "title": "El calendario, en acción",
+  "metrics": [
+    {
+      "id": "views",
+      "label": "Vistas",
+      "unit": "/s"
+    },
+    {
+      "id": "writes",
+      "label": "Eventos nuevos",
+      "unit": "/s"
+    },
+    {
+      "id": "madrid",
+      "label": "El lunes, en Madrid"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué ver la semana es una sola consulta",
+      "step": 2
+    },
+    {
+      "text": "Por qué el cambio de hora no mueve las reuniones",
+      "step": 4
+    },
+    {
+      "text": "Cómo se encuentra un hueco para varios",
+      "step": 5
+    },
+    {
+      "text": "Cómo llegan a tiempo los avisos de las 9:50",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Crear",
+      "chapter": "solution",
+      "title": "Crear la reunión: una transacción y una cola",
+      "body": "Ana crea «Reunión de equipo», cada lunes a las 10:00 de Madrid, con Luis y Marta. En una transacción se guardan el evento con su regla, los invitados y una fila de agenda para cada uno. Las invitaciones salen por la cola.",
+      "changes": [
+        "+ Evento con RRULE y zona horaria",
+        "+ 3 filas en user_events (fan-out)",
+        "+ Invitaciones por la cola"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ],
+          "items": [
+            "ana",
+            "luis",
+            "marta"
+          ]
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos",
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ]
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api",
+          "label": "POST evento"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "label": "invitaciones"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "state": "dim"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob",
+          "state": "dim"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy",
+          "state": "dim"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "state": "dim"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-api",
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "api-q",
+            "q-wk"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "La semana",
+      "chapter": "solution",
+      "title": "Ver la semana: una consulta por rango",
+      "body": "Cada vez que alguien abre su semana, la API lee sus filas de `user_events` en su shard, con un índice por usuario y hora, y expande las series del rango en la zona del evento. Por cada evento creado hay unas 20 vistas.",
+      "changes": [
+        "~ user_events por (user_id, start_utc)",
+        "~ La API expande las RRULE del rango"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "panel": {
+        "rows": [
+          {
+            "text": "11.600 vistas/s ÷ 580 eventos/s ≈ 20"
+          },
+          {
+            "text": "Fan-out: escribir 3 filas para leer 1 rango"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ],
+          "badge": "expande",
+          "mark": "good"
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ]
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos",
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "state": "dim"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob",
+          "state": "dim"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy",
+          "state": "dim"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "state": "dim"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        }
+      ]
+    },
+    {
+      "short": "Tu móvil",
+      "chapter": "solution",
+      "title": "Tu móvil, al día en segundos",
+      "body": "Tras guardar, el gateway de tiempo real avisa por WebSocket a los otros dispositivos de Ana: «algo ha cambiado». El móvil pide `/sync` con su token y recibe solo lo nuevo, sin bajar el calendario entero.",
+      "changes": [
+        "+ Aviso por WebSocket",
+        "+ /sync?token → solo lo que cambió"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ]
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos",
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "label": "cambio"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob"
+        },
+        {
+          "id": "mob-api",
+          "from": "mob",
+          "to": "api",
+          "label": "/sync"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy",
+          "state": "dim"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "state": "dim"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "api-rt",
+            "rt-mob"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "mob-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ],
+      "predict": {
+        "q": "Supón que guardaras la serie como «cada lunes a las 09:00 UTC», sin zona horaria. En noviembre sale a las 10:00 de Madrid. ¿A qué hora sale el 8 de junio?",
+        "options": [
+          "A las 10:00, como siempre",
+          "A las 9:00",
+          "A las 11:00",
+          "Depende de la zona del navegador de cada uno"
+        ],
+        "answer": 2,
+        "explain": "En verano Madrid va a UTC+2: las 09:00 UTC son las 11:00. Por eso el evento guarda `Europe/Madrid` y se expande en esa zona: el 8 de junio, las 10:00 de Madrid son las 08:00 UTC. El navegador solo decide cómo se pinta para quien mira, no cuándo es la reunión."
+      }
+    },
+    {
+      "short": "Cambio de hora",
+      "chapter": "case",
+      "title": "En junio, las 10:00 siguen siendo las 10:00",
+      "body": "La regla se expande en la zona del evento, `Europe/Madrid`. El 9 de noviembre, las 10:00 de Madrid son las 09:00 UTC; el 8 de junio, las 08:00 UTC. En UTC la hora cambia, pero en Madrid la reunión no se mueve.",
+      "changes": [
+        "~ 9 nov: 10:00 en Madrid = 09:00 UTC",
+        "~ 8 jun: 10:00 en Madrid = 08:00 UTC"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "panel": {
+        "title": "Cada lunes a las 10:00",
+        "rows": [
+          {
+            "text": "Guardado: RRULE + Europe/Madrid"
+          },
+          {
+            "text": "Expandida en Madrid: las 10:00 todo el año",
+            "tone": "good"
+          },
+          {
+            "text": "Solo «09:00 UTC»: en verano, a las 11:00",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "note": "8 jun · 10:00"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ],
+          "badge": "zona Madrid"
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ],
+          "items": [
+            "RRULE"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos",
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "mob-api",
+          "from": "mob",
+          "to": "api"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "state": "dim"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob",
+          "state": "dim"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy",
+          "state": "dim"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "state": "dim"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "mob-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ],
+      "predict": {
+        "q": "Buscas un hueco el jueves de 9:00 a 18:00 y filtras los ocupados con `start >= 9:00 AND end <= 18:00`. Luis tiene una reunión de 8:30 a 9:30. ¿Qué pasa?",
+        "options": [
+          "Nada: esa reunión cae fuera del rango y no importa",
+          "La deja fuera, y le propones a Luis las 9:00, cuando aún está ocupado",
+          "La cuenta dos veces, una por cada hora que toca",
+          "Da error porque la reunión cruza el inicio del rango"
+        ],
+        "answer": 1,
+        "explain": "Esa condición solo encuentra lo que cabe entero dentro del rango. La reunión de 8:30 empieza antes, así que no sale, pero ocupa de 9:00 a 9:30. La buena es la de solape: empieza antes de que acabe el rango (`start < 18:00`) y termina después de que empiece (`end > 9:00`)."
+      }
+    },
+    {
+      "short": "Un hueco",
+      "chapter": "case",
+      "title": "Un hueco para los tres",
+      "body": "Ana busca una hora con Luis y Marta. La API lee sus ocupados, ya materializados, con la condición de solape; los ordena y los recorre una vez con un cursor: los solapes se funden y lo que queda entre medias son los huecos. Nadie ve con qué está ocupado otro.",
+      "changes": [
+        "+ free/busy de Ana, Luis y Marta",
+        "~ Solape: start < hasta AND end > desde",
+        "~ Una pasada ordenada: los huecos"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "panel": {
+        "title": "Jueves, de 9:00 a 18:00",
+        "rows": [
+          {
+            "text": "Luis 8:30-9:30 · Ana 9-11 · Marta 10:30-12"
+          },
+          {
+            "text": "Fundidos: ocupado de 8:30 a 12:00"
+          },
+          {
+            "text": "Primer hueco de una hora: 12:00-13:00",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos",
+          "mark": "good",
+          "items": [
+            "ana",
+            "luis",
+            "marta"
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api",
+          "label": "/freebusy"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "state": "dim"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob",
+          "state": "dim"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "state": "dim"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-api",
+            "api-busy"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Las 9:50",
+      "chapter": "case",
+      "title": "Los avisos llegan a golpes",
+      "body": "Las reuniones empiezan en punto, así que a las 9:50 salen miles de avisos a la vez. El scheduler los encola un par de minutos antes, y cada worker vuelve a mirar el evento antes de enviar: si se movió o se borró, no avisa.",
+      "changes": [
+        "+ El scheduler encola con margen",
+        "~ Golpe de avisos a las 9:50",
+        "~ El worker vuelve a mirar el evento"
+      ],
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ],
+          "load": 0.8
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ],
+          "load": 0.7
+        }
+      ],
+      "links": [
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch",
+          "label": "fire_at"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q",
+          "label": "2 min antes"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy",
+          "state": "dim"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt",
+          "state": "dim"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob",
+          "state": "dim"
+        },
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "busy-sch",
+            "sch-q",
+            "q-wk"
+          ],
+          "kind": "event",
+          "rate": 5,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Una fila de agenda por invitado: ver la semana es una consulta por rango.\n- Instantes en UTC y la zona del evento: el cambio de hora no mueve nada.\n- Las series se guardan como regla y se expanden al leer.\n- Huecos: un solape bien escrito y una pasada ordenada.\n- Avisos por cola, con margen y mirando otra vez antes de enviar.",
+      "metrics": {
+        "views": 11600,
+        "writes": 580,
+        "madrid": "10:00"
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "client",
+          "label": "Web",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "mob",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "rt",
+          "kind": "service",
+          "label": "Tiempo real",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Eventos",
+          "at": [
+            0,
+            2.6
+          ]
+        },
+        {
+          "id": "busy",
+          "kind": "db",
+          "label": "Ocupados",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "note": "y avisos"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola",
+          "at": [
+            3,
+            2.6
+          ]
+        },
+        {
+          "id": "sch",
+          "kind": "clock",
+          "label": "Scheduler",
+          "at": [
+            1.5,
+            3.9
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Push y email",
+          "at": [
+            3,
+            3.9
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "web-api",
+          "from": "web",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-busy",
+          "from": "api",
+          "to": "busy"
+        },
+        {
+          "id": "api-rt",
+          "from": "api",
+          "to": "rt"
+        },
+        {
+          "id": "rt-mob",
+          "from": "rt",
+          "to": "mob"
+        },
+        {
+          "id": "mob-api",
+          "from": "mob",
+          "to": "api"
+        },
+        {
+          "id": "api-q",
+          "from": "api",
+          "to": "q"
+        },
+        {
+          "id": "q-wk",
+          "from": "q",
+          "to": "wk"
+        },
+        {
+          "id": "busy-sch",
+          "from": "busy",
+          "to": "sch"
+        },
+        {
+          "id": "sch-q",
+          "from": "sch",
+          "to": "q"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-api",
+            "api-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "api-rt",
+            "rt-mob"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "busy-sch",
+            "sch-q",
+            "q-wk"
+          ],
+          "kind": "event",
+          "rate": 1
+        }
+      ]
+    }
+  ]
+}

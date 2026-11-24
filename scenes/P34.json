@@ -1,0 +1,1331 @@
+{
+  "id": "P34",
+  "title": "El crawler, en acción",
+  "metrics": [
+    {
+      "id": "pps",
+      "label": "Páginas por segundo"
+    },
+    {
+      "id": "hosts",
+      "label": "Webs a la vez"
+    },
+    {
+      "id": "wait",
+      "label": "Espera del periódico",
+      "unit": "s"
+    }
+  ],
+  "legend": {
+    "event": "URL o aviso",
+    "write": "HTML o fila"
+  },
+  "goals": [
+    {
+      "text": "Cómo se cierra el bucle de descargar y analizar",
+      "step": 2
+    },
+    {
+      "text": "Por qué una web nunca recibe dos peticiones a la vez",
+      "step": 3
+    },
+    {
+      "text": "Qué hace el crawler cuando una web sufre",
+      "step": 4
+    },
+    {
+      "text": "Por qué caer una máquina no pierde URLs",
+      "step": 5
+    },
+    {
+      "text": "Cómo decide cuándo volver a cada página",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Descargar",
+      "chapter": "solution",
+      "title": "Una vuelta del bucle: descargar",
+      "body": "El frontier da una URL a un fetcher. Este mira robots.txt (en cache) y la espera de esa web, resuelve el DNS desde su cache y descarga. Guarda el HTML en object storage, apunta la URL en la base de datos y publica «página descargada» en una cola.",
+      "changes": [
+        "+ Frontier → fetcher → la web",
+        "+ HTML al storage; URL a la base de datos",
+        "+ «Descargada» a la cola"
+      ],
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt",
+          "mark": "good"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse",
+          "state": "dim"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "fetch-s3"
+          ],
+          "kind": "write",
+          "rate": 0.9
+        },
+        {
+          "via": [
+            "fetch-db"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "fetch-q"
+          ],
+          "kind": "event",
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "Analizar",
+      "chapter": "solution",
+      "title": "Los parsers cierran el bucle",
+      "body": "Los parsers leen la cola, sacan el texto y los enlaces y normalizan cada enlace (minúsculas, sin `#…`, sin `utm_*`). El Bloom filter dice al momento si una URL es nueva; solo las nuevas vuelven al frontier. Van separados de los fetchers porque escalan distinto: unos esperan a la red, otros gastan CPU.",
+      "changes": [
+        "+ Normalizar cada enlace",
+        "+ Bloom filter: «seguro que no» o «quizá sí»",
+        "~ Solo las nuevas vuelven al frontier"
+      ],
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "panel": {
+        "title": "Recordar 10.000 millones de URLs",
+        "rows": [
+          {
+            "text": "Bloom filter con un 1 % de error: ~12 GB",
+            "tone": "good"
+          },
+          {
+            "text": "Un hash de 8 bytes por URL: 80 GB"
+          },
+          {
+            "text": "Las URLs enteras: ~1 TB",
+            "tone": "bad"
+          }
+        ]
+      },
+      "predict": {
+        "q": "La portada de un periódico trae 5.000 enlaces nuevos a su propia web. Los fetchers podrían bajarlos en un segundo. ¿A qué ritmo se descargan?",
+        "options": [
+          "Los 5.000 en un segundo: hay unas 230 máquinas",
+          "A 100 por segundo, lo que da una máquina",
+          "A unos 50 por segundo, repartidos entre los fetchers",
+          "A 1 por segundo (o su Crawl-delay): esa web tiene su cola y su espera"
+        ],
+        "answer": 3,
+        "explain": "Cada host tiene su cola y su hora permitida en el heap: nunca dos peticiones a la vez contra la misma web, y una espera de ~1 s (o la que pida). Esas 5.000 tardan más de una hora; mientras, los fetchers trabajan con miles de webs más. El paralelismo sale de muchas webs, no de apretar una."
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "fetch-q",
+            "q-parse"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "parse-bloom"
+          ],
+          "kind": "event",
+          "fail": true,
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "parse-bloom",
+            "bloom-front"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Cortesía",
+      "chapter": "case",
+      "title": "Un periódico con 5.000 enlaces nuevos",
+      "body": "El frontier pone cada URL en la cola de su host. Un min-heap ordena los hosts por su hora permitida: el del periódico vuelve 1 s después de cada descarga, o lo que diga su `Crawl-delay`. Mientras espera, los fetchers trabajan con otras webs. Cada host vive en una sola máquina del frontier.",
+      "changes": [
+        "+ Una cola por host",
+        "+ Heap por hora permitida",
+        "~ El periódico: 1 página por segundo"
+      ],
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "panel": {
+        "title": "La cuenta de la cortesía",
+        "rows": [
+          {
+            "text": "1 página por segundo → 86.400 al día por web"
+          },
+          {
+            "text": "23.000 por segundo → 23.000 webs a la vez"
+          },
+          {
+            "text": "Los 5.000 del periódico: ~1 h 23 min",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ],
+          "items": [
+            "diario",
+            "blog",
+            "tienda"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ],
+          "badge": "1 por s"
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse",
+          "state": "dim"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Web lenta",
+      "chapter": "case",
+      "title": "La web empieza a sufrir",
+      "body": "El servidor del periódico tarda 2 s en responder y después devuelve `503` con `Retry-After: 120`. La espera se adapta a lo que tarda la web (varias veces esos 2 s) y, ante el 503, frena y respeta los 120 s. La URL se reintenta con exponential backoff. Las demás webs siguen a su ritmo.",
+      "changes": [
+        "~ La web: 2 s por respuesta, después 503",
+        "~ Espera: 1 s → 120 s (Retry-After)",
+        "+ Reintento con backoff"
+      ],
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 120
+      },
+      "predict": {
+        "q": "Ahora una máquina de fetchers muere a mitad de 100 descargas. ¿Qué pasa con esas URLs?",
+        "options": [
+          "Reaparecen en la cola tras su visibility timeout, y otro fetcher las coge",
+          "Se pierden hasta la pasada siguiente",
+          "Las descargan a la vez todos los fetchers",
+          "El frontier se para hasta que la máquina vuelva"
+        ],
+        "answer": 0,
+        "explain": "Al coger una URL, la cola la esconde un rato; solo desaparece cuando el fetcher confirma. Si muere sin confirmar, reaparece para otro. Alguna puede bajarse dos veces (llegó a descargarla y no confirmó): por eso la huella del contenido evita guardarla repetida."
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "hot",
+          "badge": "503",
+          "load": 0.95
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web",
+          "state": "hot",
+          "label": "Retry-After"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse",
+          "state": "dim"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "wait": 900,
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Cae fetcher",
+      "chapter": "case",
+      "title": "Se cae una máquina de fetchers",
+      "body": "Sus URLs no se pierden: la cola las escondía con un visibility timeout y, sin confirmación, reaparecen para otro fetcher. Si alguna ya se había descargado, su `content_hash` coincide y no se guarda otra vez. Un 404 se apunta y no se reintenta.",
+      "changes": [
+        "− Una máquina de fetchers",
+        "~ Sus URLs reaparecen para otro",
+        "~ Repetidas: las frena la huella"
+      ],
+      "metrics": {
+        "pps": 22900,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ],
+          "badge": "reaparecen"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt",
+          "badge": "229 de 230",
+          "load": 0.9
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse",
+          "state": "dim"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "front-fetch"
+          ],
+          "kind": "req",
+          "fail": true,
+          "failAt": 0.85,
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "fetch-s3"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "fetch-q"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Recrawl",
+      "chapter": "solution",
+      "title": "Volver a pasar, cada página a su ritmo",
+      "body": "La base de datos guarda el `next_crawl_at` de cada URL, y un scheduler mete en el frontier las que tocan. El fetcher manda `If-None-Match` con el ETag de la última vez: si no ha cambiado, `304`, sin cuerpo. Si cambió, el intervalo se divide por dos (mínimo 15 min); si no, se duplica (hasta 30 días).",
+      "changes": [
+        "+ Scheduler por next_crawl_at",
+        "+ Peticiones condicionales (304)",
+        "~ Intervalo: ÷2 si cambia, ×2 si no"
+      ],
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "panel": {
+        "title": "Dos páginas, dos ritmos",
+        "rows": [
+          {
+            "text": "Una portada que cambia: 1 h, 30 min, 15 min"
+          },
+          {
+            "text": "Un aviso legal quieto: 1 día, 2, 4… hasta 30"
+          },
+          {
+            "text": "304 Not Modified: sin cuerpo, casi gratis",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front",
+          "label": "scheduler"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front",
+          "state": "dim"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse",
+          "state": "dim"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "db-front",
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "fetch-db"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- El límite es la cortesía: el paralelismo sale de miles de webs a la vez.\n- Frontier con prioridad y una cola por host; un heap dice cuándo toca cada web.\n- Bloom filter delante de la tabla de URLs, y huellas para el contenido repetido.\n- Fetchers y parsers separados por una cola; el recrawl, al ritmo de cada página.",
+      "callout": {
+        "type": "insight",
+        "text": "El crawler no termina nunca: tras la primera pasada es un bucle continuo en el que cada página vuelve a su ritmo."
+      },
+      "metrics": {
+        "pps": 23000,
+        "hosts": 23000,
+        "wait": 1
+      },
+      "nodes": [
+        {
+          "id": "front",
+          "kind": "queue",
+          "label": "Frontier",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD de URLs",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "bloom",
+          "kind": "cache",
+          "label": "Bloom filter",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "fetch",
+          "kind": "worker",
+          "label": "Fetchers",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "DNS y robots.txt"
+        },
+        {
+          "id": "web",
+          "kind": "external",
+          "label": "Las webs",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "parse",
+          "kind": "worker",
+          "label": "Parsers",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Descargadas",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "s3",
+          "kind": "storage",
+          "label": "HTML",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "db-front",
+          "from": "db",
+          "to": "front"
+        },
+        {
+          "id": "bloom-front",
+          "from": "bloom",
+          "to": "front"
+        },
+        {
+          "id": "front-fetch",
+          "from": "front",
+          "to": "fetch"
+        },
+        {
+          "id": "fetch-web",
+          "from": "fetch",
+          "to": "web"
+        },
+        {
+          "id": "fetch-db",
+          "from": "fetch",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "fetch-s3",
+          "from": "fetch",
+          "to": "s3"
+        },
+        {
+          "id": "fetch-q",
+          "from": "fetch",
+          "to": "q"
+        },
+        {
+          "id": "q-parse",
+          "from": "q",
+          "to": "parse"
+        },
+        {
+          "id": "parse-bloom",
+          "from": "parse",
+          "to": "bloom"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "front-fetch",
+            "fetch-web"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "fetch-q",
+            "q-parse"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "parse-bloom",
+            "bloom-front"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "fetch-s3"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "db-front"
+          ],
+          "kind": "event",
+          "rate": 0.4
+        }
+      ]
+    }
+  ]
+}
