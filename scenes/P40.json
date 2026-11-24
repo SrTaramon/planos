@@ -1,0 +1,1200 @@
+{
+  "id": "P40",
+  "title": "El login, en acción",
+  "metrics": [
+    {
+      "id": "logins",
+      "label": "Intentos de login/s"
+    },
+    {
+      "id": "cpu",
+      "label": "Núcleos en hashes",
+      "better": "low"
+    },
+    {
+      "id": "val",
+      "label": "Validaciones/s"
+    },
+    {
+      "id": "ses",
+      "label": "Sesiones de la cuenta"
+    }
+  ],
+  "legend": {
+    "heavy": "intento de los bots"
+  },
+  "goals": [
+    {
+      "text": "Por qué el login es lento a propósito",
+      "step": 1
+    },
+    {
+      "text": "Qué cuesta validar la sesión en cada petición",
+      "step": 2
+    },
+    {
+      "text": "Cómo se frena una avalancha de intentos",
+      "step": 4
+    },
+    {
+      "text": "Cómo se echa a un intruso al cambiar la contraseña",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Login",
+      "chapter": "solution",
+      "title": "Entrar: lento a propósito",
+      "body": "`POST /auth/login` llega al servicio de auth, que lee `password_hash` de PostgreSQL y repite el hash lento: unos 100 ms. Si cuadra, crea un ID aleatorio de 128 bits, lo guarda como `session:{sid}` en Redis con un TTL de 30 días y lo devuelve en una cookie `HttpOnly`, `Secure` y `SameSite=Lax`.",
+      "callout": {
+        "type": "insight",
+        "text": "Un ID nuevo en cada login: reutilizar el que ya traía el navegador abre la puerta al session fixation."
+      },
+      "metrics": {
+        "logins": 70,
+        "cpu": 7,
+        "val": "—",
+        "ses": 3
+      },
+      "panel": {
+        "title": "El pico",
+        "rows": [
+          {
+            "text": "10 M usuarios × 20 % = 2 M logins al día"
+          },
+          {
+            "text": "2 M / 86.400 × 3 = ~70 logins por segundo"
+          },
+          {
+            "text": "70 × 0,1 s = ~7 núcleos solo para hashes"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "hash 100 ms",
+          "mark": "good"
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ],
+          "badge": "TTL 30 días"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mail",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "lb-auth",
+          "from": "lb",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web",
+          "state": "dim"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis",
+          "state": "dim"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-mail",
+          "from": "q",
+          "to": "mail",
+          "state": "dim"
+        },
+        {
+          "id": "mail-br",
+          "from": "mail",
+          "to": "br",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "br-lb",
+            "lb-auth"
+          ],
+          "kind": "req",
+          "rate": 0.7,
+          "back": "resp",
+          "wait": 700
+        },
+        {
+          "via": [
+            "auth-pg"
+          ],
+          "kind": "req",
+          "rate": 0.7,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "auth-redis"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        }
+      ]
+    },
+    {
+      "short": "Cada petición",
+      "chapter": "solution",
+      "title": "Validar la sesión, casi gratis",
+      "body": "Cada página trae la cookie. La web busca `session:{sid}` en Redis (~0,5 ms) y, si existe, apunta `lastSeen` y de vez en cuando alarga el TTL: quien entra a diario no vuelve a escribir la contraseña. Son ~35.000 por segundo en el pico, 500 veces más que los logins, y ninguna calcula un hash.",
+      "callout": {
+        "type": "tip",
+        "text": "20 M de sesiones × 200 B = ~4 GB: caben de sobra en un Redis con réplica."
+      },
+      "changes": [
+        "+ Validación en cada petición",
+        "~ 35.000 por segundo, sin hash"
+      ],
+      "metrics": {
+        "logins": 70,
+        "cpu": 7,
+        "val": 35000,
+        "ses": 3
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ],
+          "badge": "0,5 ms",
+          "mark": "good"
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ],
+          "badge": "~4 GB"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mail",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "lb-auth",
+          "from": "lb",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-mail",
+          "from": "q",
+          "to": "mail",
+          "state": "dim"
+        },
+        {
+          "id": "mail-br",
+          "from": "mail",
+          "to": "br",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "br-lb",
+            "lb-web",
+            "web-redis"
+          ],
+          "kind": "req",
+          "rate": 2.5,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-auth"
+          ],
+          "kind": "req",
+          "rate": 0.3,
+          "back": "resp",
+          "wait": 700
+        }
+      ],
+      "predict": {
+        "q": "Unos bots lanzan 1.000 intentos de login por segundo y todavía no hay ningún límite. ¿Qué pasa?",
+        "options": [
+          "El login se satura para todos, pero quien ya tiene sesión sigue navegando",
+          "Solo va lento el login de los bots: cada uno espera su hash",
+          "Se cae toda la web, porque validar la sesión también calcula el hash",
+          "Nada: Argon2 ya está pensado para frenar los ataques"
+        ],
+        "answer": 0,
+        "explain": "1.000 × 0,1 s = 100 núcleos solo en hashes: el servicio de auth se ahoga y los logins de verdad esperan o fallan. Validar una sesión es una lectura en Redis, sin hash, así que quien ya estaba dentro ni lo nota. El hash lento protege la tabla robada, no el servicio: lo convierte en un blanco."
+      }
+    },
+    {
+      "short": "Avalancha",
+      "chapter": "case",
+      "title": "1.000 intentos por segundo",
+      "body": "Los bots prueban parejas email-contraseña robadas en otras webs, desde miles de IPs. Cada intento cuesta 100 ms de CPU: el servicio de auth se satura y los logins de verdad fallan. La navegación sigue igual: validar no pasa por el hash.",
+      "callout": {
+        "type": "warn",
+        "text": "El hash lento protege las contraseñas si te roban la tabla, pero convierte el login en un blanco fácil para tumbarte."
+      },
+      "changes": [
+        "+ Bots: 1.000 intentos por segundo",
+        "~ CPU de hashes: 7 → 107 núcleos",
+        "~ Los logins de verdad fallan"
+      ],
+      "metrics": {
+        "logins": 1070,
+        "cpu": 107,
+        "val": 35000,
+        "ses": 3
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "1.000 intentos × 0,1 s = 100 núcleos",
+            "tone": "bad"
+          },
+          {
+            "text": "Más los ~7 de los logins de verdad"
+          },
+          {
+            "text": "Validar es leer Redis: 35.000/s siguen bien",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "atk",
+          "kind": "users",
+          "label": "Bots",
+          "at": [
+            3,
+            0
+          ],
+          "state": "hot",
+          "badge": "1.000/s"
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "hot",
+          "load": 0.99,
+          "mark": "bad"
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mail",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "atk-lb",
+          "from": "atk",
+          "to": "lb"
+        },
+        {
+          "id": "lb-auth",
+          "from": "lb",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-mail",
+          "from": "q",
+          "to": "mail",
+          "state": "dim"
+        },
+        {
+          "id": "mail-br",
+          "from": "mail",
+          "to": "br",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "atk-lb",
+            "lb-auth"
+          ],
+          "kind": "heavy",
+          "rate": 4,
+          "fail": true
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-auth"
+          ],
+          "kind": "req",
+          "rate": 0.5,
+          "back": "fail"
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-web",
+            "web-redis"
+          ],
+          "kind": "req",
+          "rate": 1.5,
+          "back": "resp"
+        }
+      ]
+    },
+    {
+      "short": "Limitador",
+      "chapter": "solution",
+      "title": "Frenar antes de calcular",
+      "body": "El limitador va **antes** del hash: por cuenta, con esperas crecientes (1 s, 2 s, 4 s…), y por IP y por red, con CAPTCHA cuando algo huele raro. Los intentos de los bots mueren ahí, sin gastar CPU. Si el limitador no responde, el login falla **cerrado**.",
+      "callout": {
+        "type": "tip",
+        "text": "Esperas crecientes, no bloqueos: un bloqueo dejaría fuera de su cuenta a cualquiera con solo fallar a propósito con su email."
+      },
+      "changes": [
+        "+ Rate limiter antes del hash",
+        "~ CPU de hashes: 107 → 7 núcleos"
+      ],
+      "metrics": {
+        "logins": 1070,
+        "cpu": 7,
+        "val": 35000,
+        "ses": 3
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "atk",
+          "kind": "users",
+          "label": "Bots",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "1.000/s"
+        },
+        {
+          "id": "rl",
+          "kind": "service",
+          "label": "Limitador",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "badge": "1, 2, 4 s…",
+          "mark": "good"
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "atk-lb",
+          "from": "atk",
+          "to": "lb"
+        },
+        {
+          "id": "lb-rl",
+          "from": "lb",
+          "to": "rl"
+        },
+        {
+          "id": "rl-auth",
+          "from": "rl",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "atk-lb",
+            "lb-rl"
+          ],
+          "kind": "heavy",
+          "rate": 4,
+          "back": "fail"
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-rl",
+            "rl-auth"
+          ],
+          "kind": "req",
+          "rate": 0.6,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-web",
+            "web-redis"
+          ],
+          "kind": "req",
+          "rate": 1.2,
+          "back": "resp"
+        }
+      ],
+      "predict": {
+        "q": "Alguien con la contraseña robada sigue dentro desde su portátil. El dueño hace el reset de la contraseña. ¿Qué pasa con esa sesión?",
+        "options": [
+          "Sigue viva hasta que caduque, 30 días después",
+          "Sigue hasta que el intruso haga logout",
+          "Se cierra: el reset borra todas las sesiones de la cuenta",
+          "Se cierra en una hora, cuando caduque su token"
+        ],
+        "answer": 2,
+        "explain": "Al usar el enlace se recorre `user_sessions:{uid}` y se borra cada `session:{sid}`: en su siguiente petición, el portátil ya no encuentra su sesión y vuelve al login. Es la ventaja de la sesión en el servidor: revocar es borrar una clave. Con un JWT de una hora habría que esperar a que caducara."
+      }
+    },
+    {
+      "short": "Reset",
+      "chapter": "solution",
+      "title": "La contraseña olvidada",
+      "body": "`forgot` responde siempre lo mismo, exista o no la cuenta. Se genera un token aleatorio largo, se guarda **su hash** con 30 minutos de caducidad y el email sale por la cola. Al usarlo: contraseña nueva, token marcado como usado, todas las sesiones fuera y un aviso por email.",
+      "callout": {
+        "type": "insight",
+        "text": "El email no se espera: va a una cola y sale cuando el proveedor puede. Ni el registro ni el reset dependen de él."
+      },
+      "changes": [
+        "+ Token de un solo uso, 30 min",
+        "~ Sesiones de la cuenta: 3 → 0",
+        "+ Aviso de contraseña cambiada"
+      ],
+      "metrics": {
+        "logins": 70,
+        "cpu": 7,
+        "val": 35000,
+        "ses": 0
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "rl",
+          "kind": "service",
+          "label": "Limitador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ],
+          "badge": "−3 sesiones",
+          "mark": "good"
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ],
+          "badge": "solo su hash"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "mail",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            0,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "lb-rl",
+          "from": "lb",
+          "to": "rl"
+        },
+        {
+          "id": "rl-auth",
+          "from": "rl",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web",
+          "state": "dim"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis",
+          "state": "dim"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis",
+          "label": "borra todas"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q"
+        },
+        {
+          "id": "q-mail",
+          "from": "q",
+          "to": "mail"
+        },
+        {
+          "id": "mail-br",
+          "from": "mail",
+          "to": "br"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "br-lb",
+            "lb-rl",
+            "rl-auth",
+            "auth-pg"
+          ],
+          "kind": "write",
+          "rate": 0.5,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "auth-q",
+            "q-mail",
+            "mail-br"
+          ],
+          "kind": "event",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "auth-redis"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Dos caminos: el login, raro y lento a propósito; la validación, en cada petición y casi gratis.\n- Contraseñas con un hash lento y una salt; el limitador, antes del hash.\n- Sesión en el servidor: revocar es borrar una clave.\n- Reset con un token de un solo uso, guardado como hash: al usarlo, todas las sesiones fuera.",
+      "callout": {
+        "type": "insight",
+        "text": "Si Redis cae, nadie está dentro: va con réplica y failover. En un failover se pierden las sesiones más recientes: molesto, no peligroso."
+      },
+      "metrics": {
+        "logins": 70,
+        "cpu": 7,
+        "val": 35000,
+        "ses": 1
+      },
+      "nodes": [
+        {
+          "id": "br",
+          "kind": "client",
+          "label": "Navegador",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "Load balancer",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "rl",
+          "kind": "service",
+          "label": "Limitador",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Web",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "auth",
+          "kind": "service",
+          "label": "Auth",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "redis",
+          "kind": "cache",
+          "label": "Sesiones",
+          "at": [
+            3,
+            2.4
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            1.5,
+            3.6
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Cola emails",
+          "at": [
+            0,
+            3.6
+          ]
+        },
+        {
+          "id": "mail",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            0,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "br-lb",
+          "from": "br",
+          "to": "lb"
+        },
+        {
+          "id": "lb-rl",
+          "from": "lb",
+          "to": "rl"
+        },
+        {
+          "id": "rl-auth",
+          "from": "rl",
+          "to": "auth"
+        },
+        {
+          "id": "lb-web",
+          "from": "lb",
+          "to": "web"
+        },
+        {
+          "id": "web-redis",
+          "from": "web",
+          "to": "redis"
+        },
+        {
+          "id": "auth-redis",
+          "from": "auth",
+          "to": "redis"
+        },
+        {
+          "id": "auth-pg",
+          "from": "auth",
+          "to": "pg"
+        },
+        {
+          "id": "auth-q",
+          "from": "auth",
+          "to": "q"
+        },
+        {
+          "id": "q-mail",
+          "from": "q",
+          "to": "mail"
+        },
+        {
+          "id": "mail-br",
+          "from": "mail",
+          "to": "br"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "br-lb",
+            "lb-web",
+            "web-redis"
+          ],
+          "kind": "req",
+          "rate": 1.5,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "br-lb",
+            "lb-rl",
+            "rl-auth",
+            "auth-pg"
+          ],
+          "kind": "req",
+          "rate": 0.4,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "auth-redis"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        }
+      ]
+    }
+  ]
+}

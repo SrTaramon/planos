@@ -1,0 +1,1287 @@
+{
+  "id": "P38",
+  "title": "El precio dinámico, en acción",
+  "metrics": [
+    {
+      "id": "sup",
+      "label": "Conductores libres"
+    },
+    {
+      "id": "dem",
+      "label": "Pasajeros"
+    },
+    {
+      "id": "mult",
+      "label": "Multiplicador (×)"
+    },
+    {
+      "id": "fare",
+      "label": "Cobrado",
+      "unit": "€"
+    }
+  ],
+  "legend": {
+    "event": "señal de oferta/demanda"
+  },
+  "goals": [
+    {
+      "text": "Qué se cuenta para medir la oferta y la demanda",
+      "step": 1
+    },
+    {
+      "text": "Por qué el pasajero paga lo que vio",
+      "step": 2
+    },
+    {
+      "text": "Cómo sube el precio sin dar saltos",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa si el cálculo se para",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Contar",
+      "chapter": "solution",
+      "title": "Cuántos conductores y cuántos pasajeros hay",
+      "body": "Los eventos entran en un stream particionado por región. El procesador guarda el último estado de cada conductor y cuenta **conductores libres**, no ubicaciones; y **pasajeros distintos**, no aperturas de la app. Con una ventana de 2 minutos que avanza cada 30 s, escribe un multiplicador por celda en `surge:{celda}`.",
+      "callout": {
+        "type": "warn",
+        "text": "Cada conductor manda 30 ubicaciones en la ventana: contando eventos, la oferta saldría 30 veces más grande y el surge no saltaría nunca."
+      },
+      "metrics": {
+        "sup": 30,
+        "dem": 60,
+        "mult": 1.5,
+        "fare": "—"
+      },
+      "panel": {
+        "title": "La celda, en 2 minutos",
+        "rows": [
+          {
+            "text": "900 ubicaciones / 30 por conductor = 30 conductores"
+          },
+          {
+            "text": "60 pasajeros distintos, no 60 eventos"
+          },
+          {
+            "text": "Ratio 60 / 30 = 2"
+          },
+          {
+            "text": "1 + 0,5 × (2 − 1) = ×1,5",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "badge": "2 min"
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "badge": "×1,5"
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price",
+          "state": "dim"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult",
+          "state": "dim"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes",
+          "state": "dim"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drvs-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "pax-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "proc-mult"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Presupuesto",
+      "chapter": "solution",
+      "title": "El pasajero pide precio",
+      "body": "El servicio de precios lee `surge:{celda}` de la recogida, en milisegundos, y guarda un presupuesto con el multiplicador **congelado**: 9 € × 1,5 = 13,50 €, válido 5 minutos. Al confirmar, la app manda el `quoteId`: se cobra lo del presupuesto y su multiplicador se copia al viaje.",
+      "callout": {
+        "type": "insight",
+        "text": "Los dos caminos solo se tocan en el store del multiplicador: el pipeline escribe una vez por minuto y los precios leen cuando quieren."
+      },
+      "changes": [
+        "+ Presupuesto q_33: 13,50 €, 5 min",
+        "~ Al confirmar, se cobra lo del presupuesto"
+      ],
+      "metrics": {
+        "sup": 30,
+        "dem": 60,
+        "mult": 1.5,
+        "fare": 13.5
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ]
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ],
+          "badge": "9 € × 1,5"
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ]
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ],
+          "badge": "caduca 5 min",
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult",
+          "label": "GET /surge"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drvs-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "pax-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "pax-price",
+            "price-mult"
+          ],
+          "kind": "req",
+          "rate": 1,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "price-quotes"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "pax-price",
+            "price-quotes",
+            "quotes-db"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ],
+      "predict": {
+        "q": "A las 3:00 cierran las discotecas: la demanda salta a 120 pasajeros con los mismos 30 conductores. ¿Qué multiplicador se publica en ese primer minuto?",
+        "options": [
+          "×2,5: lo que da la fórmula con ratio 4",
+          "×2,0: el crudo, suavizado con el minuto anterior",
+          "×3,0: el ratio se ha duplicado y salta al tope",
+          "×1,5: no cambia hasta la ventana siguiente"
+        ],
+        "answer": 1,
+        "explain": "Ratio 120 / 30 = 4, así que el crudo es 1 + 0,5 × 3 = ×2,5. Pero no se publica tal cual: 0,5 × 2,5 + 0,5 × 1,5 = ×2,0. Si sigue así, el minuto siguiente da ×2,25: sube en dos o tres minutos, sin brusquedad. El ×2,5 es el crudo, que no ve nadie."
+      }
+    },
+    {
+      "short": "Las 3:00",
+      "chapter": "case",
+      "title": "Cierran las discotecas",
+      "body": "Sale todo el mundo a la vez. El crudo pasa a ×2,5, pero se publica ×2,0: el suavizado lo sube en dos o tres minutos. Quien ya tenía su presupuesto de 13,50 € lo confirma y paga eso, aunque ahora el mismo viaje cueste 18 €.",
+      "callout": {
+        "type": "tip",
+        "text": "También se suaviza con las celdas vecinas: con ×2,5 en una acera y ×1,0 en la de enfrente, la gente cruzaría la calle."
+      },
+      "changes": [
+        "~ Pasajeros: 60 → 120",
+        "~ Publicado: ×1,5 → ×2,0 (crudo ×2,5)",
+        "~ q_33 se cobra a 13,50 €"
+      ],
+      "metrics": {
+        "sup": 30,
+        "dem": 120,
+        "mult": 2.0,
+        "fare": 13.5
+      },
+      "panel": {
+        "title": "El primer minuto",
+        "rows": [
+          {
+            "text": "Ratio 120 / 30 = 4 → crudo ×2,5"
+          },
+          {
+            "text": "0,5 × 2,5 + 0,5 × 1,5 = ×2,0 publicado"
+          },
+          {
+            "text": "q_33 se cobra a 13,50 €, no a 18 €",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ],
+          "state": "hot"
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "badge": "crudo ×2,5"
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "badge": "×2,0",
+          "mark": "bad"
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ],
+          "badge": "13,50 €",
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "pax-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 3
+        },
+        {
+          "via": [
+            "drvs-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "proc-mult"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "pax-price",
+            "price-quotes",
+            "quotes-db"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Mapa de calor",
+      "chapter": "solution",
+      "title": "Los conductores van adonde hacen falta",
+      "body": "Los conductores ven la zona en rojo y se acercan. La app pide el mapa de calor cada 30-60 s, y se sirve desde una cache por trozos del mapa: es igual para todos los de la zona. Al minuto siguiente hay 60 libres: ratio 2, crudo ×1,5, y el publicado baja suave desde ×2,0 hasta ×1,75.",
+      "callout": {
+        "type": "insight",
+        "text": "Para eso sirve el surge: que algunos pasajeros esperen y que los conductores vayan adonde hacen falta."
+      },
+      "changes": [
+        "~ Conductores libres: 30 → 60",
+        "~ Crudo ×1,5; publicado ×1,75"
+      ],
+      "metrics": {
+        "sup": 60,
+        "dem": 120,
+        "mult": 1.75,
+        "fare": "—"
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ]
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ],
+          "badge": "cada 30-60 s",
+          "mark": "good"
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "badge": "×1,75"
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes",
+          "state": "dim"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drvs-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "pax-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "proc-mult"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "mult-heat"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "drvs-heat"
+          ],
+          "kind": "req",
+          "rate": 0.6,
+          "back": "resp"
+        }
+      ],
+      "predict": {
+        "q": "El procesador se cae y el último multiplicador de la celda tiene ya 8 minutos. ¿Qué hace el servicio de precios?",
+        "options": [
+          "Sigue con ×1,75, el último que hay",
+          "Responde 503: sin datos frescos no vende",
+          "Da precio sin surge, ×1,0, hasta que vuelva",
+          "Usa el tope, ×3,0, para no perder dinero"
+        ],
+        "answer": 2,
+        "explain": "Con más de 5 minutos, ese valor ya no describe la calle, y se elige disponibilidad: ×1,0. Se pierde algo de ingreso unos minutos, pero se siguen vendiendo viajes. Seguir con ×1,75 cobraría un surge que quizá ya no existe; un 503 dejaría sin viaje a todo el mundo."
+      }
+    },
+    {
+      "short": "Se para",
+      "chapter": "case",
+      "title": "El pipeline se cae",
+      "body": "El procesador se cae. El stream guarda los eventos unos días, así que nada se pierde: al volver, reprocesa. Mientras, cada multiplicador lleva su `computedAt`; con más de 5 minutos, el servicio de precios lo ignora y da precio a ×1,0. Los viajes se siguen vendiendo.",
+      "callout": {
+        "type": "tip",
+        "text": "Los precios guardan los multiplicadores 10-30 s en su memoria: solo cambian una vez por minuto, y cada presupuesto congela el suyo."
+      },
+      "changes": [
+        "− Procesador",
+        "~ Multiplicador de hace 8 min: se ignora",
+        "~ Precio sin surge: ×1,0"
+      ],
+      "metrics": {
+        "sup": "—",
+        "dem": "—",
+        "mult": 1.0,
+        "fare": 9
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ],
+          "state": "down"
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ],
+          "badge": "×1,0",
+          "mark": "good"
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ],
+          "badge": "hace 8 min",
+          "mark": "bad"
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc",
+          "state": "down"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult",
+          "state": "down"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat",
+          "state": "dim"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drvs-stream"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "pax-stream"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "pax-price",
+            "price-mult"
+          ],
+          "kind": "req",
+          "rate": 1,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "price-quotes"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Contar conductores y pasajeros distintos, no eventos.\n- Del ratio al multiplicador, con tope y suavizado en el tiempo y con las vecinas.\n- Un store pequeño separa el pipeline de los precios.\n- El presupuesto congela el multiplicador: se cobra lo que se vio.\n- Si el pipeline se retrasa, disponibilidad: ×1,0 antes que no vender.",
+      "callout": {
+        "type": "insight",
+        "text": "Entran 300.000 eventos por segundo y salen 5.000 escrituras: lo difícil no es la velocidad, sino medir bien y que el precio sea estable."
+      },
+      "metrics": {
+        "sup": 60,
+        "dem": 120,
+        "mult": 1.75,
+        "fare": "—"
+      },
+      "nodes": [
+        {
+          "id": "drvs",
+          "kind": "users",
+          "label": "Conductores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "pax",
+          "kind": "users",
+          "label": "Pasajeros",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "proc",
+          "kind": "worker",
+          "label": "Procesador",
+          "at": [
+            1.5,
+            1.3
+          ]
+        },
+        {
+          "id": "price",
+          "kind": "service",
+          "label": "Precios",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "heat",
+          "kind": "cdn",
+          "label": "Mapa de calor",
+          "at": [
+            0,
+            2.6
+          ]
+        },
+        {
+          "id": "mult",
+          "kind": "cache",
+          "label": "Multiplicador",
+          "at": [
+            1.5,
+            2.6
+          ]
+        },
+        {
+          "id": "quotes",
+          "kind": "cache",
+          "label": "Presupuestos",
+          "at": [
+            3,
+            2.6
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD viajes",
+          "at": [
+            3,
+            3.9
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "drvs-stream",
+          "from": "drvs",
+          "to": "stream"
+        },
+        {
+          "id": "pax-stream",
+          "from": "pax",
+          "to": "stream"
+        },
+        {
+          "id": "stream-proc",
+          "from": "stream",
+          "to": "proc"
+        },
+        {
+          "id": "proc-mult",
+          "from": "proc",
+          "to": "mult"
+        },
+        {
+          "id": "mult-heat",
+          "from": "mult",
+          "to": "heat"
+        },
+        {
+          "id": "drvs-heat",
+          "from": "drvs",
+          "to": "heat"
+        },
+        {
+          "id": "pax-price",
+          "from": "pax",
+          "to": "price"
+        },
+        {
+          "id": "price-mult",
+          "from": "price",
+          "to": "mult"
+        },
+        {
+          "id": "price-quotes",
+          "from": "price",
+          "to": "quotes"
+        },
+        {
+          "id": "quotes-db",
+          "from": "quotes",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drvs-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 2
+        },
+        {
+          "via": [
+            "pax-stream",
+            "stream-proc"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "proc-mult"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "pax-price",
+            "price-mult"
+          ],
+          "kind": "req",
+          "rate": 0.8,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "price-quotes"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

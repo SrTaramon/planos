@@ -1,0 +1,1217 @@
+{
+  "id": "P37",
+  "title": "El viaje en directo, en acción",
+  "metrics": [
+    {
+      "id": "age",
+      "label": "Posición, de hace",
+      "unit": "s",
+      "better": "low"
+    },
+    {
+      "id": "eta",
+      "label": "ETA",
+      "unit": "min"
+    },
+    {
+      "id": "buf",
+      "label": "Puntos en el móvil",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "heavy": "lote del túnel",
+    "write": "ubicación"
+  },
+  "goals": [
+    {
+      "text": "Cómo llega una posición de un servidor a otro",
+      "step": 1
+    },
+    {
+      "text": "De dónde sale «llega en 9 min»",
+      "step": 2
+    },
+    {
+      "text": "Qué ve el pasajero cuando el coche pasa un túnel",
+      "step": 4
+    },
+    {
+      "text": "Cómo cambia el ETA con un atasco",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "En directo",
+      "chapter": "solution",
+      "title": "Del conductor al pasajero, en 1-2 segundos",
+      "body": "El conductor manda `{seq, lat, lon, speed, heading}` cada 4 s y entra por el gateway 7; su pasajero está conectado al 31. El servicio de ubicación pisa `trip:t_9:loc` y publica en el canal `trip:t_9`. El gateway 31, suscrito desde que se abrió la pantalla del viaje, lo empuja por el WebSocket, y la app anima el coche hasta el siguiente punto.",
+      "callout": {
+        "type": "insight",
+        "text": "Solo vale la última posición: si una se pierde, la siguiente llega en 4 s. No hay historial que reenviar, como en un chat."
+      },
+      "changes": [
+        "+ Un canal por viaje en el pub/sub",
+        "~ Del gateway 7 al 31 en 1-2 s"
+      ],
+      "metrics": {
+        "age": 4,
+        "eta": "—",
+        "buf": 0
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ],
+          "badge": "trip:t_9"
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "last",
+          "kind": "cache",
+          "label": "Última pos.",
+          "at": [
+            1,
+            2.6
+          ],
+          "badge": "TTL 60 s"
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-last",
+          "from": "loc",
+          "to": "last"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream",
+          "state": "dim"
+        },
+        {
+          "id": "eta-last",
+          "from": "eta",
+          "to": "last",
+          "state": "dim"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "loc-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 1.2,
+          "pop": true
+        },
+        {
+          "via": [
+            "loc-last"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "El ETA",
+      "chapter": "solution",
+      "title": "«Llega en 9 min»",
+      "body": "Cada 10 s, el servicio de ETA lee la última posición del viaje, busca la ruta en el grafo de carreteras que tiene en memoria y publica el resultado en el mismo canal. Al pasajero le llega `{type: \"eta\"}` por el WebSocket que ya tenía abierto.",
+      "changes": [
+        "+ ETA cada 10 s, por el mismo canal",
+        "~ Ruta 8 min + corrección 1 min"
+      ],
+      "metrics": {
+        "age": 4,
+        "eta": 9,
+        "buf": 0
+      },
+      "panel": {
+        "title": "La ruta en el grafo",
+        "rows": [
+          {
+            "text": "Avenida: 2 km a 30 km/h = 4 min"
+          },
+          {
+            "text": "Ronda: 1,5 km a 45 km/h = 2 min"
+          },
+          {
+            "text": "Centro: 0,5 km a 15 km/h = 2 min"
+          },
+          {
+            "text": "Ruta 8 min + 1 min de corrección = **9 min**",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ]
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "last",
+          "kind": "cache",
+          "label": "Última pos.",
+          "at": [
+            1,
+            2.6
+          ]
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ],
+          "badge": "grafo ~1 GB",
+          "mark": "good"
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-last",
+          "from": "loc",
+          "to": "last"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream",
+          "state": "dim"
+        },
+        {
+          "id": "eta-last",
+          "from": "eta",
+          "to": "last"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "loc-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "loc-last"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "eta-last"
+          ],
+          "kind": "req",
+          "rate": 0.6,
+          "back": "resp"
+        },
+        {
+          "via": [
+            "eta-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "El coche entra en un túnel y pasa 40 s sin cobertura. ¿Qué ve el pasajero en el mapa?",
+        "options": [
+          "El coche sigue avanzando, porque el ETA lo va moviendo",
+          "El coche quieto un rato y, al salir del túnel, un salto a su posición",
+          "Los 10 puntos del túnel, animados uno a uno al volver la cobertura",
+          "Un aviso de viaje cancelado cuando caduca la última posición"
+        ],
+        "answer": 1,
+        "explain": "Sin puntos nuevos no hay nada que pintar: la app interpola un poco y el coche se para. Al salir, la última posición va al directo y el resto, en un lote, al historial: al mapa no le sirven puntos viejos. El ETA solo da minutos, no mueve el coche."
+      }
+    },
+    {
+      "short": "Túnel",
+      "chapter": "case",
+      "title": "40 segundos sin cobertura",
+      "body": "En el túnel no sale nada del móvil: la app guarda los puntos con su `seq`. Al pasajero no le llega ninguna posición, así que el coche se queda quieto en el mapa. `trip:t_9:loc` sigue con la última que llegó: si alguien abre ahora la pantalla del viaje, ve esa.",
+      "callout": {
+        "type": "warn",
+        "text": "Los túneles y las zonas sin cobertura son lo normal: el diseño no puede depender de que lleguen todos los puntos."
+      },
+      "changes": [
+        "− 40 s sin cobertura",
+        "~ 10 puntos esperan en el móvil",
+        "~ El coche, quieto en el mapa"
+      ],
+      "metrics": {
+        "age": 40,
+        "eta": 9,
+        "buf": 10
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "sin red",
+          "items": [
+            "#412",
+            "#413",
+            "…"
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ]
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "coche quieto"
+        },
+        {
+          "id": "last",
+          "kind": "cache",
+          "label": "Última pos.",
+          "at": [
+            1,
+            2.6
+          ],
+          "badge": "hace 40 s"
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA",
+          "state": "down"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-last",
+          "from": "loc",
+          "to": "last"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream",
+          "state": "dim"
+        },
+        {
+          "id": "eta-last",
+          "from": "eta",
+          "to": "last",
+          "state": "dim"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA"
+          ],
+          "kind": "write",
+          "rate": 0.6,
+          "failAt": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Salida",
+      "chapter": "case",
+      "title": "Sale del túnel: lo último primero",
+      "body": "Al salir, la app manda primero la **última** posición, que va al directo y pisa `trip:t_9:loc`: el pasajero ve un salto. Los 10 puntos del túnel van después en un lote, solo al stream, camino del historial en object storage. Con `seq`, el directo descarta cualquier punto más viejo que el último que ya pintó.",
+      "callout": {
+        "type": "tip",
+        "text": "Un viaje de 20 min son 300 puntos, ~30 KB. Con 20 M de viajes al día, 600 GB: grande y frío, para object storage."
+      },
+      "changes": [
+        "+ Lote de 10 puntos hacia el historial",
+        "~ Al directo, solo la última posición",
+        "~ seq descarta lo que llega tarde"
+      ],
+      "metrics": {
+        "age": 4,
+        "eta": 9,
+        "buf": 0
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ]
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "salto"
+        },
+        {
+          "id": "last",
+          "kind": "cache",
+          "label": "Última pos.",
+          "at": [
+            1,
+            2.6
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ],
+          "badge": "al historial"
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-last",
+          "from": "loc",
+          "to": "last"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream"
+        },
+        {
+          "id": "eta-last",
+          "from": "eta",
+          "to": "last",
+          "state": "dim"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "loc-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "loc-last"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc",
+            "loc-stream"
+          ],
+          "kind": "heavy",
+          "rate": 0.4
+        }
+      ],
+      "predict": {
+        "q": "En los últimos 5 minutos, 12 coches han cruzado la avenida (2 km) a 10 km/h en vez de a 30. Con la ronda y el centro igual, ¿qué ETA da ahora?",
+        "options": [
+          "9 min, como antes: la velocidad histórica manda",
+          "11 min: a medias entre la histórica y el directo (20 km/h)",
+          "16 min: la avenida pasa a 12 min",
+          "17 min: la avenida pasa a 12 min y se suma la corrección"
+        ],
+        "answer": 3,
+        "explain": "Con 12 coches detrás, el directo pesa casi todo: 2 km a 10 km/h son 12 min. Con la ronda y el centro, 16 min de ruta, más 1 de corrección: 17. Mezclar a medias sería fiarse igual de un dato que respaldan 12 coches que de uno sin respaldo."
+      }
+    },
+    {
+      "short": "Atasco",
+      "chapter": "case",
+      "title": "Tus conductores son los sensores",
+      "body": "El job de tráfico lee el stream, coloca cada punto en su tramo y saca la velocidad media de los últimos 5 minutos. En su siguiente vuelta, el ETA calcula con ella y avisa al pasajero. Si el conductor se desvía de la ruta, no espera a los 10 s: recalcula antes.",
+      "callout": {
+        "type": "tip",
+        "text": "Al pasajero se le suaviza: limita cuánto cambia entre dos avisos. Un 9 → 6 → 10 hace perder la confianza aunque cada número sea correcto."
+      },
+      "changes": [
+        "+ Velocidad en directo de la avenida",
+        "~ ETA: 9 → 17 min"
+      ],
+      "metrics": {
+        "age": 4,
+        "eta": 17,
+        "buf": 0
+      },
+      "panel": {
+        "title": "La avenida, en directo",
+        "rows": [
+          {
+            "text": "12 coches en 5 min a 10 km/h: pesa el directo"
+          },
+          {
+            "text": "Avenida: 2 km a 10 km/h = 12 min"
+          },
+          {
+            "text": "Ruta: 12 + 2 + 2 = 16 min"
+          },
+          {
+            "text": "Con la corrección, 17 min (antes, 9)",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ]
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "17 min"
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ]
+        },
+        {
+          "id": "traf",
+          "kind": "worker",
+          "label": "Tráfico",
+          "at": [
+            1,
+            3.5
+          ],
+          "badge": "10 km/h",
+          "mark": "bad"
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream"
+        },
+        {
+          "id": "stream-traf",
+          "from": "stream",
+          "to": "traf"
+        },
+        {
+          "id": "traf-eta",
+          "from": "traf",
+          "to": "eta"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc",
+            "loc-stream"
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "stream-traf",
+            "traf-eta"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "eta-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Push en los dos lados: WebSocket y un canal de pub/sub por viaje.\n- Solo vale la última posición; `seq` y la interpolación hacen el resto.\n- Un corte se ve como un coche quieto y un salto; nada se reenvía.\n- ETA = ruta en el grafo con velocidades históricas y en directo, más una corrección.\n- El recorrido, en lote, al historial.",
+      "callout": {
+        "type": "insight",
+        "text": "El reto no es multiplicar mensajes (cada posición va a un solo pasajero), sino saber en qué servidor está conectado."
+      },
+      "metrics": {
+        "age": 4,
+        "eta": 17,
+        "buf": 0
+      },
+      "nodes": [
+        {
+          "id": "drv",
+          "kind": "client",
+          "label": "Conductor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "gA",
+          "kind": "service",
+          "label": "Gateway 7",
+          "at": [
+            0,
+            1.3
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "service",
+          "label": "Ubicación",
+          "at": [
+            1,
+            1.3
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            1.3
+          ]
+        },
+        {
+          "id": "gB",
+          "kind": "service",
+          "label": "Gateway 31",
+          "at": [
+            3,
+            1.3
+          ]
+        },
+        {
+          "id": "pas",
+          "kind": "client",
+          "label": "Pasajero",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "last",
+          "kind": "cache",
+          "label": "Última pos.",
+          "at": [
+            1,
+            2.6
+          ]
+        },
+        {
+          "id": "eta",
+          "kind": "service",
+          "label": "ETA",
+          "at": [
+            2,
+            2.6
+          ]
+        },
+        {
+          "id": "stream",
+          "kind": "stream",
+          "label": "Stream",
+          "at": [
+            0,
+            2.6
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "drv-gA",
+          "from": "drv",
+          "to": "gA"
+        },
+        {
+          "id": "gA-loc",
+          "from": "gA",
+          "to": "loc"
+        },
+        {
+          "id": "loc-ps",
+          "from": "loc",
+          "to": "ps"
+        },
+        {
+          "id": "ps-gB",
+          "from": "ps",
+          "to": "gB"
+        },
+        {
+          "id": "gB-pas",
+          "from": "gB",
+          "to": "pas"
+        },
+        {
+          "id": "loc-last",
+          "from": "loc",
+          "to": "last"
+        },
+        {
+          "id": "loc-stream",
+          "from": "loc",
+          "to": "stream"
+        },
+        {
+          "id": "eta-last",
+          "from": "eta",
+          "to": "last"
+        },
+        {
+          "id": "eta-ps",
+          "from": "eta",
+          "to": "ps"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "drv-gA",
+            "gA-loc"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "loc-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "loc-last"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "eta-ps",
+            "ps-gB",
+            "gB-pas"
+          ],
+          "kind": "event",
+          "rate": 0.4,
+          "pop": true
+        },
+        {
+          "via": [
+            "loc-stream"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}
