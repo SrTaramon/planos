@@ -1,0 +1,1266 @@
+{
+  "id": "P54",
+  "title": "Los anuncios, en acción",
+  "metrics": [
+    {
+      "id": "wait",
+      "label": "Espera del feed",
+      "unit": "ms",
+      "better": "low"
+    },
+    {
+      "id": "fill",
+      "label": "Cargas con anuncios",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "dup",
+      "label": "Clics cobrados de más",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "req": "petición de anuncios",
+    "event": "impresión o clic",
+    "write": "gasto o presupuesto"
+  },
+  "goals": [
+    {
+      "text": "Cómo se elige un anuncio en milisegundos",
+      "step": 1
+    },
+    {
+      "text": "Por dónde pasa un clic hasta el informe",
+      "step": 2
+    },
+    {
+      "text": "Qué ve el usuario si los anuncios van lentos",
+      "step": 3
+    },
+    {
+      "text": "Cómo se cobra cada clic una sola vez",
+      "step": 4
+    },
+    {
+      "text": "Cómo no se pasa nadie de su presupuesto",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Elegir",
+      "chapter": "solution",
+      "title": "Un hueco del feed, una subasta en milisegundos",
+      "body": "Mientras arma los posts, el feed pide 2 anuncios y espera 50 ms como mucho. El servicio de anuncios cruza su índice en memoria (de 5 M a ~2.000 candidatos), filtra y subasta por puja × pCTR. Gana A, con segundo precio.",
+      "changes": [
+        "+ Petición de anuncios, en paralelo",
+        "~ 5 M → ~2.000 candidatos → 1 ganador",
+        "~ A paga 0,75 €, no 0,80 €"
+      ],
+      "metrics": {
+        "wait": 30,
+        "fill": 99,
+        "dup": 0
+      },
+      "panel": {
+        "title": "La subasta (€ por impresión)",
+        "rows": [
+          {
+            "text": "A: 0,80 € × 2 % = 0,016",
+            "tone": "good"
+          },
+          {
+            "text": "B: 2,00 € × 0,5 % = 0,010"
+          },
+          {
+            "text": "C: 0,50 € × 3 % = 0,015"
+          },
+          {
+            "text": "A paga 0,015 / 2 % = 0,75 € por clic",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta",
+          "mark": "good"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id",
+          "state": "dim"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura",
+          "state": "dim"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min",
+          "state": "dim"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk",
+          "state": "dim"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp",
+          "state": "dim"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap",
+          "state": "dim"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac",
+          "state": "dim"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads",
+          "state": "dim"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-feed",
+            "feed-ads"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Contar",
+      "chapter": "solution",
+      "title": "Cada impresión y cada clic, al log y a las cifras",
+      "body": "La app avisa de cada impresión. El clic pasa por el tracking, que comprueba la firma del `impressionId`, lo publica y redirige. El stream suma por anuncio y minuto, y el gasto vuelve al pacing. El log se archiva para el batch nocturno.",
+      "changes": [
+        "+ Tracking → log → stream → informes",
+        "+ Gasto real → pacing",
+        "+ Eventos en bruto → batch nocturno"
+      ],
+      "metrics": {
+        "wait": 30,
+        "fill": 99,
+        "dup": 0
+      },
+      "panel": {
+        "title": "Lo que entra",
+        "rows": [
+          {
+            "text": "~116.000 impresiones/s, picos de 230.000"
+          },
+          {
+            "text": "~1.200 clics/s, con un CTR del 1 %"
+          },
+          {
+            "text": "230.000 / 20.000 por worker → 12; 32 particiones"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-feed",
+            "feed-ads"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "app-trk",
+            "trk-log",
+            "log-sp",
+            "sp-olap"
+          ],
+          "kind": "event",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "sp-pac",
+            "pac-ads"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "log-bat"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "El servicio de anuncios tiene un mal día y tarda 400 ms en vez de 30. ¿Qué ve quien abre el feed?",
+        "options": [
+          "El feed tarda 400 ms más en salir",
+          "Un error: el feed no se monta sin sus anuncios",
+          "El feed sale a tiempo, sin anuncios en esa carga",
+          "Anuncios elegidos al azar, sin subasta"
+        ],
+        "answer": 2,
+        "explain": "El feed pide los anuncios en paralelo y espera como mucho 50 ms; si no llegan, sigue sin ellos. Se pierde el dinero de esas cargas, pero nadie ve un feed lento. Esperarlos ataría la velocidad de todo el producto al servicio más lento."
+      }
+    },
+    {
+      "short": "Lentos",
+      "chapter": "case",
+      "title": "El servicio de anuncios tarda 400 ms",
+      "body": "A los 50 ms, el feed deja de esperar y sale sin anuncios. Se pierde algo de dinero en esas cargas, pero nadie ve un feed lento. Cuando el servicio se recupera, los anuncios vuelven solos.",
+      "changes": [
+        "~ Anuncios: 30 → 400 ms",
+        "~ El feed espera 50 ms y sigue",
+        "~ Cargas con anuncios: 99 % → 0 %"
+      ],
+      "metrics": {
+        "wait": 50,
+        "fill": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta",
+          "state": "hot",
+          "badge": "400 ms",
+          "mark": "bad"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id",
+          "state": "dim"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura",
+          "state": "dim"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min",
+          "state": "dim"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms",
+          "state": "hot"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk",
+          "state": "dim"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp",
+          "state": "dim"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap",
+          "state": "dim"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac",
+          "state": "dim"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads",
+          "state": "dim"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "feed-ads"
+          ],
+          "kind": "req",
+          "fail": true,
+          "failAt": 0.6,
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "app-feed"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Clics de más",
+      "chapter": "case",
+      "title": "El mismo clic dos veces, y un bot con 10.000",
+      "body": "La app reintenta un clic y llega dos veces con el mismo `impressionId`: el stream recuerda los ids de la última hora y descarta el segundo. Un bot pulsa 10.000 veces desde una IP: las reglas lo marcan y no se cobra. Y con la firma mala, ni cuenta.",
+      "changes": [
+        "~ Dedup por impressionId (1 hora)",
+        "~ Fraude: marcado, no se cobra",
+        "~ El batch recalcula con todo marcado"
+      ],
+      "metrics": {
+        "wait": 30,
+        "fill": 99,
+        "dup": 0
+      },
+      "panel": {
+        "title": "Lo que llega y lo que se cobra",
+        "rows": [
+          {
+            "text": "Un clic y su reintento (mismo id) → 1",
+            "tone": "good"
+          },
+          {
+            "text": "10.000 clics de una IP en un minuto → 0",
+            "tone": "good"
+          },
+          {
+            "text": "Firma mala o id inventado → 0",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta",
+          "state": "dim"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min",
+          "mark": "good"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed",
+          "state": "dim"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms",
+          "state": "dim"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk",
+          "state": "hot"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac",
+          "state": "dim"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads",
+          "state": "dim"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-trk",
+            "trk-log",
+            "log-sp"
+          ],
+          "kind": "event",
+          "fail": true,
+          "rate": 4
+        },
+        {
+          "via": [
+            "app-trk",
+            "trk-log",
+            "log-sp",
+            "sp-olap"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        },
+        {
+          "via": [
+            "log-bat"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        }
+      ],
+      "predict": {
+        "q": "200 servidores de anuncios deciden a la vez si cmp_12 puede pujar, cientos de miles de veces por segundo. ¿Cómo evitas que entre todos gasten 700 € de sus 500?",
+        "options": [
+          "Un contador central que cada subasta consulta y descuenta",
+          "Cada servidor gasta trozos de 5 € sin preguntar y pide otro al acabar",
+          "Un reparto fijo: 500 / 200 = 2,50 € por servidor y día",
+          "Dejar que se pasen y devolver el exceso al final del día"
+        ],
+        "answer": 1,
+        "explain": "Un contador central consultado en cada subasta sería el cuello de botella. Con trozos, cada servidor decide en memoria y solo habla con el pacing al acabar uno; cuando queda poco, los trozos encogen. Un reparto fijo dejaría sin presupuesto a los servidores con más tráfico y con sobrante a los demás."
+      }
+    },
+    {
+      "short": "Presupuesto",
+      "chapter": "case",
+      "title": "500 € al día, repartidos y sin pasarse",
+      "body": "cmp_12 empieza ganando casi todo: a ese ritmo, se le acaba a las 10:30. El pacing compara cada minuto el gasto real con la curva y baja su participación en las subastas. Cada servidor gasta trozos de 5 € sin preguntar a nadie.",
+      "changes": [
+        "~ cmp_12 entra en el 40 % de sus subastas",
+        "+ Trozos de 5 € por servidor",
+        "− Contador central en cada subasta"
+      ],
+      "metrics": {
+        "wait": 30,
+        "fill": 99,
+        "dup": 0
+      },
+      "panel": {
+        "title": "cmp_12: 500 € al día",
+        "rows": [
+          {
+            "text": "Sin pacing: todo gastado a las 10:30",
+            "tone": "bad"
+          },
+          {
+            "text": "La curva: 500 € / 24 h ≈ 21 € por hora",
+            "tone": "good"
+          },
+          {
+            "text": "Va adelantada: del 100 % de subastas al 40 %"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta",
+          "badge": "trozo de 5 €"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura",
+          "state": "dim"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap",
+          "state": "dim"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-feed",
+            "feed-ads"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "app-trk",
+            "trk-log",
+            "log-sp"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "sp-pac"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "pac-ads"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Elegir: índice en memoria, filtros y subasta por puja × pCTR.\n- Si los anuncios tardan más de 50 ms, el feed sale sin ellos.\n- Cada clic, una vez: impressionId firmado y dedup.\n- Pacing y trozos de presupuesto; el batch nocturno da lo que se factura.",
+      "callout": {
+        "type": "insight",
+        "text": "Entrega y medición son cargas opuestas: una corre contra el reloj y la otra tiene que ser exacta. Las une el log de eventos."
+      },
+      "metrics": {
+        "wait": 30,
+        "fill": 99,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "client",
+          "label": "App",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "feed",
+          "kind": "service",
+          "label": "Feed",
+          "at": [
+            1.5,
+            0
+          ]
+        },
+        {
+          "id": "ads",
+          "kind": "service",
+          "label": "Anuncios",
+          "at": [
+            3,
+            0
+          ],
+          "note": "índice + subasta"
+        },
+        {
+          "id": "trk",
+          "kind": "service",
+          "label": "Tracking",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log eventos",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "por ad_id"
+        },
+        {
+          "id": "pac",
+          "kind": "service",
+          "label": "Pacing",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "bat",
+          "kind": "worker",
+          "label": "Batch nocturno",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "lo que se factura",
+          "mark": "good"
+        },
+        {
+          "id": "sp",
+          "kind": "worker",
+          "label": "Stream",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "note": "dedup, 1 min"
+        },
+        {
+          "id": "olap",
+          "kind": "db",
+          "label": "BD analítica",
+          "at": [
+            3,
+            2.4
+          ],
+          "note": "informes"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-feed",
+          "from": "app",
+          "to": "feed"
+        },
+        {
+          "id": "feed-ads",
+          "from": "feed",
+          "to": "ads",
+          "label": "≤ 50 ms"
+        },
+        {
+          "id": "app-trk",
+          "from": "app",
+          "to": "trk"
+        },
+        {
+          "id": "trk-log",
+          "from": "trk",
+          "to": "log"
+        },
+        {
+          "id": "log-sp",
+          "from": "log",
+          "to": "sp"
+        },
+        {
+          "id": "sp-olap",
+          "from": "sp",
+          "to": "olap"
+        },
+        {
+          "id": "sp-pac",
+          "from": "sp",
+          "to": "pac"
+        },
+        {
+          "id": "pac-ads",
+          "from": "pac",
+          "to": "ads"
+        },
+        {
+          "id": "log-bat",
+          "from": "log",
+          "to": "bat"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-feed",
+            "feed-ads"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "app-trk",
+            "trk-log",
+            "log-sp",
+            "sp-olap"
+          ],
+          "kind": "event",
+          "rate": 1.8
+        },
+        {
+          "via": [
+            "sp-pac",
+            "pac-ads"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "log-bat"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}
