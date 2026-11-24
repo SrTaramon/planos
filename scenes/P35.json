@@ -1,0 +1,1167 @@
+{
+  "id": "P35",
+  "title": "Negocios y amigos cerca, en acción",
+  "metrics": [
+    {
+      "id": "sps",
+      "label": "Búsquedas por segundo"
+    },
+    {
+      "id": "pos",
+      "label": "Posiciones por segundo"
+    },
+    {
+      "id": "push",
+      "label": "Avisos a amigos",
+      "unit": "M/s"
+    },
+    {
+      "id": "dist",
+      "label": "Ana a Bruno",
+      "unit": "km"
+    }
+  ],
+  "legend": {
+    "event": "posición de un amigo",
+    "write": "posición a la cache"
+  },
+  "goals": [
+    {
+      "text": "Por qué se miran 9 celdas y no una",
+      "step": 1
+    },
+    {
+      "text": "Cómo comparten resultado los que buscan en la misma zona",
+      "step": 2
+    },
+    {
+      "text": "Cómo le llega a Bruno la posición de Ana",
+      "step": 3
+    },
+    {
+      "text": "Por qué una posición vieja no se queda en el mapa",
+      "step": 4
+    },
+    {
+      "text": "Cómo se aguantan 13 millones de avisos por segundo",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Buscar",
+      "chapter": "solution",
+      "title": "«Pizzería» a menos de 1 km",
+      "body": "El LBS elige la precisión por el radio: para 1 km, celdas de 5 caracteres (con 6, el lado corto mide 0,6 km y no basta). Lee los ids de la celda de Ana y de sus 8 vecinas en el índice en memoria, mide la distancia exacta con haversine, quita lo que pasa de 1 km y ordena. Las fichas salen de la cache.",
+      "changes": [
+        "+ 9 celdas: la de Ana y sus 8 vecinas",
+        "+ Distancia exacta; fuera lo que pasa de 1 km",
+        "+ Las fichas, desde la cache"
+      ],
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": "—"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura"
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ]
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "state": "dim"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket",
+          "state": "dim"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb",
+          "state": "dim"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc",
+          "state": "dim"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana",
+          "state": "dim"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-lbs",
+            "lbs-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "lbs-zc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Zona",
+      "chapter": "solution",
+      "title": "Sábado noche: mil personas buscan desde la misma celda",
+      "body": "Todos los que buscan restaurantes desde la misma celda comparten resultado: la cache guarda, para `celda + categoría + filtros`, la lista de ids ya ordenada. Las zonas más buscadas se precalientan. Lo personal no entra: se cachean los candidatos y cada usuario los reordena con sus gustos.",
+      "changes": [
+        "+ Cache por celda, categoría y filtros",
+        "~ El índice solo ve lo que no está en la cache",
+        "~ Lo personal: reordenar los candidatos"
+      ],
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": "—"
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura",
+          "load": 0.5
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ],
+          "mark": "good",
+          "load": 0.6,
+          "badge": "compartida"
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "state": "dim"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket",
+          "state": "dim"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb",
+          "state": "dim"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc",
+          "state": "dim"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana",
+          "state": "dim"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-lbs",
+            "lbs-zc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4
+        },
+        {
+          "via": [
+            "lbs-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Amigos",
+      "chapter": "solution",
+      "title": "Ana comparte su ubicación",
+      "body": "El móvil de Ana manda su posición por el WebSocket. Su gateway la escribe en la cache de ubicaciones, con un TTL de 10 min, y la publica en el canal `loc:ana`. El gateway de Bruno, suscrito a ese canal desde que se conectó, mide la distancia con la posición de Bruno: 1,2 km, dentro de su radio. Se la empuja.",
+      "changes": [
+        "+ loc:ana en la cache, con TTL de 10 min",
+        "+ Se publica en el canal loc:ana",
+        "+ La distancia la mide el gateway de Bruno"
+      ],
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": 1.2
+      },
+      "predict": {
+        "q": "Ana entra en el metro y se queda sin cobertura: su móvil deja de mandar posiciones, sin avisar a nadie. ¿Qué pasa con su posición?",
+        "options": [
+          "Se borra al momento: el gateway nota que se ha ido",
+          "Se queda en la cache hasta que caduca, como mucho 10 minutos, y deja de contar",
+          "Se queda para siempre en su último sitio: nadie la borra",
+          "Pasa al historial, para cuando vuelva"
+        ],
+        "answer": 1,
+        "explain": "Nadie avisa de que Ana se ha ido: por eso cada posición lleva un TTL de 10 minutos que solo renueva quien sigue mandando. Sin TTL, Ana sería un fantasma en el mapa de sus amigos. Y no hay historial: la función no lo necesita, y es un dato delicado."
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura",
+          "state": "dim"
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ],
+          "mark": "good",
+          "badge": "1,2 km"
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "ana",
+            "bruno"
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc",
+          "state": "dim"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-loc"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-ps",
+            "ps-gwb",
+            "bru-gwb"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Sin cobertura",
+      "chapter": "case",
+      "title": "Ana se queda sin cobertura",
+      "body": "El móvil de Ana deja de mandar. Nadie borra su posición a mano: caduca sola a los 10 minutos y deja de contar como cercana. No queda historial, solo la última posición mientras vive. Si Ana desactiva compartir, se borra `loc:ana` y se cancelan las suscripciones al momento.",
+      "changes": [
+        "− Ana (sin avisar)",
+        "~ loc:ana caduca a los 10 min",
+        "~ Sin historial: solo la última posición"
+      ],
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": "—"
+      },
+      "predict": {
+        "q": "El móvil solo manda su posición si se ha movido 100 m, o cada 5 minutos si está quieto. ¿Cuántas manda en una hora alguien que pasa la tarde en casa, con la app abierta?",
+        "options": [
+          "120, una cada 30 s, como siempre",
+          "Ninguna: si no se mueve, no manda nada",
+          "12: solo las que renuevan el TTL",
+          "1, al abrir la app"
+        ],
+        "answer": 2,
+        "explain": "Quieto, solo manda para renovar el TTL de 10 minutos: una cada 5 minutos, 12 por hora en vez de 120. Si no mandara nada, su posición caducaría y desaparecería aunque siga ahí. Como mucha gente está quieta, la cifra real queda muy por debajo de 333.000 por segundo."
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ],
+          "state": "down"
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura",
+          "state": "dim"
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "bruno"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc",
+          "state": "dim"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket",
+          "state": "down"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc",
+          "state": "dim"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana",
+          "state": "dim"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "bru-gwb"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Escala",
+      "chapter": "case",
+      "title": "13 millones de avisos por segundo",
+      "body": "Con 10 millones conectados salen 333.000 posiciones por segundo, y cada una va a ~40 amigos conectados: unos 13 millones de entregas por segundo. No caben en un nodo: los canales se reparten por id de usuario con consistent hashing en un clúster de pub/sub. Y los móviles mandan menos: solo si se mueven 100 m.",
+      "changes": [
+        "+ Pub/sub repartido con consistent hashing",
+        "+ 200 gateways de 50.000 conexiones",
+        "~ El móvil solo manda si se mueve 100 m"
+      ],
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": 1.2
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "10 M conectados / 30 s = 333.000 posiciones/s"
+          },
+          {
+            "text": "× 40 amigos ≈ 13 millones de avisos por segundo",
+            "tone": "bad"
+          },
+          {
+            "text": "10 M conexiones / 50.000 = 200 gateways"
+          },
+          {
+            "text": "Quieto: 12 posiciones por hora, no 120",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura",
+          "state": "dim"
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ],
+          "load": 0.7
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ],
+          "load": 0.7
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "load": 0.6,
+          "items": [
+            "ana",
+            "bruno"
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "load": 0.85,
+          "badge": "por shards",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc",
+          "state": "dim"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-loc"
+          ],
+          "kind": "write",
+          "rate": 3
+        },
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-ps",
+            "ps-gwb",
+            "bru-gwb"
+          ],
+          "kind": "event",
+          "rate": 5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Negocios: índice geográfico precalculado en memoria; 9 celdas y luego la distancia exacta.\n- Cache por zona y categoría, compartida; lo personal reordena los candidatos.\n- Amigos: WebSocket, posiciones con TTL y un canal por usuario; mide quien recibe.\n- 13 millones de avisos por segundo: pub/sub repartido y móviles que mandan al moverse.",
+      "callout": {
+        "type": "insight",
+        "text": "El mismo «¿qué hay cerca?», resuelto dos veces: para lo quieto, precalcular y cachear; para lo que se mueve, memoria con caducidad y push."
+      },
+      "metrics": {
+        "sps": 5800,
+        "pos": 333000,
+        "push": 13,
+        "dist": 1.2
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lbs",
+          "kind": "service",
+          "label": "LBS",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "solo lectura"
+        },
+        {
+          "id": "bru",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "gwa",
+          "kind": "service",
+          "label": "Gateway A",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "cache",
+          "label": "Índice geo",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "zc",
+          "kind": "cache",
+          "label": "Cache zonas",
+          "at": [
+            2,
+            1.2
+          ]
+        },
+        {
+          "id": "gwb",
+          "kind": "service",
+          "label": "Gateway B",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "loc",
+          "kind": "cache",
+          "label": "Ubicaciones",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "ana",
+            "bruno"
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "stream",
+          "label": "Pub/sub",
+          "at": [
+            1.5,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-lbs",
+          "from": "ana",
+          "to": "lbs"
+        },
+        {
+          "id": "lbs-idx",
+          "from": "lbs",
+          "to": "idx"
+        },
+        {
+          "id": "lbs-zc",
+          "from": "lbs",
+          "to": "zc"
+        },
+        {
+          "id": "ana-gwa",
+          "from": "ana",
+          "to": "gwa",
+          "label": "WebSocket"
+        },
+        {
+          "id": "bru-gwb",
+          "from": "bru",
+          "to": "gwb"
+        },
+        {
+          "id": "gwa-loc",
+          "from": "gwa",
+          "to": "loc"
+        },
+        {
+          "id": "gwa-ps",
+          "from": "gwa",
+          "to": "ps",
+          "label": "loc:ana"
+        },
+        {
+          "id": "ps-gwb",
+          "from": "ps",
+          "to": "gwb"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-lbs",
+            "lbs-zc"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "lbs-idx"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-loc"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "ana-gwa",
+            "gwa-ps",
+            "ps-gwb",
+            "bru-gwb"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        }
+      ]
+    }
+  ]
+}
