@@ -16,6 +16,7 @@ function check(file) {
   const id = (file.match(/([LP]\d{2})\.json$/) || [])[1];
   if (sc.id !== id) bad.push(`id "${sc.id}" no coincide con el fichero (${id})`);
   if (!sc.title || len(sc.title) > 60) bad.push('title (1-60)');
+  if (sc.lesson != null && typeof sc.lesson !== 'boolean') bad.push('lesson: true|false (la escena es la lección: sustituye a las secciones de teoría)');
   const metrics = Array.isArray(sc.metrics) ? sc.metrics : [];
   if (metrics.length > 4) bad.push('metrics: como mucho 4');
   const mids = new Set();
@@ -35,7 +36,9 @@ function check(file) {
     if (!st.short || len(st.short) > 14) bad.push(`${w}: short (1-14)`);
     if (!CHAPTERS.includes(st.chapter)) bad.push(`${w}: chapter ${CHAPTERS.join('|')}`);
     if (!st.title || len(st.title) > 64) bad.push(`${w}: title (1-64)`);
-    if (!st.body || len(st.body) > 520) bad.push(`${w}: body (1-520, ahora ${len(st.body)})`);
+    const maxBody = sc.lesson ? 900 : 520;
+    if (!st.body || len(st.body) > maxBody) bad.push(`${w}: body (1-${maxBody}, ahora ${len(st.body)})`);
+    if (st.more != null && (typeof st.more !== 'string' || !st.more.trim() || len(st.more) > 1800)) bad.push(`${w}: more (1-1800, ahora ${len(st.more)})`);
     if (st.callout && (!CALLOUTS.includes(st.callout.type) || !st.callout.text || len(st.callout.text) > 220)) bad.push(`${w}: callout (type ${CALLOUTS.join('|')}, text 1-220)`);
     if (st.changes && (!Array.isArray(st.changes) || st.changes.length > 4 || st.changes.some((c) => !/^[+~−-] \S/.test(c) || len(c) > 70))) bad.push(`${w}: changes (max 4, «+ x», «~ x» o «− x», max 70)`);
     if (st.metrics) for (const k of Object.keys(st.metrics)) if (!mids.has(k)) bad.push(`${w}: metric desconocida "${k}"`);

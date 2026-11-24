@@ -1,6 +1,6 @@
 {
   "id": "L11",
-  "title": "El anillo, en acción",
+  "title": "Consistent hashing, paso a paso",
   "metrics": [
     {
       "id": "nodes",
@@ -28,33 +28,15 @@
   "legend": {
     "event": "clave que cambia de nodo"
   },
-  "goals": [
-    {
-      "text": "Por qué hash % N baraja casi todo al cambiar N",
-      "step": 2
-    },
-    {
-      "text": "Cómo decide el anillo de quién es cada clave",
-      "step": 3
-    },
-    {
-      "text": "Qué se mueve al añadir o quitar un nodo",
-      "step": 5
-    },
-    {
-      "text": "Para qué sirven los virtual nodes",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "% 4",
       "chapter": "problem",
-      "title": "Cuatro caches y la regla hash % 4",
-      "body": "La app reparte las claves entre cuatro nodos de cache con `hash(clave) % 4`. Cada petición sabe a qué nodo ir y casi todas encuentran su dato: el **hit rate** está en el 95 % y la base de datos apenas trabaja.",
+      "title": "Repartir con hash % N",
+      "body": "Una cache distribuida reparte las claves entre varios nodos. Lo obvio es `hash(clave) % N`: con 4 nodos, el resto de dividir entre 4 dice a qué nodo va cada clave. Cada petición sabe adónde ir sin preguntar a nadie y casi todas encuentran su dato: el **hit rate** está en el 95 %.\n\nFunciona mientras N no cambie. Pero N cambia: añades un nodo porque se llena la memoria, o se cae uno a las tres de la mañana.",
       "callout": {
         "type": "insight",
-        "text": "Fíjate en la regla: el sitio de cada clave depende de N, el número de nodos. Ahí está el problema."
+        "text": "El sitio de cada clave depende de N, el número de nodos. Ahí está el problema."
       },
       "metrics": {
         "nodes": 4,
@@ -186,10 +168,10 @@
       "short": "Un nodo más",
       "chapter": "problem",
       "title": "Con un quinto nodo, todo se baraja",
-      "body": "Se llena la memoria y añades `cache-e`. La regla pasa a ser `% 5` y **4 de cada 5 claves** se buscan ahora en un nodo que no las tiene. La cache está, pero vacía para lo que le piden: casi todo cae sobre la base de datos.",
+      "body": "Añades `cache-e` y la regla pasa a `% 5`. Una clave solo se queda en su nodo si da el mismo resto entre 4 y entre 5: **una de cada cinco**. El 80 % se busca ahora en un nodo que no la tiene.\n\nEn una base de datos sería mover casi todos los datos. En una cache el golpe es inmediato: el hit rate se desploma y toda la carga cae sobre la base de datos.",
       "callout": {
         "type": "warn",
-        "text": "Al pasar de N a N + 1 nodos se mueven N/(N + 1) de las claves: de 4 a 5, el 80 %; de 10 a 11, el 91 %."
+        "text": "Al pasar de N a N + 1 nodos solo se queda en su sitio una de cada N + 1 claves. Cuantos más nodos tienes, peor."
       },
       "changes": [
         "+ cache-e",
@@ -329,13 +311,14 @@
           "back": "resp",
           "rate": 2.4
         }
-      ]
+      ],
+      "more": "Con un millón de claves de prueba y MD5 como hash, la cuenta da:\n\n| Cambio | Se mueven con `% N` | Lo mínimo necesario |\n|---|---|---|\n| De 4 a 5 nodos | 80 % | 20 % |\n| De 10 a 11 nodos | 91 % | 9 % |\n| De 5 a 4 (se cae uno) | 80 % | 20 % |\n\n«Lo mínimo» es lo que le toca al nodo nuevo (o lo que tenía el que se fue). Todo lo demás se mueve sin necesidad."
     },
     {
       "short": "El anillo",
       "chapter": "technique",
       "title": "Claves y nodos en el mismo círculo",
-      "body": "Pon todos los valores del hash en un círculo (aquí, de 0 a 99). Cada nodo se coloca en el hash de su nombre: A en el 10, B en el 45, C en el 80. Cada clave pertenece al **primer nodo que encuentra avanzando en el sentido del reloj**.",
+      "body": "La idea de **consistent hashing**: no dividas entre N; pon claves y nodos en el mismo círculo.\n\n1. Los valores del hash, de 0 a 2³² − 1, forman un círculo: el **hash ring**. Aquí, para verlo a mano, de 0 a 99.\n2. Cada nodo se coloca en el hash de su nombre, `hash32(\"cache-a\")`: A en el 10, B en el 45, C en el 80.\n3. Cada clave es del **primer nodo que encuentra avanzando en el sentido del reloj**. Pasado el 99, da la vuelta.\n\nAsí, `ana` (5) y `sara` (93) son de A; `luis` (30), de B; `marta` (52) y `pablo` (70), de C.",
       "callout": {
         "type": "tip",
         "text": "Como una línea circular de autobús: cada pasajero se baja en la primera parada que encuentra."
@@ -437,17 +420,14 @@
           "back": "resp",
           "rate": 2.2
         }
-      ]
+      ],
+      "more": "En código, el anillo es una lista ordenada con las posiciones de los nodos, y buscar el dueño de una clave es una búsqueda binaria:\n\n```ts\nfunction ownerOf(key: string): string {\n  const h = hash32(key); // de 0 a 2³² − 1\n  const i = firstAtOrAfter(ring, h); // búsqueda binaria\n  return ring[i === ring.length ? 0 : i].node; // pasado el final, el primero\n}\n```\n\nCada nodo se queda con el tramo que termina en él: B, de 11 a 45; C, de 46 a 80; y A, de 81 a 10, dando la vuelta."
     },
     {
       "short": "Llega D",
       "chapter": "solution",
       "title": "Añades D: solo se mueve marta",
-      "body": "D cae en el 60, entre B y C. Se queda con el tramo de 46 a 60, que antes era de C: solo `marta` (52) cambia de nodo. `ana`, `luis`, `pablo` y `sara` ni se enteran.",
-      "callout": {
-        "type": "insight",
-        "text": "Un nodo nuevo solo le quita claves a su vecino. De media se mueve 1/(N + 1) de las claves: justo lo que le toca."
-      },
+      "body": "Añades D, que cae en el 60, entre B y C. Se queda con el tramo de 46 a 60, que antes era de C: solo `marta` (52) cambia de nodo. `ana`, `luis`, `pablo` y `sara` ni se enteran.\n\nEn general, un nodo nuevo solo le quita claves a su vecino. Al añadir el nodo número N + 1 se mueve, de media, **1/(N + 1)** de las claves: justo lo que le toca.",
       "changes": [
         "+ D en el 60",
         "~ marta: de C a D",
@@ -590,17 +570,14 @@
         ],
         "answer": 1,
         "explain": "Cada clave es del primer nodo que encuentra en el sentido del reloj. Sin B, desde el 30 el primero es D, en el 60. Las claves no viajan hacia atrás: A no recibe nada."
-      }
+      },
+      "more": "| Clave | Posición | Antes | Con D |\n|---|---|---|---|\n| `ana` | 5 | A | A |\n| `luis` | 30 | B | B |\n| `marta` | 52 | C | **D** |\n| `pablo` | 70 | C | C |\n| `sara` | 93 | A (da la vuelta) | A |\n\nCon `% N`, en cambio, añadir D habría movido unas 4 de cada 5."
     },
     {
       "short": "Cae B",
       "chapter": "case",
       "title": "Se cae B: sus claves, al siguiente",
-      "body": "B se cae a las tres de la mañana. Sus claves (de 11 a 45) pasan al siguiente en el sentido del reloj, D. Las demás no se mueven. Pero D carga de golpe con su tramo y con el de B: la mitad del anillo.",
-      "callout": {
-        "type": "warn",
-        "text": "Con un solo punto por máquina, la caída de un nodo descarga todo su trabajo sobre un único vecino."
-      },
+      "body": "B se cae. Sus claves (de 11 a 45) pasan al siguiente en el sentido del reloj, D. Las demás no se mueven: un nodo que se va solo entrega lo suyo.\n\nPero mira la carga: D se queda con su tramo y con el de B, la mitad del anillo. Con un solo punto por máquina, la caída de un nodo descarga todo su trabajo sobre **un único vecino**, que puede duplicar su carga de golpe.",
       "changes": [
         "− B (caído)",
         "~ luis: de B a D",
@@ -733,10 +710,10 @@
       "short": "Virtual nodes",
       "chapter": "technique",
       "title": "Muchos puntos por máquina",
-      "body": "Cada máquina se coloca en el anillo muchas veces, con hashes distintos (`cache-a#0`, `cache-a#1`…). Tiene muchos tramos pequeños por todo el círculo y el reparto sale parejo: con 100 puntos por máquina, la más cargada se lleva el 28 % (lo justo sería el 25 %).",
+      "body": "Con pocos nodos hay otro problema: las posiciones caen al azar y los tramos salen muy desiguales. Con 4 nodos, el más cargado se lleva de media el **52 %** de las claves, cuando lo justo sería el 25 %.\n\nLa solución son los **virtual nodes**: cada máquina se coloca en el anillo muchas veces, con hashes distintos (`cache-a#0`, `cache-a#1`… `cache-a#99`). Tiene muchos tramos pequeños por todo el círculo y los desequilibrios se compensan: con 100 puntos por máquina, la más cargada se queda en el 28 %.",
       "callout": {
         "type": "tip",
-        "text": "Si cae una máquina, sus tramos se reparten entre todas las demás, no sobre un vecino. Y una máquina con el doble de memoria recibe el doble de puntos."
+        "text": "Si cae una máquina, sus muchos tramos se reparten entre todas las demás, no sobre un vecino. Y una máquina con el doble de memoria recibe el doble de puntos y, con ellos, el doble de claves."
       },
       "changes": [
         "+ Virtual nodes: muchos puntos por máquina",
@@ -908,17 +885,14 @@
           "back": "resp",
           "rate": 2.6
         }
-      ]
+      ],
+      "more": "En una simulación de 2.000 anillos al azar con 4 máquinas:\n\n| Puntos por máquina | La más cargada, de media |\n|---|---|\n| 1 | 52 % |\n| 10 | 34 % |\n| 100 | 28 % |\n\nEl precio es pequeño: el mapa pasa de 4 entradas a 400, que caben en memoria de sobra, y la búsqueda binaria apenas da unos pasos más."
     },
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Con `hash % N`, cambiar N mueve casi todas las claves.\n- En el anillo, cada clave es del primer nodo en el sentido del reloj.\n- Añadir o quitar un nodo solo mueve su tramo: de media, 1/N.\n- Los virtual nodes igualan el reparto y la carga de un nodo caído.",
-      "callout": {
-        "type": "insight",
-        "text": "Lo usan Memcached, Dynamo y Cassandra. Redis Cluster hace lo mismo con 16.384 hash slots fijos."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Con `hash % N`, cambiar N mueve casi todas las claves: de 4 a 5 nodos, el 80 %; de 10 a 11, el 91 %.\n- En el anillo, cada clave es del primer nodo que encuentra en el sentido del reloj.\n- Añadir o quitar un nodo solo mueve las claves de su tramo: de media, 1/N.\n- Los virtual nodes igualan el reparto y reparten la carga de un nodo caído.",
       "metrics": {
         "nodes": 4,
         "moved": 0,
@@ -1028,7 +1002,9 @@
           "back": "resp",
           "rate": 2
         }
-      ]
+      ],
+      "more": "**Dónde se usa.** Allí donde muchas máquinas se reparten claves y los nodos van y vienen:\n\n- **Caches distribuidas**: muchos clientes de Memcached reparten las claves con consistent hashing. Al añadir un servidor, la mayor parte de la cache sigue caliente.\n- **Key-value stores**: Amazon describió un anillo con virtual nodes en su artículo sobre Dynamo (2007), y Cassandra usa la misma idea. Además, cada clave se copia en los siguientes nodos del anillo: si su dueño cae, el siguiente ya la tiene.\n- **Load balancers**: para mandar a cada usuario siempre al mismo servidor sin que todo se baraje al añadir uno.\n\nNo es la única forma: Redis Cluster divide las claves en 16.384 **hash slots** fijos y reparte los slots entre los nodos; para crecer, mueve slots enteros. Las dos evitan lo mismo: que el sitio de una clave dependa de N."
     }
-  ]
+  ],
+  "lesson": true
 }

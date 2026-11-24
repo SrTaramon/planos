@@ -168,6 +168,12 @@
     if (!S.units[id]) S.units[id] = await getJSON(`./data/units/${id}.json`);
     return S.units[id];
   }
+  async function loadScene(id) {
+    if (S.sceneIds.has(id) && !S.scenes[id]) S.scenes[id] = await getJSON(`./data/scenes/${id}.json`).catch(() => null);
+    return S.scenes[id] || null;
+  }
+  // La lección es su escena: los pasos llevan la explicación y la teoría (sin secciones aparte).
+  const isSceneLesson = (u) => u?.kind === 'lesson' && !!S.scenes[u.id]?.lesson;
   async function loadUnits(ids) {
     const out = await Promise.all(ids.map((id) => loadUnit(id).catch(() => null)));
     return out.filter(Boolean);
@@ -357,7 +363,10 @@
   }
   function ttsChunks(u) {
     const parts = [u.title];
-    if (u.kind === 'lesson') {
+    if (isSceneLesson(u)) {
+      parts.push(plain(u.hook));
+      for (const st of S.scenes[u.id].steps) parts.push(st.title + '.', plain(st.body));
+    } else if (u.kind === 'lesson') {
       parts.push(plain(u.hook));
       for (const s of u.sections) {
         parts.push(s.heading + '.', plain(s.body));
@@ -453,11 +462,14 @@
     window.scrollTo(0, 0);
     if (!S.search.ready) {
       const units = await loadUnits([...S.ready]);
+      await Promise.all(units.filter((u) => u.kind === 'lesson').map((u) => loadScene(u.id)));
       const terms = [];
       const docs = [];
       for (const u of units) {
         if (u.kind === 'lesson') for (const g of u.glossary || []) terms.push({ term: g.term, def: g.def, unitId: u.id, key: fold(`${g.term} ${plain(g.def)}`) });
-        const text = u.kind === 'lesson'
+        const text = isSceneLesson(u)
+          ? [u.hook, ...S.scenes[u.id].steps.map((st) => `${st.title}. ${st.body} ${st.callout?.text || ''} ${st.more || ''}`), ...(u.glossary || []).map((g) => `${g.term}: ${g.def}`)].join('\n')
+          : u.kind === 'lesson'
           ? [u.hook, ...u.sections.map((s) => `${s.heading}. ${s.body} ${s.callout?.text || ''}`), ...(u.glossary || []).map((g) => `${g.term}: ${g.def}`), ...u.keyIdeas].join('\n')
           : [u.original, u.story, ...u.steps.map((s) => `${s.title}. ${s.think} ${s.body}`), ...u.considerations.map((c) => `${c.q} ${c.a}`), ...u.final.summary].join('\n');
         const flat = plain(text).replace(/\s+/g, ' ');
@@ -786,7 +798,7 @@
   }
   function changesList(list) {
     if (!Array.isArray(list) || !list.length) return '';
-    return '<div class="sc-changes"><span class="mono-label">Qué cambia</span><ul>' + list.map((c) => {
+    return '<div class="sc-changes"><span class="sr">Qué cambia</span><ul>' + list.map((c) => {
       const m = /^\s*([+~−-])\s*(.*)$/.exec(c) || [null, '~', c];
       const kind = m[1] === '+' ? 'add' : m[1] === '~' ? 'mod' : 'del';
       return `<li class="ch-${kind}"><span class="sg" aria-label="${{ add: 'Nuevo', mod: 'Cambia', del: 'Se quita' }[kind]}">${m[1] === '-' ? '−' : m[1]}</span><span>${inline(m[2])}</span></li>`;
@@ -803,8 +815,6 @@
       ? `<div class="sc-panel">${st.panel.title ? `<span class="mono-label">${esc(st.panel.title)}</span>` : ''}<ul>${st.panel.rows.map((r) => `<li class="${r.tone ? 't-' + esc(r.tone) : ''}">${inline(r.text)}</li>`).join('')}</ul></div>` : '';
     const steps = sc.steps.map((s, k) => `<li><button data-act="sc-go" data-i="${k}" class="${k === i ? 'on' : k < i ? 'past' : ''}"${k === i ? ' aria-current="step"' : ''}><span class="d">${k + 1}</span><span class="s">${esc(s.short)}</span></button></li>`).join('');
     const call = st.callout && st.callout.text ? `<div class="sc-call c-${esc(st.callout.type || 'insight')}"><span class="mono-label">${SC_CALLOUT[st.callout.type] || 'Idea clave'}</span><div class="prose">${md(st.callout.text)}</div></div>` : '';
-    const goals = Array.isArray(sc.goals) && sc.goals.length
-      ? `<div class="sc-goals"><span class="mono-label">Lo que verás</span><ul>${sc.goals.map((g) => `<li class="${i + 1 >= g.step ? 'ok' : ''}"><span class="gk" aria-hidden="true">${i + 1 >= g.step ? ICON.check : ''}</span><button class="link" data-act="sc-go" data-i="${Math.max(0, g.step - 1)}">${esc(g.text)}</button></li>`).join('')}</ul></div>` : '';
     let predict = '';
     let nextLabel = 'Siguiente';
     if (st.predict && i < n - 1) {
@@ -823,15 +833,17 @@
     }
     const next = i < n - 1
       ? `<button class="btn small grow" data-act="sc-next"><span class="t">${nextLabel}: ${esc(sc.steps[i + 1].short)}</span>${ICON.chev}</button>`
-      : '<button class="btn small grow" data-act="sc-done"><span class="t">Seguir con la lección</span></button>';
-    const label = /^P/.test(S.sc.id) ? 'La solución, en acción' : 'Míralo en acción';
+      : `<button class="btn small grow" data-act="sc-done"><span class="t">${sc.lesson ? 'Ponte a prueba' : /^P/.test(S.sc.id) ? 'Ponte a prueba' : 'Seguir con la lección'}</span></button>`;
+    const label = sc.lesson ? 'La lección' : /^P/.test(S.sc.id) ? 'La solución, en acción' : 'Míralo en acción';
     return `<div class="sc-head"><span class="mono-label">${label} · paso ${i + 1} de ${n}</span>${CHAPTER[st.chapter] ? `<span class="chap chap-${esc(st.chapter)}">${CHAPTER[st.chapter]}</span>` : ''}</div>` +
       `<h2 id="scene-h" class="sc-title">${esc(st.title)}</h2>` + sceneMetrics(sc, i) +
       `<div class="sc-stage" id="sc-stage">${PlanosScene.svg(sc, i, { still, label: st.title })}<div class="sc-ctrl">${ctrl}</div></div>` +
       (legend ? `<div class="sc-legend">${legend}</div>` : '') + panel +
       `<ol class="sc-steps" aria-label="Pasos">${steps}</ol>` +
-      `<div class="prose sc-body">${md(st.body)}</div>` + call + changesList(st.changes) + predict +
-      `<div class="sc-nav"><button class="btn alt small" data-act="sc-prev" ${i === 0 ? 'disabled' : ''}>${ICON.back}Atrás</button>${next}</div>` + goals;
+      `<div class="prose sc-body">${md(st.body)}</div>` + call +
+      (st.more ? `<details class="sc-more"><summary><span>Saber más</span>${ICON.chev}</summary><div class="prose">${md(st.more)}</div></details>` : '') +
+      predict + changesList(st.changes) +
+      `<div class="sc-nav"><button class="btn alt small" data-act="sc-prev" ${i === 0 ? 'disabled' : ''}>${ICON.back}Atrás</button>${next}</div>`;
   }
   function sceneCard(u) {
     const sc = S.scenes[u.id];
@@ -930,7 +942,7 @@
     }
   }
   function sceneDone() {
-    const first = document.querySelector('.section');
+    const first = document.querySelector('.section') || document.querySelector('.checks')?.closest('.card');
     if (first) first.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
   }
 
@@ -1087,8 +1099,7 @@
     if (!isReady(id)) return;
     ttsStop();
     try { await loadUnit(id); } catch (e) { toast('No se ha podido abrir. Revisa la conexión.'); return; }
-    if (S.sceneIds.has(id) && !S.scenes[id]) S.scenes[id] = await getJSON(`./data/scenes/${id}.json`).catch(() => null);
-    const sc = S.scenes[id];
+    const sc = await loadScene(id);
     S.sc = sc ? { id, i: Math.max(0, Math.min(sc.steps.length - 1, Number(prog(id)?.sceneAt) || 0)), paused: false, anim: null, answers: {} } : null;
     S.view = { name: 'unit', id, from: from || null };
     S.ui = { checks: {}, hints: {}, ask: '' };
@@ -1189,7 +1200,30 @@
       (used.length ? `<p class="muted" style="margin-top:12px">Lo usarás en: ${used.map((x) => esc(x.title)).join(' · ')}</p>` : '') + '</section>';
     const res = Array.isArray(u.resources) && u.resources.length
       ? `<section class="card"><div class="sec-head"><h2>Para profundizar</h2><span class="muted">Opcional</span></div><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a></li>`).join('')}</ul></section>` : '';
+    if (isSceneLesson(u)) {
+      // Una sola historia: la escena con la teoría dentro; lo demás, plegado.
+      const more = [];
+      if (u.glossary?.length) more.push(`<details class="more-item"><summary><span>Vocabulario <small>${u.glossary.length} términos en inglés</small></span>${ICON.chev}</summary><dl class="gloss">${u.glossary.map((g) => `<dt>${esc(g.term)}</dt><dd>${inline(g.def)}</dd>`).join('')}</dl></details>`);
+      if (u.resources?.length) more.push(`<details class="more-item"><summary><span>Para profundizar <small>opcional</small></span>${ICON.chev}</summary><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a></li>`).join('')}</ul></details>`);
+      const extras = more.length || used.length
+        ? `<section class="card more-card">${more.join('')}${used.length ? `<p class="muted used">Lo usarás en: ${used.map((x) => esc(x.title)).join(' · ')}</p>` : ''}</section>` : '';
+      return unitHead(u) + `<p class="lead">${inline(u.hook)}</p>` + sceneCard(u) + checksBlock(u) + extras + feelBlock(u) + askBlock();
+    }
     return unitHead(u) + `<p class="lead">${inline(u.hook)}</p>` + sceneCard(u) + sections + gloss + checksBlock(u) + ideas + res + feelBlock(u) + askBlock();
+  }
+
+  // El final de un problema: la solución en acción (o el plano estático), «Ponte a prueba» y, plegado, lo demás.
+  function problemEnd(u) {
+    const plan = `<div class="prose"><ul class="ideas">${u.final.summary.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></div>`;
+    const top = sceneCard(u)
+      ? sceneCard(u)
+      : `<section class="card"><div class="sec-head"><h2>El plano completo</h2></div>${diagram(u.final.diagram, u.id)}<div style="margin-top:14px">${plan}</div></section>`;
+    const more = [];
+    if (sceneCard(u)) more.push(`<details class="more-item"><summary><span>El plano completo <small>el diagrama y el resumen</small></span>${ICON.chev}</summary>${diagram(u.final.diagram, u.id)}<div style="margin-top:12px">${plan}</div></details>`);
+    more.push(`<details class="more-item"><summary><span>Las preguntas de la web <small>${u.considerations.length}, con su respuesta</small></span>${ICON.chev}</summary>${u.considerations.map((c) => `<details class="qa"><summary><span>${inline(c.q)}</span>${ICON.chev}</summary><div class="prose">${md(c.a)}</div></details>`).join('')}</details>`);
+    more.push(`<details class="more-item"><summary><span>En la entrevista <small>lo que no puede faltar</small></span>${ICON.chev}</summary><ul class="ideas">${u.interview.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></details>`);
+    if (u.resources.length) more.push(`<details class="more-item"><summary><span>Para profundizar <small>lo que recomienda systemdesign.io</small></span>${ICON.chev}</summary><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a>${r.label ? ` <small>· ${esc(r.label)}</small>` : ''}</li>`).join('')}</ul></details>`);
+    return top + checksBlock(u) + `<section class="card more-card">${more.join('')}</section>`;
   }
 
   function problemState(u) {
@@ -1230,11 +1264,7 @@
     const finished = st.at >= u.steps.length || st.all;
     const toggle = !finished ? '<button class="link" data-act="all">Prefiero leerlo todo seguido</button>' : '';
     const final = finished
-      ? `<section class="card"><div class="sec-head"><h2>El plano completo</h2></div>${diagram(u.final.diagram, u.id)}<ul class="ideas" style="margin-top:14px">${u.final.summary.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>` + sceneCard(u) + checksBlock(u) +
-        `<section class="card"><div class="sec-head"><h2>Las preguntas de la web</h2><span class="muted">Lo que conviene saber de este problema</span></div>${u.considerations.map((c) => `<details class="qa"><summary><span>${inline(c.q)}</span>${ICON.chev}</summary><div class="prose">${md(c.a)}</div></details>`).join('')}</section>` +
-        `<section class="card"><div class="sec-head"><h2>En la entrevista</h2></div><ul class="ideas">${u.interview.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>` +
-        (u.resources.length ? `<section class="card"><div class="sec-head"><h2>Para profundizar</h2><span class="muted">Las soluciones que recomienda systemdesign.io</span></div><ul class="res">${u.resources.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a>${r.label ? ` <small>· ${esc(r.label)}</small>` : ''}</li>`).join('')}</ul></section>` : '') +
-        feelBlock(u)
+      ? problemEnd(u) + feelBlock(u)
       : '';
     return unitHead(u) + `<div class="story"><span class="mono-label">El encargo</span><div class="prose" style="margin-top:6px">${md(u.story)}</div></div>` + prereq +
       `<section class="card"><div class="sec-head"><h2>Paso a paso</h2>${toggle}</div><ol class="steps">${steps}</ol></section>` + interviewCard() + final + askBlock();
