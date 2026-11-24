@@ -1,6 +1,7 @@
 {
   "id": "L22",
-  "title": "El buscador, en acción",
+  "title": "El buscador, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "read",
@@ -25,43 +26,15 @@
     "heavy": "consulta que lo lee todo",
     "event": "cambio de la outbox"
   },
-  "goals": [
-    {
-      "text": "Por qué LIKE con % delante lee la tabla entera",
-      "step": 1
-    },
-    {
-      "text": "Cómo responde un índice invertido a dos palabras",
-      "step": 2
-    },
-    {
-      "text": "Por qué la consulta pasa por el mismo analyzer",
-      "step": 3
-    },
-    {
-      "text": "Cómo se entera el índice de los cambios",
-      "step": 6
-    },
-    {
-      "text": "Para qué sirve un trie al autocompletar",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "LIKE",
       "chapter": "problem",
       "title": "Buscar con LIKE lee 10 millones de filas",
-      "body": "Escribes «lampara roja», sin tilde, en una tienda con 10 millones de productos. La app lanza `ILIKE '%lampara%roja%'`. Con un `%` delante, el B-tree no sirve: Postgres **lee todas las filas**. Además es literal (no encuentra «Lámpara») y no sabe qué resultado es mejor.",
+      "body": "Escribes «lampara roja», sin tilde, en una tienda con 10 millones de productos, y esperas ver «Lámparas rojas de oficina» antes de terminar de parpadear. Con lo que ya sabes, la app buscaría así:\n\n```sql\nSELECT id, title FROM products WHERE title ILIKE '%lampara%roja%';\n```\n\nTiene tres problemas:\n- Es **lento**: con un `%` delante, Postgres **lee los 10 millones de filas**.\n- Es **literal**: «lampara» no encuentra «Lámpara» ni «Lámparas».\n- **No ordena**: no sabe qué resultado es mejor.",
       "callout": {
         "type": "warn",
         "text": "Un B-tree sirve para «empieza por», no para «contiene en medio»: con un `%` delante, recorre la tabla entera."
-      },
-      "metrics": {
-        "read": 10000000,
-        "match": "no",
-        "rank": "no",
-        "miss": 0
       },
       "predict": {
         "q": "Un índice guarda, por cada palabra, los productos que la contienen: «mesa» → 1, 2 y «roja» → 1, 3. ¿Qué devuelve buscar «mesa roja»?",
@@ -73,6 +46,12 @@
         ],
         "answer": 0,
         "explain": "Buscar varias palabras es cruzar sus listas y quedarse con lo que está en todas: {1, 2} ∩ {1, 3} = {1}. Juntarlas daría 1, 2 y 3, y saldría «Mesa de madera», que no es roja. Y no busca la frase entera: cada palabra por su lado."
+      },
+      "metrics": {
+        "read": 10000000,
+        "match": "no",
+        "rank": "no",
+        "miss": 0
       },
       "nodes": [
         {
@@ -137,10 +116,11 @@
       "short": "Índice",
       "chapter": "technique",
       "title": "Le das la vuelta: palabra → productos",
-      "body": "Un **inverted index** guarda, por cada palabra, la lista ordenada de productos que la contienen: su **posting list**. Con 1 «Lámpara de mesa roja», 2 «Mesa de madera» y 3 «Lámparas rojas de oficina», buscar «lampara roja» es cruzar dos listas, sin abrir ningún producto.",
+      "body": "Un **inverted index** (índice invertido) le da la vuelta a la tabla: en vez de «documento → palabras», guarda «palabra → documentos que la contienen». Con tres productos: 1 «Lámpara de mesa roja», 2 «Mesa de madera» y 3 «Lámparas rojas de oficina».\n\nCada lista de ids es una **posting list**, y va ordenada. Buscar «lampara roja» es leer dos listas y quedarse con lo que está en las dos. Como están ordenadas, se cruzan recorriéndolas a la vez, **sin abrir ningún producto**.\n\nSuelen guardar también la posición de cada palabra, para buscar frases exactas, y cuántas veces sale, para ordenar.",
+      "more": "El índice completo de los tres productos:\n\n| Término | Posting list |\n|---|---|\n| lampara | 1, 3 |\n| mesa | 1, 2 |\n| roja | 1, 3 |\n| madera | 2 |\n| oficina | 3 |\n\n**En Postgres**, viene de serie: `to_tsvector('spanish', title)` convierte el texto en términos y un índice **GIN** (*generalized inverted index*) los indexa.",
       "callout": {
         "type": "tip",
-        "text": "Es el índice de materias del final de un libro: cada término, con las páginas donde sale. Postgres lo trae: `to_tsvector` y un índice GIN."
+        "text": "Es el índice de materias del final de un libro: cada término, con las páginas donde sale."
       },
       "changes": [
         "+ Índice invertido",
@@ -260,10 +240,11 @@
       "short": "Analyzer",
       "chapter": "technique",
       "title": "Documentos y consultas, por el mismo analyzer",
-      "body": "¿Cómo acabó «Lámparas» en `lampara`? Antes de indexar, cada texto pasa por el **analyzer**: lo parte en palabras, lo pasa a minúsculas, quita tildes y stopwords y deja la raíz (stemming). La consulta pasa **por el mismo**: si indexas `lampara` y buscas «Lámpara» tal cual, no coincide nada.",
+      "body": "¿Cómo acabaron «Lámparas» y «lámpara» en el mismo término? Lo hace el **analyzer**, una cadena de pasos por la que pasa cada texto antes de indexarse:\n1. **Tokenizar**: partir en palabras.\n2. **Minúsculas**.\n3. **Quitar tildes**: así «lampara» encuentra «lámpara».\n4. **Quitar stopwords**, las palabras que salen en todas partes y no distinguen nada: `de`, `la`, `y`.\n5. **Stemming**: reducir cada palabra a su raíz, para que plural y singular coincidan.\n\nLa regla de oro: **la consulta pasa por el mismo analyzer que los documentos**. Si indexas `lampar` y buscas `Lámpara` tal cual, no coincide nada. Por eso cambiar el analyzer obliga a reindexar todo.",
+      "more": "**El stemming de verdad.** Los stemmers reales recortan sin miramientos: «lámparas» queda en `lampar`. En el panel usamos el singular para que se lea mejor.\n\n**Más pasos que se pueden añadir:**\n- **Sinónimos**: que «sofá» encuentre «sillón».\n- **Erratas**: tolerarlas buscando términos a una o dos letras de distancia.",
       "callout": {
         "type": "warn",
-        "text": "Ojo con la ñ: un analyzer que quita todos los diacríticos convierte «año» en «ano». Quita las tildes y conserva la ñ."
+        "text": "Ojo con la ñ: un analyzer que quita todos los diacríticos convierte «año» en «ano». Quita las tildes y conserva la ñ, o al menos ten en cuenta que esas palabras chocan."
       },
       "changes": [
         "+ Analyzer delante del índice",
@@ -398,10 +379,22 @@
       "short": "Relevancia",
       "chapter": "technique",
       "title": "Primero, lo que más se parece",
-      "body": "Encontrar es la mitad: falta ordenar. **TF-IDF** premia la palabra que sale en el producto y es rara en el conjunto. En 10 millones de productos, «lámpara» sale en 20.000 y «roja» en 2 millones: coincidir en «lámpara» pesa unas 4 veces más. **BM25** lo afina, y encima se suman ventas y valoraciones.",
+      "body": "Encontrar los documentos es la mitad; la otra es ordenarlos. La idea de **TF-IDF**: un producto puntúa más cuanto más aparece en él la palabra buscada (*term frequency*) y cuanto más rara es esa palabra en el conjunto (*inverse document frequency*). De los 10 millones de productos, «lámpara» sale en 20.000 y «roja» en 2 millones: coincidir en «lámpara» pesa unas 4 veces más, y en «de», casi nada.\n\n**BM25**, la fórmula por defecto de muchos buscadores, afina la idea: repetir una palabra diez veces no vale diez veces más, y un texto largo no gana solo por ser largo. Encima se suman señales del negocio: ventas, valoraciones, stock.",
+      "more": "**Cuando el índice no cabe en una máquina**, se hace lo mismo que con una base de datos: se parte en **shards**, y cada shard tiene réplicas. Así funcionan **Elasticsearch** u **OpenSearch**, construidos sobre la librería **Lucene**:\n\n1. La consulta va a todos los shards.\n2. Cada uno devuelve sus mejores resultados.\n3. Un nodo los junta.\n\nSon casi en tiempo real: un documento nuevo tarda del orden de un segundo en salir en las búsquedas.",
       "callout": {
         "type": "tip",
         "text": "En una entrevista no hace falta la fórmula de BM25: di qué premia (la palabra rara que sale en el documento, sin premiar la longitud) y qué señales de negocio sumarías."
+      },
+      "predict": {
+        "q": "Das de alta «Lámpara de pie». La app la guarda en Postgres y después la escribe en el índice. Esa segunda escritura falla y nadie la reintenta. ¿Qué pasa?",
+        "options": [
+          "Nada: el índice se rehace solo a partir de Postgres",
+          "El alta se deshace, porque las dos escrituras van juntas",
+          "La lámpara existe, pero ninguna búsqueda la devolverá",
+          "Sale en las búsquedas, pero sin orden de relevancia"
+        ],
+        "answer": 2,
+        "explain": "Son dos escrituras separadas, sin transacción común: Postgres guarda la lámpara y el índice no se entera. Nada lo repara solo; se queda mal hasta que reindexes todo. Es el fallo de la escritura doble."
       },
       "changes": [
         "+ Orden por relevancia (BM25)",
@@ -431,17 +424,6 @@
             "text": "2,7 / 0,7 ≈ 4: «lámpara» pesa unas 4 veces más"
           }
         ]
-      },
-      "predict": {
-        "q": "Das de alta «Lámpara de pie». La app la guarda en Postgres y después la escribe en el índice. Esa segunda escritura falla y nadie la reintenta. ¿Qué pasa?",
-        "options": [
-          "Nada: el índice se rehace solo a partir de Postgres",
-          "El alta se deshace, porque las dos escrituras van juntas",
-          "La lámpara existe, pero ninguna búsqueda la devolverá",
-          "Sale en las búsquedas, pero sin orden de relevancia"
-        ],
-        "answer": 2,
-        "explain": "Son dos escrituras separadas, sin transacción común: Postgres guarda la lámpara y el índice no se entera. Nada lo repara solo; se queda mal hasta que reindexes todo. Es el fallo de la escritura doble."
       },
       "nodes": [
         {
@@ -545,10 +527,10 @@
       "short": "Doble",
       "chapter": "case",
       "title": "Una lámpara que nadie encuentra",
-      "body": "Das de alta «Lámpara de pie». La app la guarda en Postgres y **después** la escribe en el índice: es la **escritura doble**. La segunda falla y nadie la reintenta: el producto existe, pero ninguna búsqueda lo devolverá nunca.",
+      "body": "La base de datos sigue siendo la fuente de verdad. El índice es una copia organizada de otra forma, como una cache. ¿Cómo se entera de los cambios?\n\nLo primero que se te ocurre es la **escritura doble**: das de alta «Lámpara de pie», la app la guarda en Postgres y **después** la escribe en el índice. La segunda falla y nadie la reintenta: el producto existe, pero ninguna búsqueda lo devolverá. El índice se queda mal para siempre.",
       "callout": {
         "type": "warn",
-        "text": "Postgres es la fuente de verdad; el índice, una copia organizada de otra forma, como una cache. Si la copia pierde una escritura, nadie se entera."
+        "text": "Son dos escrituras sin una transacción común. Si la copia pierde una, nadie se entera: no hay ningún error que ver, solo un producto que no sale."
       },
       "changes": [
         "+ Escritura doble desde la app",
@@ -671,15 +653,15 @@
       "short": "Outbox",
       "chapter": "solution",
       "title": "Outbox y cola: el cambio no se pierde",
-      "body": "En la **misma transacción** que el producto, Postgres guarda un evento en la tabla `outbox`. Un indexador lo lleva por una cola hasta el índice, pasando por el analyzer, y reintenta si falla. Con **CDC** se saca lo mismo del WAL, sin tocar la app. El índice va un poco por detrás: eventual consistency.",
+      "body": "**Outbox + cola**: en la misma transacción que el producto, Postgres guarda un evento en la tabla `outbox`, como en la lección de transacciones. Un **indexador** lo lleva por una cola hasta el índice, pasando por el analyzer, y reintenta si falla. Una pieza más, pero no se pierde nada.\n\n**CDC** (*change data capture*) saca lo mismo del log de cambios de la base de datos, el WAL de Postgres, y lo convierte en eventos: nada que tocar en la app, a cambio de más infraestructura. Debezium es un ejemplo conocido.\n\nCon los dos, el índice va un poco por detrás: es eventual consistency, como en la lección de CAP, y para un buscador suele valer.",
+      "more": "| Forma | Cómo funciona | Problema |\n|---|---|---|\n| Escritura doble | La app escribe en Postgres y después en el índice | Si falla la segunda, el índice se queda mal para siempre |\n| Outbox + cola | En la misma transacción se guarda un evento en `outbox`, como en la lección de transacciones, y un worker lo lleva al índice | Una pieza más, pero no se pierde nada |\n| CDC | Un proceso lee el log de cambios de la base de datos (el WAL de Postgres) y lo convierte en eventos | Nada que tocar en la app, a cambio de más infraestructura |\n\n**Reindexar.** De vez en cuando se reindexa todo en un índice nuevo y, al terminar, las búsquedas pasan a usarlo de golpe (cambiando un alias). Así se arreglan los desajustes y se cambia de analyzer sin cortar el servicio.\n\n**El recorrido completo:**\n1. Al guardar un producto, Postgres guarda también su evento en `outbox` (o el CDC lo saca del WAL).\n2. El evento viaja por una cola hasta el indexador, que analiza el texto y actualiza el índice.\n3. Una búsqueda va al índice, que devuelve ids ordenados por relevancia.\n4. La ficha del producto se lee de Postgres, con el precio y el stock de ahora.",
       "callout": {
         "type": "insight",
         "text": "El índice dice qué hay; Postgres, cómo está ahora. La ficha del producto, con su precio y su stock, se lee de la base de datos."
       },
       "changes": [
-        "+ Outbox en la misma transacción",
-        "+ Cola e indexador",
-        "− Escritura del índice desde la app",
+        "+ Outbox, en la misma transacción",
+        "+ Cola e indexador, que reintenta",
         "~ Sin indexar: 1 → 0"
       ],
       "metrics": {
@@ -834,7 +816,8 @@
       "short": "Trie",
       "chapter": "technique",
       "title": "Autocompletar: un trie con el top-5",
-      "body": "Autocompletar pregunta otra cosa: qué búsquedas **empiezan** por lo que llevas escrito, en cada tecla. Un **trie** es un árbol donde cada arista es una letra: llegar a «lam» son tres saltos, haya mil palabras o diez millones. Cada nodo guarda, ya calculadas, sus 5 sugerencias más populares.",
+      "body": "Autocompletar es otra pregunta: no «qué documentos contienen esta palabra», sino «qué búsquedas **empiezan** por lo que llevo escrito», y en cada tecla. Un **trie** (árbol de prefijos) es un árbol en el que cada arista es una letra: el camino desde la raíz deletrea un prefijo. Llegar a «lam» son tres saltos, haya mil palabras o diez millones.\n\nEl truco para que sea instantáneo: guardar en cada nodo las K sugerencias más populares que empiezan por ese prefijo (supón K = 5), calculadas de antemano. Responder es bajar por el prefijo y devolver su lista, sin recorrer nada más.\n\nEl precio es memoria, y recalcular las listas cuando cambian las búsquedas populares, normalmente por lotes.",
+      "more": "```\n(raíz) ─ l ─ a ─ m          «lam»  → lámpara, lámpara de pie, laminado\n                 └─ p       «lamp» → lámpara, lámpara de pie\n```\n\nLo verás a fondo en el problema de autocompletar. Para algo pequeño, Postgres también resuelve «empieza por» con un B-tree: `LIKE 'lam%'` usa un índice creado con `text_pattern_ops`.",
       "callout": {
         "type": "tip",
         "text": "Índice invertido para «contiene estas palabras»; trie para «empieza por». Un buscador con sugerencias usa los dos."
@@ -1021,8 +1004,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- `LIKE '%…%'` lee toda la tabla; el índice invertido va de palabra a productos.\n- Buscar varias palabras es cruzar posting lists, sin abrir productos.\n- Documentos y consultas pasan por el mismo analyzer.\n- TF-IDF y BM25: pesa más la palabra rara.\n- Outbox o CDC mantienen el índice al día; para autocompletar, un trie.",
+      "title": "Lo que te llevas",
+      "body": "- Un B-tree no sirve para «contiene esta palabra»: para texto se usa un índice invertido, término → lista ordenada de documentos.\n- Buscar varias palabras es cruzar sus posting lists, sin abrir los documentos.\n- Documentos y consultas pasan por el mismo analyzer: tokenizar, minúsculas, sin tildes, sin stopwords y stemming.\n- TF-IDF y BM25 ordenan por relevancia: pesa más la palabra rara que aparece en el documento.\n- El índice es una copia derivada que se alimenta con outbox o CDC y va un poco por detrás; para autocompletar, un trie con el top-K en cada nodo.",
       "callout": {
         "type": "insight",
         "text": "Elasticsearch y OpenSearch, sobre Lucene, hacen todo esto y parten el índice en shards con réplicas. Para empezar, Postgres trae `to_tsvector` y GIN."

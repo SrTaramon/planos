@@ -1,6 +1,7 @@
 {
   "id": "L23",
-  "title": "El mapa, en acción",
+  "title": "El mapa, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "area",
@@ -22,37 +23,27 @@
     "heavy": "lectura de la franja",
     "write": "posición de un conductor"
   },
-  "goals": [
-    {
-      "text": "Por qué un B-tree no sabe qué está cerca",
-      "step": 1
-    },
-    {
-      "text": "Cómo convierte un geohash una zona en un prefijo",
-      "step": 2
-    },
-    {
-      "text": "Por qué hay que mirar las 8 celdas vecinas",
-      "step": 4
-    },
-    {
-      "text": "Cómo se adapta un quadtree a la densidad",
-      "step": 5
-    },
-    {
-      "text": "Dónde guardar lo que se mueve sin parar",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "Caja lat/lon",
       "chapter": "problem",
       "title": "Una caja de 1 km que rodea el planeta",
-      "body": "Buscas restaurantes a menos de 1 km de la Puerta del Sol (40,4168, −3,7038). La consulta ingenua es una caja de `lat` y `lon`. Con un B-tree en `lat`, Postgres encuentra enseguida la franja de latitud… que da la vuelta al mundo, y filtra `lon` fila a fila.",
+      "body": "Buscas restaurantes a menos de 1 km de la Puerta del Sol. Un punto de la Tierra son dos números: la **latitud** (norte-sur, de −90 a 90) y la **longitud** (este-oeste, de −180 a 180). Sol está en (40,4168, −3,7038).\n\nLa consulta ingenua es una caja de `lat` y `lon` alrededor del punto. Con un B-tree en `lat`, o en `(lat, lon)`, Postgres encuentra enseguida la franja de latitud… que da la vuelta al mundo. Recorre todos los sitios del planeta a esa latitud y filtra `lon` fila a fila.\n\nEl problema de fondo: un B-tree ordena en **una** dimensión, y la cercanía es de dos. Hay dos salidas: convertir los dos números en uno que conserve la cercanía, o usar una estructura que parta el espacio.",
+      "more": "**De grados a kilómetros:**\n- Un grado de latitud son unos 111 km en cualquier sitio.\n- Un grado de longitud son 111 km en el ecuador y menos hacia los polos: en Madrid, unos 85 km (111 × cos 40,4°).\n\nLa caja de 1 km alrededor de Sol:\n\n```sql\nSELECT id FROM places\nWHERE lat BETWEEN 40.4078 AND 40.4258\n  AND lon BETWEEN -3.7156 AND -3.6920;\n```\n\nLa franja mide 2 km de alto por unos 30.500 km de largo: unos 61.000 km² para buscar en ~3 km², 19.000 veces más.",
       "callout": {
-        "type": "warn",
-        "text": "Un B-tree ordena en una dimensión, y la cercanía es de dos."
+        "type": "tip",
+        "text": "Cinco decimales de latitud son ~1 m (0,00001° × 111 km). Guardar más es guardar el ruido del GPS."
+      },
+      "predict": {
+        "q": "Guardas el geohash de cada sitio. Sol es `ezjmgtwuz` y el Retiro, a 1,6 km, `ezjmujmh0`. ¿Qué te dice que empiecen los dos por `ezjm`?",
+        "options": [
+          "Que están a menos de 1 km",
+          "Que caen en la misma celda de 4 caracteres",
+          "Nada: un hash baraja los puntos al azar",
+          "Que el Retiro está justo al norte de Sol"
+        ],
+        "answer": 1,
+        "explain": "Cada prefijo es una celda: los dos están dentro de `ezjm`, unos 30 × 20 km en Madrid. No da una distancia: desde el quinto carácter (`g` y `u`) ya están en celdas distintas. Y no baraja como un hash: los puntos cercanos suelen compartir prefijo."
       },
       "metrics": {
         "area": 61000,
@@ -76,17 +67,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "predict": {
-        "q": "Guardas el geohash de cada sitio. Sol es `ezjmgtwuz` y el Retiro, a 1,6 km, `ezjmujmh0`. ¿Qué te dice que empiecen los dos por `ezjm`?",
-        "options": [
-          "Que están a menos de 1 km",
-          "Que caen en la misma celda de 4 caracteres",
-          "Nada: un hash baraja los puntos al azar",
-          "Que el Retiro está justo al norte de Sol"
-        ],
-        "answer": 1,
-        "explain": "Cada prefijo es una celda: los dos están dentro de `ezjm`, unos 30 × 20 km en Madrid. No da una distancia: desde el quinto carácter (`g` y `u`) ya están en celdas distintas. Y no baraja como un hash: los puntos cercanos suelen compartir prefijo."
       },
       "nodes": [
         {
@@ -151,10 +131,11 @@
       "short": "Geohash",
       "chapter": "technique",
       "title": "El mapa, en celdas con nombre",
-      "body": "Un **geohash** parte el mundo en dos por la longitud, cada mitad en dos por la latitud, y así, apuntando bits: cada 5, un carácter. **Un prefijo es una zona**: todo lo de la celda `ezjmg` es `LIKE 'ezjmg%'`, y eso lo resuelve un B-tree normal sobre una columna más.",
+      "body": "Un **geohash** convierte un punto en un texto corto partiendo el mapa una y otra vez:\n1. Partes el mundo en dos por la longitud: ¿el punto queda a la izquierda (0) o a la derecha (1)?\n2. Esa mitad, en dos por la latitud: ¿abajo (0) o arriba (1)?\n3. Repites, alternando, y vas apuntando bits. Cada 5 bits son un carácter (en base32).\n\nCada carácter más hace la celda 32 veces más pequeña: es la **precisión**. Y **un prefijo es una zona**: todo lo de la celda `ezjmg` es `LIKE 'ezjmg%'`, y eso lo resuelve un B-tree normal (con `text_pattern_ops`, como en la lección de búsqueda). Basta con guardar el geohash en una columna más.",
+      "more": "**La precisión**, carácter a carácter:\n\n| Caracteres | Tamaño de la celda (en el ecuador) |\n|---|---|\n| 4 | 39 km × 19,5 km |\n| 5 | 4,9 km × 4,9 km |\n| 6 | 1,2 km × 0,61 km |\n| 7 | 153 m × 153 m |\n| 8 | 38 m × 19 m |\n| 9 | 4,8 m × 4,8 m |\n\nEl ancho se estrecha hacia los polos: en Madrid, a un 76 %.\n\n**Un ejemplo.** La Puerta del Sol es `ezjmgtwuz` y el Retiro, a 1,6 km, `ezjmujmh0`. Comparten `ezjm`: están en la misma celda de 4 caracteres.",
       "callout": {
-        "type": "tip",
-        "text": "La celda se estrecha hacia los polos: en Madrid, su ancho es el 76 % del que tiene en el ecuador."
+        "type": "insight",
+        "text": "Los puntos cercanos suelen compartir el principio de su geohash. «Suelen»: lo verás en el paso siguiente."
       },
       "changes": [
         "+ Columna geohash con un B-tree",
@@ -271,19 +252,10 @@
       "short": "Frontera",
       "chapter": "case",
       "title": "Un café a 380 m que no aparece",
-      "body": "Ahora estás en Cibeles, a 140 m del borde de tu celda. El café de la Puerta de Alcalá está a 380 m, pero al otro lado: su geohash empieza por `ezjmu`. Buscar solo `ezjmg%` no lo encuentra. Dos puntos cercanos pueden tener prefijos distintos.",
+      "body": "Ahora estás en Cibeles, a 140 m del borde de tu celda. El café de la Puerta de Alcalá está a 380 m, pero al otro lado: su geohash empieza por `ezjmu`. Buscar solo `ezjmg%` no lo encuentra.\n\nEs la trampa del geohash: dos puntos muy cercanos pueden tener geohashes sin nada en común si caen a los dos lados de una frontera. Y pasa en cualquier frontera, a cualquier precisión.",
       "callout": {
         "type": "warn",
-        "text": "Pasa en cualquier frontera y a cualquier precisión. En Greenwich, dos puntos a 14 m son `u10hb5` y `gcpuzg`: no comparten ni un carácter."
-      },
-      "changes": [
-        "~ Tú, junto a la frontera",
-        "+ Un café en la celda de al lado",
-        "~ Cercanos perdidos: 0 → 1"
-      ],
-      "metrics": {
-        "area": 18,
-        "lost": 1
+        "text": "En Greenwich, dos puntos a 14 m, uno a cada lado del meridiano, empiezan por `u10hb5` y `gcpuzg`: no comparten ni un carácter."
       },
       "predict": {
         "q": "¿Cómo haces que la búsqueda encuentre el café de la Puerta de Alcalá sin perder otros?",
@@ -295,6 +267,15 @@
         ],
         "answer": 1,
         "explain": "Al otro lado de cualquier frontera puede haber un sitio cercano: con más precisión, las celdas son más pequeñas y hay más fronteras. Se busca en el bloque de 3 × 3 y se filtra por la distancia real. `ezjm` también tiene fronteras, y lee 32 veces más."
+      },
+      "changes": [
+        "~ Tú, junto a la frontera",
+        "+ Un café en la celda de al lado",
+        "~ Cercanos perdidos: 0 → 1"
+      ],
+      "metrics": {
+        "area": 18,
+        "lost": 1
       },
       "nodes": [
         {
@@ -453,14 +434,14 @@
       "short": "8 vecinas",
       "chapter": "solution",
       "title": "Tu celda y sus 8 vecinas",
-      "body": "La receta: elige la precisión cuya celda sea, en su lado corto, al menos tan grande como el radio; busca en tu celda y en sus **8 vecinas**, y filtra por la distancia real con **haversine**. Para 1 km en Madrid, 5 caracteres. El café ya sale.",
+      "body": "Por eso nunca se busca solo en la celda del usuario. La receta:\n1. Elige la precisión cuya celda sea, en su lado más corto, al menos tan grande como el radio.\n2. Busca en tu celda y en sus **8 vecinas**, un bloque de 3 × 3.\n3. Filtra los candidatos por la distancia real, con la fórmula de **haversine**, que mide sobre la esfera, y ordénalos.\n\nPara 1 km en Madrid: con 6 caracteres, la celda mide 0,93 × 0,61 km y el lado corto no llega al radio. Con 5, 3,7 × 4,9 km, sí. El café ya sale.",
+      "more": "**El precio.** El bloque de 3 × 3 de 5 caracteres cubre unos 160 km² para un círculo de ~3 km², y el filtro tira muchos candidatos. Si son demasiados, se usa precisión 6 con un bloque de 5 × 5.",
       "callout": {
         "type": "tip",
         "text": "En una entrevista, saca tú el problema de las fronteras y las 8 vecinas antes de que te lo pregunten. Es lo primero que buscan."
       },
       "changes": [
-        "+ Las 8 celdas vecinas",
-        "+ Filtro por distancia real",
+        "+ Las 8 celdas vecinas y el filtro por distancia",
         "~ Área leída: 18 → 160 km²",
         "~ Cercanos perdidos: 1 → 0"
       ],
@@ -651,7 +632,8 @@
       "short": "Quadtree",
       "chapter": "technique",
       "title": "Celdas a la medida: el quadtree",
-      "body": "Queda la densidad: una celda del centro tiene miles de restaurantes, y una del campo, ninguno. Un **quadtree** parte el mapa en cuatro, y cada trozo otra vez en cuatro, **solo donde hay más de 100 puntos**. En el centro, celdas de pocas manzanas; en el campo, una enorme casi vacía.",
+      "body": "Queda la densidad: una celda de 6 caracteres en el centro de una ciudad puede tener miles de restaurantes, y una en el campo, ninguno. Un **quadtree** parte el mapa en cuatro cuadrantes, y cada cuadrante en otros cuatro, **solo donde hace falta**: una celda se divide cuando tiene más de K puntos (supón 100). En el centro, celdas de pocas manzanas; en el campo, una enorme casi vacía.\n\nPara buscar, bajas por el árbol hasta la hoja del usuario y, si no hay bastantes resultados, miras las de al lado. Encaja con datos que cambian poco (restaurantes, tiendas): vive en memoria y se rehace de vez en cuando. Con puntos que se mueven sin parar, dividir y juntar celdas sale caro.",
+      "more": "**S2 y H3**, dos sistemas que conviene sonar. **S2** (de Google) proyecta la Tierra sobre un cubo y la divide en celdas jerárquicas con ids de 64 bits. **H3** (de Uber) usa hexágonos con 16 resoluciones, que tienen 6 vecinos a la misma distancia y van muy bien para medir zonas.\n\n| | Geohash | Quadtree | S2 / H3 |\n|---|---|---|---|\n| Celdas | Fijas, rectángulos | Se adaptan a la densidad | Fijas y jerárquicas, en todo el globo |\n| Dónde vive | Una columna con un B-tree | Normalmente en memoria | Librerías; los ids, en cualquier base de datos |\n| Bueno para | Lo simple, en tu base de datos de siempre | Densidad muy desigual | Análisis por zonas, precisión uniforme |\n\n**PostGIS.** Si ya usas Postgres, esta extensión resuelve «qué hay a menos de 1 km» con un índice espacial (GiST) y `ST_DWithin`, sin inventar nada.",
       "callout": {
         "type": "insight",
         "text": "S2 (Google) y H3 (Uber, con hexágonos) dan celdas jerárquicas para todo el globo. Y en Postgres, PostGIS lo resuelve con un índice GiST y `ST_DWithin`."
@@ -779,10 +761,11 @@
       "short": "Conductores",
       "chapter": "case",
       "title": "Lo que se mueve: conductores en memoria",
-      "body": "Los restaurantes no se mueven; los conductores, sí. Un millón mandan su posición cada 4 segundos: **250.000 escrituras por segundo**, demasiadas para una base de datos que escribe en disco. Pero caben en memoria: celda → conductores, con geohashes de 6 caracteres. Buscar es leer tu celda y sus vecinas.",
+      "body": "Los restaurantes no se mueven; los conductores, sí. Un millón mandan su posición cada 4 segundos: **250.000 actualizaciones por segundo**, muchísimas para una base de datos que, en cada una, escribe en disco y reordena su índice. Pero el dato es pequeño (id, posición y hora: unos 100 bytes) y caduca enseguida: 100 MB, que caben en memoria de sobra.\n\nAsí que vive en memoria, en dos estructuras: `conductor → (lat, lon, celda, hora)` y `celda → conductores`, con un geohash de 6 caracteres o una celda H3. Si un conductor cambia de celda, se saca del conjunto viejo y se mete en el nuevo. Buscar es leer tu celda y sus vecinas, y ordenar por distancia. Sin noticias en 30 segundos, se borra: su dato ya no vale.",
+      "more": "**Repartir por zonas.** El límite no es la memoria sino las escrituras por segundo, así que se reparte por zonas: sharding geográfico, por ciudad, como en la lección de sharding. Redis trae comandos geográficos (`GEOADD`, `GEOSEARCH`) que hacen casi todo esto.\n\n**El recorrido completo:**\n1. La app del conductor manda su posición a un servicio de ubicación sin estado, detrás de un load balancer. El servicio calcula su celda y actualiza las dos estructuras del índice en memoria, uno por ciudad.\n2. La app del pasajero pide conductores cercanos; el servicio lee su celda y las 8 vecinas.\n3. Ordena los candidatos por distancia real y devuelve los más cercanos.\n4. Cada posición se publica también en una cola para guardar el histórico, fuera del camino rápido.",
       "callout": {
         "type": "tip",
-        "text": "El límite son las escrituras por segundo, no la memoria: se reparte por ciudad (sharding geográfico). Redis trae `GEOADD` y `GEOSEARCH`."
+        "text": "Separa lo que no se mueve (tiendas: base de datos con un índice geográfico) de lo que se mueve (conductores: memoria con caducidad). Son dos problemas distintos."
       },
       "changes": [
         "+ Índice geográfico en memoria",
@@ -1032,12 +1015,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Una caja de lat/lon recorre una franja de todo el planeta.\n- Un geohash es un texto donde cada prefijo es una celda.\n- Busca en tu celda y sus 8 vecinas, y filtra por distancia real.\n- El quadtree adapta las celdas a la densidad.\n- Lo que se mueve va en memoria, por celdas y repartido por zonas.",
-      "callout": {
-        "type": "insight",
-        "text": "Separa lo que no se mueve (restaurantes: base de datos con índice geográfico) de lo que se mueve (conductores: memoria con caducidad)."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Un B-tree ordena en una dimensión y la cercanía es de dos: una caja de lat/lon recorre una franja de todo el planeta.\n- Un geohash convierte un punto en un texto donde cada prefijo es una celda; cada carácter más la hace 32 veces más pequeña.\n- Busca en la celda y sus 8 vecinas, con una precisión cuya celda sea al menos tan grande como el radio, y filtra por distancia real.\n- Los quadtrees adaptan las celdas a la densidad; S2 y H3 son celdas jerárquicas para todo el globo; PostGIS lo resuelve dentro de Postgres.\n- Lo que se mueve (conductores) va en memoria, por celdas y repartido por zonas: el límite son las escrituras por segundo, no el tamaño.",
       "metrics": {
         "area": 160,
         "lost": 0,

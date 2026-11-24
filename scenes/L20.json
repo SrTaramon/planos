@@ -1,6 +1,7 @@
 {
   "id": "L20",
-  "title": "CAP, en acción",
+  "title": "CAP y consistencia, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "stale",
@@ -18,63 +19,22 @@
       "better": "low"
     }
   ],
-  "goals": [
-    {
-      "text": "Qué es una partición de red y por qué no se elige",
-      "step": 2
-    },
-    {
-      "text": "Qué gana y qué pierde Dublín con AP y con CP",
-      "step": 4
-    },
-    {
-      "text": "Cuánto cuesta la consistencia fuerte sin partición",
-      "step": 5
-    },
-    {
-      "text": "Por qué con R + W > N se lee siempre lo último",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "Dos copias",
       "chapter": "problem",
       "title": "Queda 1 entrada, en Madrid y en Dublín",
-      "body": "Las entradas de un concierto están en dos réplicas, una en Madrid y otra en Dublín. Cada venta se copia a la otra **sin esperar**: es **eventual consistency**. Si dejan de llegar ventas, las dos acaban iguales, pero no en el mismo instante. Ahora mismo las dos dicen «queda 1».",
+      "body": "Las entradas de un concierto están en dos réplicas, una en Madrid y otra en Dublín. Cada venta se copia a la otra **sin esperar**. Es la **eventual consistency** de la lección de replicación: si dejan de llegar ventas, las dos acaban iguales, pero no en el mismo instante. Ahora mismo las dos dicen «queda 1».\n\nSu contrario es la **strong consistency** (consistencia fuerte): en cuanto se confirma una escritura, cualquier lectura, desde cualquier sitio, la ve. El sistema se comporta como si hubiera **una sola copia**, aunque haya cinco. La versión más estricta se llama **linearizability**.\n\nLa fuerte no es gratis: para que todas las copias digan lo mismo, cada escritura tiene que esperar a que se pongan de acuerdo. De ese precio va esta lección.",
+      "more": "**La pizarra y los correos.** Con la pizarra (fuerte), lo que se escribe, se ve. Con los avisos (eventual), cada sucursal se entera cuando le llega el correo: al final todas saben lo mismo, pero durante un rato una puede contar algo viejo.\n\n**Ejemplos de cada una:**\n\n- **Eventual**: el contador de likes, el número de seguidores, el DNS cuando cambias la IP de un dominio (tarda en llegar a todo el mundo).\n- **Fuerte**: el saldo antes de una transferencia, la última plaza de un vuelo, que nadie tenga ya tu nombre de usuario.",
       "callout": {
-        "type": "insight",
-        "text": "Fuerte: toda lectura ve la última escritura, como si hubiera una sola copia. Eventual: las copias acaban iguales, pero durante un rato una puede contar algo viejo."
+        "type": "tip",
+        "text": "Fuerte es una pizarra en la oficina: todos miran el mismo sitio. Eventual son avisos por correo a cada sucursal: al final todas saben lo mismo, pero durante un rato una puede contar algo viejo."
       },
       "metrics": {
         "stale": "un rato",
         "twice": 0,
         "wait": 0
       },
-      "zones": [
-        {
-          "label": "Madrid",
-          "from": [
-            0,
-            0
-          ],
-          "to": [
-            0,
-            1.6
-          ]
-        },
-        {
-          "label": "Dublín",
-          "from": [
-            2,
-            0
-          ],
-          "to": [
-            2,
-            1.6
-          ]
-        }
-      ],
       "nodes": [
         {
           "id": "um",
@@ -158,16 +118,40 @@
           "rate": 0.4,
           "pop": true
         }
+      ],
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ]
+        }
       ]
     },
     {
       "short": "Partición",
       "chapter": "problem",
       "title": "Se corta la red entre las dos zonas",
-      "body": "Falla un enlace y Madrid y Dublín dejan de hablarse: es una **network partition**. En Madrid alguien compra la última entrada y Madrid pasa a «queda 0». Dublín no se entera y sigue en «queda 1». Justo entonces, alguien pregunta en Dublín cuántas quedan.",
+      "body": "Falla un enlace y Madrid y Dublín dejan de hablarse: es una **network partition**. En Madrid alguien compra la última entrada y pasa a «queda 0». Dublín no se entera y sigue en «queda 1». Justo entonces, alguien pregunta en Dublín cuántas quedan.\n\nDe esto habla el **teorema CAP**:\n- **C** (*consistency*): consistencia fuerte, como si hubiera una sola copia.\n- **A** (*availability*): toda petición que llega a una máquina que funciona recibe una respuesta, no un error.\n- **P** (*partition tolerance*): seguir funcionando aunque se corte la red.\n\nSe resume como «elige dos de tres», y engaña: con datos en varias máquinas, las particiones van a pasar, así que P no se elige. CAP dice algo más pequeño: **mientras dura una partición**, Dublín elige entre contestar, quizá con un dato viejo, o no contestar para no mentir.",
       "callout": {
         "type": "warn",
-        "text": "Con datos en varias máquinas, las particiones van a pasar: un cable, un switch, un centro de datos aislado. La P de CAP no se elige."
+        "text": "Las particiones pasan: un cable, un switch, un centro de datos aislado. Y la C de CAP no es la C de ACID, que verás en transacciones: aquí, consistencia es que todas las copias digan lo mismo."
       },
       "predict": {
         "q": "Dublín no puede hablar con Madrid. Si elige **disponibilidad** (AP), ¿qué contesta a quien pregunta cuántas quedan?",
@@ -190,31 +174,6 @@
         "twice": 0,
         "wait": 0
       },
-      "zones": [
-        {
-          "label": "Madrid",
-          "from": [
-            0,
-            0
-          ],
-          "to": [
-            0,
-            1.6
-          ]
-        },
-        {
-          "label": "Dublín",
-          "from": [
-            2,
-            0
-          ],
-          "to": [
-            2,
-            1.6
-          ],
-          "tone": "warn"
-        }
-      ],
       "nodes": [
         {
           "id": "um",
@@ -302,26 +261,7 @@
           "kind": "req",
           "rate": 0.5
         }
-      ]
-    },
-    {
-      "short": "AP",
-      "chapter": "case",
-      "title": "AP: Dublín contesta con su último dato",
-      "body": "Si eliges **disponibilidad** (AP), Dublín responde con lo que tiene: «queda 1». Siempre contesta, pero el dato puede ser viejo: el usuario compra y Dublín vende una entrada que en Madrid ya no existe. La misma entrada, vendida dos veces.",
-      "callout": {
-        "type": "tip",
-        "text": "AP vale para lo que aguanta un dato viejo unos segundos: el contador de likes, las visitas, los seguidores."
-      },
-      "changes": [
-        "~ Dublín responde «queda 1»",
-        "~ Vendidas dos veces: 0 → 1"
       ],
-      "metrics": {
-        "stale": "sí",
-        "twice": 1,
-        "wait": 0
-      },
       "zones": [
         {
           "label": "Madrid",
@@ -344,9 +284,28 @@
             2,
             1.6
           ],
-          "tone": "bad"
+          "tone": "warn"
         }
+      ]
+    },
+    {
+      "short": "AP",
+      "chapter": "case",
+      "title": "AP: Dublín contesta con su último dato",
+      "body": "Si eliges **disponibilidad** (AP), Dublín responde con lo que tiene: «queda 1». El usuario compra y Dublín vende una entrada que en Madrid ya no existe. La misma entrada, vendida dos veces.\n\n- **Ganas**: Dublín siempre contesta.\n- **Pierdes**: su dato puede ser viejo, y con él puede vender lo que ya no hay.",
+      "callout": {
+        "type": "tip",
+        "text": "AP vale para lo que aguanta un dato viejo unos segundos: el contador de likes, las visitas, los seguidores."
+      },
+      "changes": [
+        "~ Dublín responde «queda 1»",
+        "~ Vendidas dos veces: 0 → 1"
       ],
+      "metrics": {
+        "stale": "sí",
+        "twice": 1,
+        "wait": 0
+      },
       "nodes": [
         {
           "id": "um",
@@ -435,27 +394,7 @@
           "failAt": 0.5,
           "rate": 0.3
         }
-      ]
-    },
-    {
-      "short": "CP",
-      "chapter": "solution",
-      "title": "CP: Dublín prefiere no contestar",
-      "body": "Si eliges **consistencia** (CP), Dublín no puede confirmar con Madrid y devuelve un error, o espera a que vuelva la red. Quien pregunta en Dublín se queda sin respuesta, pero nunca recibe un dato falso ni compra una entrada que ya no existe.",
-      "callout": {
-        "type": "insight",
-        "text": "Para la última entrada, el saldo o un nombre de usuario único, mejor un error que vender dos veces."
-      },
-      "changes": [
-        "~ Dublín devuelve un error",
-        "~ Vendidas dos veces: 1 → 0",
-        "− Disponibilidad en Dublín"
       ],
-      "metrics": {
-        "stale": "no",
-        "twice": 0,
-        "wait": 0
-      },
       "zones": [
         {
           "label": "Madrid",
@@ -478,9 +417,30 @@
             2,
             1.6
           ],
-          "tone": "warn"
+          "tone": "bad"
         }
+      ]
+    },
+    {
+      "short": "CP",
+      "chapter": "solution",
+      "title": "CP: Dublín prefiere no contestar",
+      "body": "Si eliges **consistencia** (CP), Dublín no puede confirmar con Madrid y devuelve un error, o espera a que vuelva la red.\n\n- **Ganas**: nunca un dato falso; nadie compra una entrada que ya no existe.\n- **Pierdes**: la disponibilidad en Dublín. Quien pregunta allí se queda sin respuesta mientras dure la partición.",
+      "more": "| Si eliges… | Dublín responde | Ganas | Pierdes |\n|---|---|---|---|\n| **CP** | Un error, o espera a que vuelva la red | Nunca un dato falso | Disponibilidad en Dublín |\n| **AP** | Su último dato, quizá viejo | Siempre contesta | Puede vender una entrada que ya no existe |\n\n**En una entrevista**, no digas «elijo CA». Di qué hace tu sistema durante una partición y por qué: «las reservas, CP, porque prefiero un error a vender dos veces; el contador de visitas, AP».",
+      "callout": {
+        "type": "insight",
+        "text": "Para la última entrada, el saldo o un nombre de usuario único, mejor un error que vender dos veces."
+      },
+      "changes": [
+        "~ Dublín devuelve un error",
+        "~ Vendidas dos veces: 1 → 0",
+        "− Disponibilidad en Dublín"
       ],
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": 0
+      },
       "nodes": [
         {
           "id": "um",
@@ -561,27 +521,7 @@
           "failAt": 0.5,
           "rate": 0.3
         }
-      ]
-    },
-    {
-      "short": "Sin partición",
-      "chapter": "case",
-      "title": "Sin partición, la consistencia cuesta latencia",
-      "body": "Vuelve la red y CAP ya no dice nada. **PACELC** lo completa: si hay partición, eliges entre A y C; si no, entre latencia y consistencia. Para que una venta de Madrid esté también en Dublín antes de confirmarla, cada escritura espera la ida y vuelta: unos 30 ms.",
-      "callout": {
-        "type": "tip",
-        "text": "La partición pasa de vez en cuando; los 30 ms se pagan en cada escritura, todos los días."
-      },
-      "changes": [
-        "+ La red vuelve",
-        "~ Cada venta espera a Dublín: 0 → 30 ms",
-        "~ Las dos copias, iguales: queda 0"
       ],
-      "metrics": {
-        "stale": "no",
-        "twice": 0,
-        "wait": 30
-      },
       "zones": [
         {
           "label": "Madrid",
@@ -603,9 +543,30 @@
           "to": [
             2,
             1.6
-          ]
+          ],
+          "tone": "warn"
         }
+      ]
+    },
+    {
+      "short": "Sin partición",
+      "chapter": "case",
+      "title": "Sin partición, la consistencia cuesta latencia",
+      "body": "Vuelve la red. Sin partición, que es casi siempre, CAP no dice nada. Lo completa **PACELC** en una frase: si hay partición (**P**), eliges entre **A** y **C**; si no (**E**, *else*), entre latencia (**L**) y **C**.\n\nEsa segunda parte se nota a diario: para que una venta de Madrid esté también en Dublín antes de confirmarla, cada escritura espera la ida y vuelta, unos 30 ms.",
+      "callout": {
+        "type": "tip",
+        "text": "La partición pasa de vez en cuando; los 30 ms se pagan en cada escritura, todos los días."
+      },
+      "changes": [
+        "+ La red vuelve",
+        "~ Cada venta espera a Dublín: 0 → 30 ms",
+        "~ Las dos copias, iguales: queda 0"
       ],
+      "metrics": {
+        "stale": "no",
+        "twice": 0,
+        "wait": 30
+      },
       "nodes": [
         {
           "id": "um",
@@ -685,13 +646,38 @@
           "back": "resp",
           "rate": 0.6
         }
+      ],
+      "zones": [
+        {
+          "label": "Madrid",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0,
+            1.6
+          ]
+        },
+        {
+          "label": "Dublín",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ]
+        }
       ]
     },
     {
       "short": "Quorum",
       "chapter": "technique",
       "title": "Tres copias: escribe en 2, lee de 2",
-      "body": "Con **quorums** no hace falta esperar siempre a todas. Hay **N = 3** copias. Una escritura se confirma cuando la guardan **W = 2**; una lectura pregunta a **R = 2** y se queda con la versión más reciente. Como R + W > N, los dos grupos comparten una copia, y esa tiene lo último.",
+      "body": "¿Cómo leer lo último sin esperar siempre a todas las copias? Con **quorums**, una idea que usan bases de datos como Cassandra:\n- Cada dato tiene **N** copias. Aquí, 3.\n- Una escritura se confirma cuando la han guardado **W** copias. Aquí, 2.\n- Una lectura pregunta a **R** copias y se queda con la versión más reciente. Aquí, 2.\n\nSi **R + W > N**, el grupo que escribió y el que lee comparten al menos una copia, y esa tiene la última escritura: aquí, la copia 2.\n\nW y R deciden también cuántas caídas aguantas: escribir aguanta N − W copias caídas, y leer, N − R.",
+      "more": "| N | W | R | ¿R + W > N? | Copias caídas que aguanta (escribir / leer) |\n|---|---|---|---|---|\n| 3 | 2 | 2 | 4 > 3: sí | 1 / 1 |\n| 3 | 1 | 1 | 2 > 3: no, puede leer algo viejo | 2 / 2 |\n| 3 | 3 | 1 | 4 > 3: sí | 0 / 2 |\n| 5 | 3 | 3 | 6 > 5: sí | 2 / 2 |\n\nR + W − N es el mínimo de copias que comparten la lectura y la escritura. Si sale 0 o menos, puedes no ver lo último.",
       "callout": {
         "type": "tip",
         "text": "Como en la oficina: si la noticia la saben 2 de 3 compañeros y tú preguntas a 2, uno de los dos la sabe seguro."
@@ -842,10 +828,11 @@
       "short": "W = 1, R = 1",
       "chapter": "case",
       "title": "Con W = 1 y R = 1 puedes leer algo viejo",
-      "body": "Para ir más rápido bajas a **W = 1** y **R = 1**. Pero 1 + 1 = 2 no supera 3: la escritura llega solo a la copia 1 y la lectura pregunta solo a la 3, que sigue en v1. Aguanta 2 copias caídas en cada lado, pero devuelve un dato viejo.",
+      "body": "Para ir más rápido bajas a **W = 1** y **R = 1**. Pero 1 + 1 = 2 no supera 3: la escritura llega solo a la copia 1 y la lectura pregunta solo a la 3, que sigue en v1. Aguanta 2 copias caídas en cada lado, pero devuelve un dato viejo.\n\nLa mayoría (W = 2, R = 2 con N = 3) es el término medio: lee lo último y aguanta una caída en cada lado.",
+      "more": "**Hay matices.** Dos escrituras a la vez, o una que falla a medias, pueden dejar copias que no cuadran, y hacen falta reglas para decidir cuál gana. Lo verás en el problema del key-value store distribuido.",
       "callout": {
         "type": "warn",
-        "text": "Al revés también hay precio: con W = 3 lees de una sola copia, pero si se cae una ya no puedes escribir."
+        "text": "Al revés también hay precio: con W = 3 de 3 lees muy rápido, de una sola copia, pero si se cae una ya no puedes escribir."
       },
       "changes": [
         "~ W: 2 → 1 y R: 2 → 1",
@@ -975,18 +962,24 @@
       ]
     },
     {
-      "short": "Repaso",
-      "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Eventual: las copias acaban iguales, pero no a la vez.\n- En una partición, AP contesta quizá con un dato viejo; CP no contesta.\n- Sin partición, la consistencia fuerte se paga en latencia (PACELC).\n- Con N copias, si R + W > N, la lectura ve lo último.",
+      "short": "Dato a dato",
+      "chapter": "solution",
+      "title": "Decide dato a dato",
+      "body": "La pregunta útil no es «¿fuerte o eventual?» para todo el sistema, sino, dato a dato: **¿qué pasa si alguien ve el valor viejo durante unos segundos?** Con los likes de una reseña, nada; con la última entrada, se vende dos veces.\n\nEntre los dos extremos hay garantías más baratas:\n- **Read-your-writes**, de la lección de replicación: tú ves siempre lo que acabas de escribir, aunque los demás tarden.\n- **Monotonic reads**: no vuelves atrás en el tiempo. Si ya viste un comentario, al recargar no desaparece (por ejemplo, leyendo siempre de la misma réplica).\n\nY lo fuerte no tiene que ser todo el sistema. Una tienda puede servir el catálogo y las reseñas con eventual consistency y llevar el stock y los pagos a una base de datos con consistencia fuerte y transacciones, que es la lección siguiente.",
+      "more": "| Dato | ¿Vale un poco viejo? | Qué usar |\n|---|---|---|\n| Likes, visitas, seguidores | Sí, nadie lo nota | Eventual |\n| Tu comentario recién publicado | No para ti; sí para los demás | Eventual + read-your-writes |\n| La última unidad en stock, una butaca | No: se vende dos veces | Fuerte |\n| El saldo antes de pagar | No | Fuerte |\n| Un nombre de usuario único | No: dos cuentas con el mismo | Fuerte |",
       "callout": {
-        "type": "insight",
-        "text": "Decide dato a dato: ¿qué pasa si alguien ve el valor viejo unos segundos? Likes, eventual; stock y saldo, fuerte. Read-your-writes cubre muchos casos."
+        "type": "warn",
+        "text": "«Eventual» no dice cuánto tarda. Mide el lag de verdad: si en un mal día son minutos, un dato que «vale un poco viejo» puede dejar de valer."
       },
+      "changes": [
+        "+ Reseñas, con eventual consistency",
+        "+ Stock y pagos, con consistencia fuerte",
+        "~ Tu comentario: read-your-writes"
+      ],
       "metrics": {
-        "stale": "no",
+        "stale": "en reseñas",
         "twice": 0,
-        "wait": "a 2 copias"
+        "wait": "solo stock"
       },
       "nodes": [
         {
@@ -997,7 +990,7 @@
             0,
             0
           ],
-          "note": "escribe v2"
+          "note": "comenta"
         },
         {
           "id": "ud",
@@ -1007,90 +1000,245 @@
             2,
             0
           ],
-          "note": "lee"
+          "note": "compra"
         },
         {
-          "id": "q1",
+          "id": "rev",
           "kind": "db",
-          "label": "Copia 1",
+          "label": "Reseñas",
           "at": [
             0,
             1.6
           ],
-          "items": [
-            "v2"
-          ]
+          "note": "eventual"
         },
         {
-          "id": "q2",
+          "id": "rep",
           "kind": "db",
-          "label": "Copia 2",
+          "label": "Réplica",
           "at": [
-            1,
+            0.85,
             1.6
           ],
-          "items": [
-            "v2"
-          ],
-          "mark": "good"
+          "note": "con lag"
         },
         {
-          "id": "q3",
+          "id": "st",
           "kind": "db",
-          "label": "Copia 3",
+          "label": "Stock",
           "at": [
             2,
             1.6
           ],
-          "items": [
-            "v1"
-          ]
+          "note": "fuerte",
+          "badge": "queda 1",
+          "mark": "good"
         }
       ],
       "links": [
         {
-          "id": "um-q1",
+          "id": "um-rev",
           "from": "um",
-          "to": "q1"
+          "to": "rev",
+          "label": "tu comentario"
         },
         {
-          "id": "um-q2",
-          "from": "um",
-          "to": "q2"
+          "id": "rev-rep",
+          "from": "rev",
+          "to": "rep",
+          "dashed": true
         },
         {
-          "id": "ud-q2",
+          "id": "ud-st",
           "from": "ud",
-          "to": "q2"
-        },
-        {
-          "id": "ud-q3",
-          "from": "ud",
-          "to": "q3"
+          "to": "st",
+          "label": "compra"
         }
       ],
       "flows": [
         {
           "via": [
-            [
-              "um-q1",
-              "um-q2"
-            ]
+            "um-rev"
           ],
           "kind": "write",
-          "rate": 1,
+          "back": "resp",
+          "rate": 0.6,
           "pop": true
         },
         {
           "via": [
-            [
-              "ud-q2",
-              "ud-q3"
-            ]
+            "rev-rep"
           ],
-          "kind": "req",
+          "kind": "write",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "ud-st"
+          ],
+          "kind": "write",
           "back": "resp",
-          "rate": 1
+          "rate": 0.6
+        }
+      ],
+      "zones": [
+        {
+          "label": "Eventual",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0.85,
+            1.6
+          ]
+        },
+        {
+          "label": "Fuerte",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ],
+          "tone": "good"
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que te llevas",
+      "body": "- Fuerte: toda lectura ve la última escritura, como si hubiera una sola copia. Eventual: las copias acaban iguales, pero no a la vez.\n- CAP solo obliga a elegir durante una partición de red: contestar quizá con datos viejos (AP) o no contestar (CP).\n- PACELC: sin partición, el precio de la consistencia fuerte es la latencia.\n- Con N copias, si R + W > N, una lectura ve la última escritura; W y R deciden también cuántas caídas aguantas.\n- Decide dato a dato: «¿qué pasa si alguien ve el valor viejo unos segundos?». Read-your-writes cubre muchos casos sin pagar la fuerte.",
+      "metrics": {
+        "stale": "en reseñas",
+        "twice": 0,
+        "wait": "solo stock"
+      },
+      "nodes": [
+        {
+          "id": "um",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            0,
+            0
+          ],
+          "note": "comenta"
+        },
+        {
+          "id": "ud",
+          "kind": "client",
+          "label": "Usuario",
+          "at": [
+            2,
+            0
+          ],
+          "note": "compra"
+        },
+        {
+          "id": "rev",
+          "kind": "db",
+          "label": "Reseñas",
+          "at": [
+            0,
+            1.6
+          ],
+          "note": "eventual"
+        },
+        {
+          "id": "rep",
+          "kind": "db",
+          "label": "Réplica",
+          "at": [
+            0.85,
+            1.6
+          ],
+          "note": "con lag"
+        },
+        {
+          "id": "st",
+          "kind": "db",
+          "label": "Stock",
+          "at": [
+            2,
+            1.6
+          ],
+          "note": "fuerte",
+          "badge": "queda 1"
+        }
+      ],
+      "links": [
+        {
+          "id": "um-rev",
+          "from": "um",
+          "to": "rev",
+          "label": "tu comentario"
+        },
+        {
+          "id": "rev-rep",
+          "from": "rev",
+          "to": "rep",
+          "dashed": true
+        },
+        {
+          "id": "ud-st",
+          "from": "ud",
+          "to": "st",
+          "label": "compra"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "um-rev"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "rev-rep"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "ud-st"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.5
+        }
+      ],
+      "zones": [
+        {
+          "label": "Eventual",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            0.85,
+            1.6
+          ]
+        },
+        {
+          "label": "Fuerte",
+          "from": [
+            2,
+            0
+          ],
+          "to": [
+            2,
+            1.6
+          ],
+          "tone": "good"
         }
       ]
     }
