@@ -1,0 +1,1338 @@
+{
+  "id": "P50",
+  "title": "El broker, en acción",
+  "metrics": [
+    {
+      "id": "pend",
+      "label": "En las colas"
+    },
+    {
+      "id": "unacked",
+      "label": "Entregados sin ack"
+    },
+    {
+      "id": "lost",
+      "label": "Perdidos",
+      "better": "low"
+    },
+    {
+      "id": "dup",
+      "label": "Posibles duplicados",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "mensaje",
+    "write": "copia en disco",
+    "resp": "confirm o ack"
+  },
+  "goals": [
+    {
+      "text": "Cómo llega un pedido a tres colas con una sola publicación",
+      "step": 1
+    },
+    {
+      "text": "Cuándo puede el broker decir «lo tengo» al productor",
+      "step": 2
+    },
+    {
+      "text": "Qué se hace con un mensaje que siempre falla",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa si se cae el líder de una cola",
+      "step": 5
+    },
+    {
+      "text": "Por qué un atasco largo no tumba el broker",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Publicar",
+      "chapter": "solution",
+      "title": "Un pedido, publicado una vez, llega a tres colas",
+      "body": "El servicio de pedidos publica `pedido.creado.es` en el exchange `pedidos`. Los bindings dan una copia a `facturacion`, `almacen` y `correos`. El productor no sabe quién escucha.",
+      "changes": [
+        "+ Exchange topic con 3 bindings",
+        "~ 1 publicación → 3 colas"
+      ],
+      "metrics": {
+        "pend": "casi 0",
+        "unacked": 0,
+        "lost": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Copia · nodo 2",
+          "at": [
+            0,
+            1.2
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Líder · nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "cola facturacion"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n1-n2",
+          "from": "n1",
+          "to": "n2",
+          "state": "dim"
+        },
+        {
+          "id": "n1-n3",
+          "from": "n1",
+          "to": "n3",
+          "state": "dim"
+        },
+        {
+          "id": "n1-wk",
+          "from": "n1",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "n1-dlq",
+          "from": "n1",
+          "to": "dlq",
+          "dashed": true,
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "prod-ex",
+            "ex-n1"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-alm"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-cor"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Confirm",
+      "chapter": "solution",
+      "title": "Nada se confirma hasta que lo tienen 2 de 3",
+      "body": "El líder de `facturacion` escribe el mensaje en disco y lo copia a los nodos 2 y 3. Con dos copias en disco, manda el confirm al productor. Si el confirm no llega a tiempo, el productor reenvía: puede duplicar, nunca perder.",
+      "changes": [
+        "+ Copias en los nodos 2 y 3",
+        "~ Confirm con la mayoría en disco"
+      ],
+      "metrics": {
+        "pend": "casi 0",
+        "unacked": 0,
+        "lost": 0,
+        "dup": 0
+      },
+      "panel": {
+        "title": "¿Cuántos nodos?",
+        "rows": [
+          {
+            "text": "200.000 msg/s × 3 copias = 600.000 escrituras/s"
+          },
+          {
+            "text": "Un nodo aguanta 50.000; al 70 %, 35.000"
+          },
+          {
+            "text": "600.000 / 35.000 ≈ 18 nodos",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Copia · nodo 2",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Líder · nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "cola facturacion",
+          "mark": "good"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n1-n2",
+          "from": "n1",
+          "to": "n2"
+        },
+        {
+          "id": "n1-n3",
+          "from": "n1",
+          "to": "n3"
+        },
+        {
+          "id": "n1-wk",
+          "from": "n1",
+          "to": "wk",
+          "state": "dim"
+        },
+        {
+          "id": "n1-dlq",
+          "from": "n1",
+          "to": "dlq",
+          "dashed": true,
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "prod-ex",
+            "ex-n1"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 500,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "n1-n2"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "n1-n3"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Ack",
+      "chapter": "solution",
+      "title": "Cada worker con 20 en la mano y ack al terminar",
+      "body": "El líder entrega con prefetch 20: ningún worker tiene más de 20 sin confirmar. Cada mensaje queda «entregado, sin ack» hasta que el worker termina y manda su ack. Solo entonces se borra.",
+      "changes": [
+        "+ Workers con prefetch 20",
+        "~ Ack al terminar, no al recibir"
+      ],
+      "metrics": {
+        "pend": "casi 0",
+        "unacked": 20,
+        "lost": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Copia · nodo 2",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Líder · nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "cola facturacion"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "20 sin ack",
+          "mark": "good"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n1-n2",
+          "from": "n1",
+          "to": "n2"
+        },
+        {
+          "id": "n1-n3",
+          "from": "n1",
+          "to": "n3"
+        },
+        {
+          "id": "n1-wk",
+          "from": "n1",
+          "to": "wk"
+        },
+        {
+          "id": "n1-dlq",
+          "from": "n1",
+          "to": "dlq",
+          "dashed": true,
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n1-wk"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "wait": 300,
+          "rate": 2
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-n1"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "n1-n2"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "n1-n3"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Veneno",
+      "chapter": "case",
+      "title": "Un pedido que tumba al worker cada vez",
+      "body": "Un pedido mal formado revienta al worker antes del ack: vuelve a la cola, y otra vez. El broker cuenta las entregas y a la quinta lo aparta en la DLQ, donde espera a que alguien lo mire. Los demás pedidos siguen saliendo.",
+      "callout": {
+        "type": "warn",
+        "text": "Sin un límite de entregas, un solo mensaje venenoso tendría ocupados a los workers para siempre."
+      },
+      "changes": [
+        "~ Falla y vuelve: 1, 2… 5 entregas",
+        "+ A la 5.ª, a la DLQ",
+        "~ El resto, sin atascos"
+      ],
+      "metrics": {
+        "pend": "casi 0",
+        "unacked": 20,
+        "lost": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Copia · nodo 2",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Líder · nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "note": "cola facturacion"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "20 sin ack"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ],
+          "badge": "1 pedido",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n1-n2",
+          "from": "n1",
+          "to": "n2"
+        },
+        {
+          "id": "n1-n3",
+          "from": "n1",
+          "to": "n3"
+        },
+        {
+          "id": "n1-wk",
+          "from": "n1",
+          "to": "wk"
+        },
+        {
+          "id": "n1-dlq",
+          "from": "n1",
+          "to": "dlq",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n1-wk"
+          ],
+          "kind": "event",
+          "back": "fail",
+          "rate": 1
+        },
+        {
+          "via": [
+            "n1-wk"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "wait": 300,
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "n1-dlq"
+          ],
+          "kind": "event",
+          "rate": 0.4,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Ahora se cae el nodo 1, líder de `facturacion`, con 10.000 mensajes en la cola y 20 entregados sin ack. ¿Qué pasa con ellos?",
+        "options": [
+          "Se pierden los 10.000: estaban en el disco del nodo 1",
+          "Se pierden solo los 20 sin ack; los 10.000 los tiene una copia",
+          "La cola se para hasta que el nodo 1 vuelva con su disco",
+          "No se pierde ninguno: una copia pasa a líder y los 20 se reentregan, quizá repetidos"
+        ],
+        "answer": 3,
+        "explain": "Todo lo confirmado está en disco en 2 de 3 nodos: una copia viva lo tiene y gana la elección. Los 20 sin ack no se habían borrado: vuelven a la cola, y alguno puede procesarse dos veces si el worker ya había terminado. Esperar al nodo 1 dejaría parada una cola que no lo necesita."
+      }
+    },
+    {
+      "short": "Cae el líder",
+      "chapter": "case",
+      "title": "Cae el nodo 1 con 10.000 mensajes dentro",
+      "body": "Las copias dejan de oír al líder y eligen al nodo 2, con el log al día, en un term nuevo. El exchange y los workers pasan a él en segundos. Los 20 que estaban sin ack se reentregan: algún duplicado, ninguna pérdida.",
+      "changes": [
+        "− Nodo 1 (caído)",
+        "~ Nodo 2: de copia a líder",
+        "~ Los 20 sin ack, a otro worker"
+      ],
+      "metrics": {
+        "pend": "10.000",
+        "unacked": 20,
+        "lost": 0,
+        "dup": 20
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Líder · nodo 2",
+          "at": [
+            0,
+            1.2
+          ],
+          "note": "cola facturacion",
+          "badge": "term nuevo",
+          "mark": "good"
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "state": "down"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "badge": "20 sin ack"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1",
+          "state": "down"
+        },
+        {
+          "id": "ex-n2",
+          "from": "ex",
+          "to": "n2"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n2-n3",
+          "from": "n2",
+          "to": "n3"
+        },
+        {
+          "id": "n2-wk",
+          "from": "n2",
+          "to": "wk"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "prod-ex",
+            "ex-n2"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "n2-n3"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "n2-wk"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "wait": 300,
+          "rate": 1.8
+        }
+      ],
+      "predict": {
+        "q": "Un despliegue malo para todos los consumidores durante una hora, y se siguen publicando 200.000 mensajes por segundo. ¿Qué hace el broker?",
+        "options": [
+          "Tira los mensajes más viejos para hacer sitio a los nuevos",
+          "Los guarda en memoria hasta que vuelvan los consumidores",
+          "Los guarda en disco (~1,4 TB) y, cerca del límite, deja de leer a los productores",
+          "Rechaza todas las publicaciones desde el primer segundo"
+        ],
+        "answer": 2,
+        "explain": "200.000 × 3.600 × 2 KB ≈ 1,4 TB, y 4,3 TB con copias: en memoria no cabe, por eso hay disco. Tirar mensajes perdería pedidos, y rechazar desde el primer segundo sobra, porque aún hay sitio. Solo cerca del umbral frena a los productores: esperan, pero no pierden nada."
+      }
+    },
+    {
+      "short": "Atasco",
+      "chapter": "case",
+      "title": "Los consumidores se paran una hora",
+      "body": "Un despliegue malo para los consumidores y siguen llegando 200.000 mensajes por segundo. En una hora son 1,4 TB (4,3 TB con copias), y van a disco. Cerca del umbral, el broker deja de leer a los productores: esperan en vez de perder nada.",
+      "changes": [
+        "− Workers parados",
+        "~ Colas: +1,4 TB en una hora",
+        "~ Productores frenados (backpressure)"
+      ],
+      "metrics": {
+        "pend": "1,4 TB",
+        "unacked": 0,
+        "lost": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Líder · nodo 2",
+          "at": [
+            0,
+            1.2
+          ],
+          "note": "cola facturacion",
+          "load": 0.9,
+          "badge": "disco 90 %",
+          "state": "hot"
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ],
+          "state": "down"
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ],
+          "state": "down"
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex",
+          "state": "hot",
+          "label": "frenado"
+        },
+        {
+          "id": "ex-n1",
+          "from": "ex",
+          "to": "n1",
+          "state": "down"
+        },
+        {
+          "id": "ex-n2",
+          "from": "ex",
+          "to": "n2"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n2-n3",
+          "from": "n2",
+          "to": "n3"
+        },
+        {
+          "id": "n2-wk",
+          "from": "n2",
+          "to": "wk",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "prod-ex",
+            "ex-n2"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-alm"
+          ],
+          "kind": "event",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "n2-n3"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Un exchange y sus bindings: una publicación, una copia por cola.\n- Confirm con 2 de 3 en disco y ack al terminar: at-least-once.\n- Lo que siempre falla, a la DLQ tras 5 entregas.\n- Si cae el líder, gana una copia al día; si hay atasco, disco y backpressure.",
+      "callout": {
+        "type": "insight",
+        "text": "Nada confirmado se pierde; a cambio, algún duplicado. Por eso los consumidores son idempotentes."
+      },
+      "metrics": {
+        "pend": "casi 0",
+        "unacked": 20,
+        "lost": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "prod",
+          "kind": "client",
+          "label": "Pedidos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "ex",
+          "kind": "lb",
+          "label": "Exchange",
+          "at": [
+            1.5,
+            0
+          ],
+          "note": "pedidos · topic"
+        },
+        {
+          "id": "cor",
+          "kind": "queue",
+          "label": "correos",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "n2",
+          "kind": "queue",
+          "label": "Líder · nodo 2",
+          "at": [
+            0,
+            1.2
+          ],
+          "note": "cola facturacion"
+        },
+        {
+          "id": "n1",
+          "kind": "queue",
+          "label": "Copia · nodo 1",
+          "at": [
+            1.5,
+            1.2
+          ]
+        },
+        {
+          "id": "alm",
+          "kind": "queue",
+          "label": "almacen",
+          "at": [
+            3,
+            1.2
+          ]
+        },
+        {
+          "id": "n3",
+          "kind": "queue",
+          "label": "Copia · nodo 3",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "wk",
+          "kind": "worker",
+          "label": "Workers",
+          "at": [
+            1.5,
+            2.4
+          ]
+        },
+        {
+          "id": "dlq",
+          "kind": "queue",
+          "label": "DLQ",
+          "at": [
+            3,
+            2.4
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "prod-ex",
+          "from": "prod",
+          "to": "ex"
+        },
+        {
+          "id": "ex-n2",
+          "from": "ex",
+          "to": "n2"
+        },
+        {
+          "id": "ex-alm",
+          "from": "ex",
+          "to": "alm"
+        },
+        {
+          "id": "ex-cor",
+          "from": "ex",
+          "to": "cor"
+        },
+        {
+          "id": "n2-n1",
+          "from": "n2",
+          "to": "n1"
+        },
+        {
+          "id": "n2-n3",
+          "from": "n2",
+          "to": "n3"
+        },
+        {
+          "id": "n2-wk",
+          "from": "n2",
+          "to": "wk"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "prod-ex",
+            "ex-n2"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-alm"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "prod-ex",
+            "ex-cor"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "n2-n1"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "n2-n3"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "n2-wk"
+          ],
+          "kind": "event",
+          "back": "resp",
+          "wait": 300,
+          "rate": 1.5
+        }
+      ]
+    }
+  ]
+}
