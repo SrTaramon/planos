@@ -1,6 +1,7 @@
 {
   "id": "L16",
-  "title": "Un log tipo Kafka, en acción",
+  "title": "Stream processing, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "lag",
@@ -20,37 +21,15 @@
   "legend": {
     "event": "clic"
   },
-  "goals": [
-    {
-      "text": "Por qué contar cada noche llega tarde",
-      "step": 1
-    },
-    {
-      "text": "Cómo guarda un log los eventos: particiones y offsets",
-      "step": 2
-    },
-    {
-      "text": "Cómo se reparten el trabajo los consumer groups",
-      "step": 4
-    },
-    {
-      "text": "Qué hora cuenta en una ventana, y qué pasa con los rezagados",
-      "step": 6
-    },
-    {
-      "text": "Qué pasa si se cae un consumidor",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Cada noche",
       "chapter": "problem",
       "title": "Contar al cerrar la tienda llega tarde",
-      "body": "Los servicios web guardan cada clic y un **batch** los cuenta cada noche. Para la factura vale, pero para saber qué se vende ahora, o parar un pago fraudulento mientras aún se puede cancelar, el resultado llega horas tarde. Hay que contar cada evento según pasa: **stream processing**.",
+      "body": "Los servicios web guardan cada clic y un **batch** los cuenta cada noche: es hacer caja al cerrar la tienda. En un batch los datos son un conjunto **cerrado**, como los pedidos de ayer. Pero muchos datos no se acaban nunca: clics, pagos, likes, lecturas de sensores.\n\nEl **stream processing** (procesar en streaming) los trata como lo que son, un flujo sin fin de **eventos**: hechos pequeños con su hora, como «u42 hizo clic en el producto 7 a las 10:00:05». Y actualiza el resultado con cada uno.\n\nSirve cuando el resultado pierde valor con el tiempo: frenar un fraude mientras el pago aún se puede cancelar, los más vendidos de la última hora, un dashboard en directo, una alerta de «los errores se han multiplicado por 5». Contando cada noche, todo eso llega horas tarde.",
       "callout": {
         "type": "insight",
-        "text": "Streaming sirve cuando el dato pierde valor con el tiempo: el fraude, lo más vendido de la última hora, un dashboard en directo."
+        "text": "Streaming trae dos preguntas nuevas: dónde viven los eventos mientras se procesan y cómo se agrupa algo que no termina. Las responden los pasos siguientes."
       },
       "metrics": {
         "lag": "horas"
@@ -114,10 +93,10 @@
       "short": "El log",
       "chapter": "technique",
       "title": "Un log: los eventos se quedan",
-      "body": "Cada clic se añade al final de un **log**, el topic `clics`, y ahí se queda (supón 7 días). El topic se parte en 3 **partitions** y cada clic va a la `hash(user_id) mod 3`: los de u42 caen siempre en P1, en orden. Cada evento tiene su **offset**, su posición en la partición.",
+      "body": "Los eventos se escriben en un **log**: una lista a la que solo se añade por el final, como el libro de registro de un hotel. Kafka es el ejemplo más conocido. En una cola, un mensaje desaparece al procesarlo; en un log **se queda** (supón 7 días) y cada lector apunta por dónde va.\n\n- **Topic**: un log con nombre, aquí `clics`.\n- **Partition**: el topic se parte en varios logs independientes para repartir el trabajo, aquí 3. Cada evento va a la partición `hash(clave) mod N`; con `user_id` como clave, los de u42 caen siempre en P1. Es el reparto por clave de la lección de colas.\n- **Offset**: la posición de un evento en su partición (0, 1, 2…). Cada lector guarda el suyo, como un marcapáginas.",
       "callout": {
         "type": "warn",
-        "text": "El orden solo está garantizado dentro de una partición. Si lo de un usuario tiene que ir en orden, usa su id como clave."
+        "text": "«Kafka guarda el orden» solo es verdad dentro de una partición. Si los eventos de un usuario tienen que procesarse en orden, usa su id como clave."
       },
       "changes": [
         "+ Topic «clics» con 3 particiones",
@@ -177,19 +156,6 @@
           ]
         }
       ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
-          ]
-        }
-      ],
       "links": [
         {
           "id": "web-p0",
@@ -220,17 +186,26 @@
           "rate": 3,
           "pop": true
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Consumer group",
       "chapter": "solution",
       "title": "Un consumer group se reparte las particiones",
-      "body": "El grupo «dashboard» tiene dos consumidores: dash-1 lee P0 y P1, y dash-2 lee P2. Cada partición la lee un solo miembro del grupo, así que cada clic se procesa una vez. Cada uno guarda su offset, como un marcapáginas, y cuenta los clics en directo.",
-      "callout": {
-        "type": "tip",
-        "text": "El paralelismo máximo de un grupo es su número de particiones: con 3, un cuarto consumidor se quedaría sin trabajo."
-      },
+      "body": "Un **consumer group** es un grupo de consumidores que se reparten las particiones. El grupo «dashboard» tiene dos: dash-1 lee P0 y P1, y dash-2 lee P2. Cada partición la lee un solo miembro del grupo, así que cada clic se procesa una vez.\n\nCada consumidor guarda su offset, su marcapáginas, y cuenta los clics en directo: el resultado pasa de horas a segundos.\n\nEl paralelismo máximo de un grupo es su número de particiones. Con 3, un cuarto consumidor se quedaría sin trabajo; con 6, el séptimo.",
       "changes": [
         "+ Grupo «dashboard»: dash-1 y dash-2",
         "~ dash-1 lee P0 y P1; dash-2, P2",
@@ -307,19 +282,6 @@
           ]
         }
       ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
-          ]
-        }
-      ],
       "links": [
         {
           "id": "web-p0",
@@ -377,16 +339,29 @@
           "kind": "event",
           "rate": 0.9
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Otro grupo",
       "chapter": "solution",
       "title": "Otro grupo lee lo mismo, por su cuenta",
-      "body": "El grupo «fraude» lee las tres particiones con sus propios offsets, sin quitarle nada a «dashboard». Por eso un log hace de cola y de pub/sub a la vez: dentro de un grupo, cada clic lo procesa uno; entre grupos, cada grupo los recibe todos.",
+      "body": "El grupo «fraude» lee las tres particiones con sus propios offsets, sin quitarle nada a «dashboard»: otro grupo lee el mismo topic por su cuenta.\n\nPor eso un log hace de cola y de pub/sub a la vez:\n- Dentro de un grupo, cada clic lo procesa uno, como en una cola.\n- Entre grupos, cada grupo los recibe todos, como en pub/sub.",
       "callout": {
         "type": "tip",
-        "text": "Como cada grupo tiene su marcapáginas, puede rebobinarlo: si fraude tenía un bug, lo arreglas, devuelves su offset a ayer y reprocesa. En una cola, esos mensajes ya no existirían."
+        "text": "Cada grupo tiene su marcapáginas y puede rebobinarlo: si fraude tenía un bug, lo arreglas, devuelves su offset a ayer y reprocesa. En una cola, esos mensajes ya no existirían."
       },
       "changes": [
         "+ Grupo «fraude»: fraude-1 lee P0, P1 y P2",
@@ -459,19 +434,6 @@
           "at": [
             2,
             2.45
-          ]
-        }
-      ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
           ]
         }
       ],
@@ -568,13 +530,27 @@
           "kind": "event",
           "rate": 0.7
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Ventanas",
       "chapter": "technique",
       "title": "Ventanas: contar por minuto lo que no acaba",
-      "body": "«¿Cuántos clics hay?» no tiene respuesta en un flujo sin fin; «¿cuántos entre las 10:00 y las 10:01?», sí. dash-1 agrupa los clics de u42 en **tumbling windows** de 1 minuto, seguidas y sin solaparse, por **event time**: la hora en que pasó cada clic, que viaja con él.",
+      "body": "«¿Cuántos clics hay?» no tiene respuesta en un flujo sin fin; «¿cuántos entre las 10:00 y las 10:01?», sí. Para eso se agrupan los eventos en **windows** (ventanas de tiempo):\n\n- **Tumbling**: fijas, seguidas y sin solaparse: 10:00-10:01, 10:01-10:02… Cada evento cae en una.\n- **Sliding**: fijas y solapadas, como «los últimos 2 minutos», recalculado cada minuto. Un evento cae en varias.\n- **Session**: una por racha de actividad, que se cierra tras un hueco sin eventos (supón 2 minutos). Es una visita a la web.\n\ndash-1 cuenta los clics de u42 en tumbling de 1 minuto, por **event time**: la hora en que pasó cada clic, que viaja con él.",
+      "more": "Con los clics de u42 a las 10:00:05, 10:00:40, 10:01:10, 10:01:20 y 10:04:00:\n\n| Ventana | Grupos | Clics |\n|---|---|---|\n| Tumbling de 1 min | 10:00-10:01 · 10:01-10:02 · 10:04-10:05 | 2 · 2 · 1 |\n| Sliding de 2 min, cada minuto | los 2 minutos antes de las 10:02 · 10:03 · 10:04 · 10:05 | 4 · 2 · 0 · 1 |\n| Session con hueco de 2 min | 10:00:05-10:01:20 · 10:04:00 | 4 · 1 |\n\nLas tumbling vacías no salen. El clic de las 10:04:00 abre otra sesión porque llega 2 min 40 s después del anterior.",
       "callout": {
         "type": "tip",
         "text": "Si te piden «lo más visto de la última hora», pregunta si es de 10:00 a 11:00 (tumbling) o los últimos 60 minutos, ahora mismo (sliding): cambia lo que tienes que guardar."
@@ -676,19 +652,6 @@
           "state": "dim"
         }
       ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
-          ]
-        }
-      ],
       "links": [
         {
           "id": "web-p0",
@@ -752,13 +715,216 @@
           "kind": "event",
           "rate": 1.5
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
+      ]
+    },
+    {
+      "short": "Top-K",
+      "chapter": "technique",
+      "title": "Contar sin guardarlo todo: sketches y top-K",
+      "body": "Contar con un mapa `elemento → contador` es exacto, pero con 100 millones de elementos distintos por ventana la memoria se dispara. Si te vale una respuesta aproximada, hay estructuras pequeñas y de tamaño fijo, los **sketches**:\n\n- **Count-min sketch**: una tabla pequeña de contadores con varias funciones hash. Para estimar cuántas veces salió algo, mira sus contadores y se queda con el menor. Nunca se queda corto; a veces se pasa un poco por las colisiones.\n- **HyperLogLog**: estima cuántos elementos **distintos** has visto (visitantes únicos) con unos 12 KB (lo que usa, por ejemplo, Redis) y un error típico por debajo del 1 %, sean mil o mil millones.\n\nPara el **top-K** (los K más vendidos, las K canciones más escuchadas) no hace falta ordenarlo todo: basta un **min-heap** de tamaño K. Aquí cada consumidor saca sus 3 usuarios con más clics y Top-K junta los de todos.",
+      "more": "El min-heap es el mismo de la mezcla de la lección de procesar por lotes: guarda los K mejores hasta ahora con el menor arriba, y cada elemento que supera al de arriba lo sustituye.\n\n```python\nimport heapq\n\ndef top_k(conteos, k):\n    heap = []                                   # (conteo, elemento), el menor arriba\n    for elem, n in conteos.items():\n        if len(heap) < k:\n            heapq.heappush(heap, (n, elem))\n        elif n > heap[0][0]:\n            heapq.heapreplace(heap, (n, elem))  # saca el menor y mete el nuevo\n    return sorted(heap, reverse=True)\n```\n\nCon 10 millones de productos y K = 100, el heap tiene 100 elementos y cada cambio cuesta unas log₂ 100 ≈ 7 comparaciones, en vez de ordenar 10 millones.\n\nSi los eventos van a las particiones por la clave que cuentas, cada consumidor calcula su top-K y un paso final junta los de todos: como cada clave vive en una sola partición, el resultado es exacto. Aquí se cuentan usuarios en un topic por `user_id`, así que funciona. Para los productos más vendidos, las particiones irían por producto.",
+      "callout": {
+        "type": "warn",
+        "text": "Si las particiones no van por la clave que cuentas, cada consumidor ve solo una parte de cada producto, y juntar los top-K locales puede dejar fuera al verdadero ganador."
+      },
+      "changes": [
+        "+ Top-K: junta los top-3 de dash-1 y dash-2",
+        "~ Cada consumidor guarda solo sus 3 mejores"
+      ],
+      "metrics": {
+        "lag": "segundos",
+        "cons": 3,
+        "w10": 2
+      },
+      "nodes": [
+        {
+          "id": "web",
+          "kind": "service",
+          "label": "Servicios web",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "p0",
+          "kind": "stream",
+          "label": "P0",
+          "at": [
+            0,
+            1.2
+          ]
+        },
+        {
+          "id": "p1",
+          "kind": "stream",
+          "label": "P1",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "p2",
+          "kind": "stream",
+          "label": "P2",
+          "at": [
+            2,
+            1.2
+          ]
+        },
+        {
+          "id": "d1",
+          "kind": "worker",
+          "label": "dash-1",
+          "at": [
+            0,
+            2.45
+          ],
+          "badge": "top-3"
+        },
+        {
+          "id": "top",
+          "kind": "service",
+          "label": "Top-K",
+          "at": [
+            1,
+            2.45
+          ],
+          "items": [
+            "u42",
+            "u18",
+            "u7"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "d2",
+          "kind": "worker",
+          "label": "dash-2",
+          "at": [
+            2,
+            2.45
+          ],
+          "badge": "top-3"
+        }
+      ],
+      "links": [
+        {
+          "id": "web-p0",
+          "from": "web",
+          "to": "p0"
+        },
+        {
+          "id": "web-p1",
+          "from": "web",
+          "to": "p1"
+        },
+        {
+          "id": "web-p2",
+          "from": "web",
+          "to": "p2"
+        },
+        {
+          "id": "p0-d1",
+          "from": "p0",
+          "to": "d1"
+        },
+        {
+          "id": "p1-d1",
+          "from": "p1",
+          "to": "d1"
+        },
+        {
+          "id": "p2-d2",
+          "from": "p2",
+          "to": "d2"
+        },
+        {
+          "id": "d1-top",
+          "from": "d1",
+          "to": "top"
+        },
+        {
+          "id": "d2-top",
+          "from": "d2",
+          "to": "top"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "web-p0",
+            "p0-d1"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "web-p1",
+            "p1-d1"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "web-p2",
+            "p2-d2"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "d1-top"
+          ],
+          "kind": "event",
+          "rate": 0.5,
+          "pop": true
+        },
+        {
+          "via": [
+            "d2-top"
+          ],
+          "kind": "event",
+          "rate": 0.5,
+          "pop": true
+        }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Rezagado",
       "chapter": "case",
       "title": "Un clic de las 10:00 llega a las 10:20",
-      "body": "El móvil de u42 pierde la cobertura en el metro y manda a las 10:20 un clic que hizo a las 10:00:50. Por **processing time**, la hora a la que llega, contaría en las 10:20, donde no pasó. Por event time es de la ventana de las 10:00, que ya se cerró: el **watermark** marcaba que no se esperaban más clics anteriores.",
+      "body": "Falta decidir **qué hora** cuenta. Hay dos:\n- **Event time**: cuándo pasó, la hora que trae el evento.\n- **Processing time**: cuándo lo procesa tu sistema.\n\nCasi siempre se parecen, hasta que no. El móvil de u42 pierde la cobertura en el metro y manda a las 10:20 un clic que hizo a las 10:00:50. Por processing time contaría en las 10:20, donde no pasó. Por eso se agrupa por event time.\n\nY aparece otra pregunta: ¿cuándo cierras la ventana de las 10:00, si siempre puede llegar un rezagado? Con un margen: el **watermark** es la marca de «ya no espero eventos anteriores a tal hora». Este clic llega cuando el watermark ya había cerrado la ventana.",
       "callout": {
         "type": "insight",
         "text": "Con lo que llega después del watermark eliges: descartarlo o corregir un resultado ya publicado. Aquí se corrige: la ventana de las 10:00 pasa de 2 a 3."
@@ -879,19 +1045,6 @@
           "state": "dim"
         }
       ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
-          ]
-        }
-      ],
       "links": [
         {
           "id": "phone-web",
@@ -962,13 +1115,26 @@
           "rate": 0.8,
           "pop": true
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Cae dash-2",
       "chapter": "case",
       "title": "Se cae dash-2: su partición pasa a dash-1",
-      "body": "dash-2 se cae. Su grupo reparte sus particiones entre los que quedan: P2 pasa a dash-1, que sigue desde el último offset que guardó dash-2 (supón el 42). No se pierde nada: los clics siguen en el log. El grupo «fraude» ni se entera.",
+      "body": "dash-2 se cae. Su grupo reparte sus particiones entre los que quedan: P2 pasa a dash-1, que sigue desde el último offset que guardó dash-2 (supón el 42).\n\nNo se pierde nada: los clics siguen en el log aunque nadie los lea. El grupo «fraude» ni se entera: tiene sus propios offsets.",
       "callout": {
         "type": "insight",
         "text": "Para eso se guarda el offset: es el marcapáginas que deja a otro seguir donde se quedó el que cayó."
@@ -1049,19 +1215,6 @@
             2.45
           ],
           "state": "down"
-        }
-      ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
-          ]
         }
       ],
       "links": [
@@ -1170,16 +1323,30 @@
           "kind": "event",
           "rate": 0.6
         }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
+        }
       ]
     },
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Streaming procesa cada evento según llega: para datos que pierden valor con el tiempo.\n- Un log guarda los eventos: un topic, particiones por clave y un offset por lector.\n- Un consumer group se reparte las particiones; otro grupo lee lo mismo por su cuenta.\n- Las ventanas agrupan por event time, y el watermark las cierra.\n- Si cae un consumidor, otro sigue desde su offset.",
+      "title": "Lo que te llevas",
+      "body": "- Streaming procesa un flujo sin fin de eventos y actualiza el resultado con cada uno: sirve cuando el dato pierde valor con el tiempo.\n- Un log tipo Kafka guarda los eventos: topics partidos en particiones, offsets como marcapáginas y consumer groups que se reparten las particiones.\n- El orden solo está garantizado dentro de una partición: elige la clave según lo que tenga que ir en orden.\n- Las ventanas (tumbling, sliding, session) convierten el flujo en grupos; agrupa por event time y usa un watermark para los rezagados.\n- Para contar a lo grande: sketches aproximados (count-min, HyperLogLog) y un min-heap de tamaño K para el top-K.",
+      "more": "**¿Stream o batch?** No compiten: muchos sistemas usan los dos.\n\n| | Batch | Stream |\n|---|---|---|\n| Entrada | Un conjunto cerrado | Un flujo sin fin |\n| Resultado | Horas después | Segundos después |\n| Agrupa por | Todo el conjunto, o por días | Ventanas |\n| Exactitud | Exacta, con todos los datos | A menudo aproximada; los rezagados complican |\n| Si hay un bug | Relanzas el job | Rebobinas el offset y reprocesas |\n| Complejidad | Menor | Mayor: estado, ventanas, watermarks |\n| Ejemplos | Facturas, informes, recalcular rankings | Fraude, tendencias, dashboards en vivo |\n\nUna combinación clásica: el stream da cada minuto un top-K aproximado para la pantalla, y un batch nocturno recalcula el exacto con todos los datos y corrige. A esa arquitectura de dos caminos se la llama **Lambda**; su alternativa, **Kappa**, usa solo el stream y, para recalcular, relee el log desde el principio.",
       "callout": {
-        "type": "insight",
-        "text": "Batch y stream no compiten: muchos sistemas usan los dos. El stream da el dato en segundos y un batch nocturno lo recalcula exacto con todos los datos."
+        "type": "tip",
+        "text": "Si los requisitos lo permiten («se actualiza cada hora»), empieza por el batch: es más simple. Pasa al stream cuando el negocio necesite el dato en segundos, y dilo así."
       },
       "metrics": {
         "lag": "segundos",
@@ -1249,19 +1416,6 @@
           "at": [
             2,
             2.45
-          ]
-        }
-      ],
-      "zones": [
-        {
-          "label": "Topic «clics»",
-          "from": [
-            0,
-            1.2
-          ],
-          "to": [
-            2,
-            1.2
           ]
         }
       ],
@@ -1357,6 +1511,19 @@
           ],
           "kind": "event",
           "rate": 0.6
+        }
+      ],
+      "zones": [
+        {
+          "label": "Topic «clics»",
+          "from": [
+            0,
+            1.2
+          ],
+          "to": [
+            2,
+            1.2
+          ]
         }
       ]
     }

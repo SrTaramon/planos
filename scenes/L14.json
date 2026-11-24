@@ -1,6 +1,7 @@
 {
   "id": "L14",
   "title": "El tiempo real, en acción",
+  "lesson": true,
   "metrics": [
     {
       "id": "req",
@@ -27,39 +28,15 @@
   "legend": {
     "ping": "respuesta vacía"
   },
-  "goals": [
-    {
-      "text": "Por qué el polling gasta tantas peticiones",
-      "step": 1
-    },
-    {
-      "text": "Qué cambia con long polling, SSE y WebSocket",
-      "step": 4
-    },
-    {
-      "text": "Cómo llega un mensaje de un gateway a otro",
-      "step": 5
-    },
-    {
-      "text": "Qué hacer con la app cerrada o un gateway caído",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Polling",
       "chapter": "problem",
       "title": "Un millón de apps preguntando cada 5 s",
-      "body": "Con HTTP normal el servidor no puede hablar primero, así que cada app pregunta cada 5 s si hay algo nuevo: **polling**. Con 1 millón de usuarios son **200.000 peticiones por segundo**, y solo el 1 % trae algo. Las demás vuelven vacías, y aun así una novedad tarda de media 2,5 s en verse.",
+      "body": "Con HTTP normal, el cliente pregunta y el servidor responde: el servidor no puede hablar primero. Lo más simple para enterarte de algo nuevo es preguntar cada poco: **polling**. Si has usado `refetchInterval` en React Query, ya lo haces.\n\nFunciona con todo, pero tiene dos costes:\n\n- **Retraso**: preguntando cada 5 s, una novedad tarda de media 2,5 s en verse.\n- **Peticiones inútiles**: con 1 millón de usuarios preguntando cada 5 s son **200.000 peticiones por segundo**. Si solo el 1 % trae algo nuevo, el 99 % es trabajo tirado.",
       "callout": {
         "type": "warn",
         "text": "Bajar el intervalo a 1 s deja el retraso en 0,5 s, pero multiplica las peticiones por 5: un millón por segundo."
-      },
-      "metrics": {
-        "req": 200000,
-        "empty": 99,
-        "delay": 2.5,
-        "conn": 0
       },
       "panel": {
         "title": "La cuenta",
@@ -79,6 +56,12 @@
             "text": "Retraso medio: la mitad del intervalo, 2,5 s"
           }
         ]
+      },
+      "metrics": {
+        "req": 200000,
+        "empty": 99,
+        "delay": 2.5,
+        "conn": 0
       },
       "nodes": [
         {
@@ -157,13 +140,12 @@
       "short": "Long polling",
       "chapter": "technique",
       "title": "Long polling: el servidor espera a tener algo",
-      "body": "Ahora el servidor no responde «nada» al momento: retiene la petición hasta que hay algo nuevo o pasan 30 s. Entonces responde y la app vuelve a preguntar enseguida. La novedad llega casi al instante y casi no hay respuestas vacías.",
+      "body": "Con **long polling**, el servidor no responde «nada» al momento: se queda con la petición abierta hasta que hay algo nuevo o pasa un tiempo (por ejemplo, 30 s), y entonces responde. La app vuelve a preguntar enseguida.\n\nLa novedad llega casi al instante y casi no hay respuestas vacías.",
       "callout": {
         "type": "warn",
         "text": "A cambio, cada app que espera ocupa una conexión, cada mensaje cuesta una petición nueva y algunos proxies cortan las peticiones largas."
       },
       "changes": [
-        "~ La API retiene cada petición hasta 30 s",
         "~ Respuestas vacías: 99 % → casi ninguna",
         "~ Retraso: 2,5 s → casi nada",
         "+ Un millón de conexiones esperando"
@@ -234,10 +216,11 @@
       "short": "SSE",
       "chapter": "solution",
       "title": "SSE: una respuesta que no se cierra",
-      "body": "Con **Server-Sent Events**, la app hace una sola petición y el servidor no la cierra: va escribiendo cada evento en la misma respuesta según ocurre. En el navegador lo lleva `EventSource`, que reconecta solo y manda `Last-Event-ID` para seguir donde lo dejó.",
+      "body": "Con **Server-Sent Events** (SSE), la app hace una petición HTTP y el servidor no la cierra: va escribiendo eventos en la misma respuesta según ocurren. En el navegador lo gestiona `EventSource`, que reconecta solo si se corta y envía el id del último evento recibido (`Last-Event-ID`) para seguir donde lo dejó.\n\nVa en un solo sentido, del servidor al cliente, y solo texto. Encaja con marcadores en directo, notificaciones, el progreso de una tarea o la respuesta de un modelo de lenguaje palabra a palabra.",
+      "more": "En el navegador:\n\n```ts\nconst events = new EventSource('/v1/scores/stream');\nevents.onmessage = (e) => showScore(JSON.parse(e.data));\n```",
       "callout": {
         "type": "insight",
-        "text": "Va en un solo sentido, del servidor al cliente, y es HTTP normal: pasa por los mismos proxies y load balancers. Encaja con marcadores en directo, notificaciones o el progreso de una tarea."
+        "text": "Es HTTP normal: pasa por los mismos proxies y load balancers que el resto de tu API."
       },
       "changes": [
         "+ Una respuesta abierta por usuario",
@@ -308,10 +291,10 @@
       "short": "WebSocket",
       "chapter": "solution",
       "title": "WebSocket: un chat habla en los dos sentidos",
-      "body": "En un chat, la app también habla mucho. Un **WebSocket** empieza como una petición HTTP con `Upgrade: websocket` y se queda abierto en los dos sentidos. Ana escribe por el suyo; el servidor guarda el mensaje y se lo empuja a Bruno por el de Bruno, sin que Bruno pregunte.",
+      "body": "En un chat, la app también habla mucho. Un **WebSocket** empieza como una petición HTTP con la cabecera `Upgrade: websocket` y, si el servidor acepta, se convierte en una conexión persistente en **los dos sentidos**. Ana escribe por el suyo; el servidor guarda el mensaje y se lo empuja a Bruno por el de Bruno, sin que Bruno pregunte. Es lo que pide un chat, un juego multijugador o un editor colaborativo.\n\nEl precio, con SSE y con WebSocket: son conexiones con estado. Cada servidor mantiene miles abiertas, y si se cae, se cortan todas. Eso cambia cómo se escala.",
       "callout": {
         "type": "tip",
-        "text": "Si la información solo baja del servidor, propón SSE antes que WebSocket. Guarda el WebSocket para cuando el cliente también manda mucho."
+        "text": "En una entrevista, si la información solo baja del servidor, propón SSE antes que WebSocket y di por qué: es HTTP normal y reconecta solo. Guarda el WebSocket para cuando el cliente también manda mucho."
       },
       "changes": [
         "+ Ana y Bruno, cada uno con su WebSocket",
@@ -424,7 +407,8 @@
       "short": "Gateways",
       "chapter": "solution",
       "title": "Ana está en el gateway 3 y Bruno en el 17",
-      "body": "Se separan dos papeles. Los **gateways** solo mantienen los sockets abiertos; la API, stateless, guarda el mensaje y decide a quién va. Cada gateway se suscribe en el **pub/sub** al canal de cada usuario que tiene conectado. El mensaje de Ana se publica en `user:bruno` y solo el gateway 17 lo recibe y lo escribe en el socket de Bruno.",
+      "body": "Supón 2 millones de usuarios conectados a la vez y servidores que aguantan 50.000 conexiones cada uno. Cada usuario cae en uno al conectarse: Ana en el 3 y Bruno en el 17. ¿Cómo sabe el 3 dónde está Bruno?\n\nSe separan dos papeles. Los **gateways** (servidores de conexiones) solo mantienen los sockets abiertos; los servicios de siempre, stateless, guardan el mensaje y deciden a quién va. Entre ellos, una **capa de pub/sub** (la de la lección de colas; Redis pub/sub, por ejemplo): cada gateway se suscribe al canal de cada usuario que tiene conectado. El mensaje de Ana se publica en `user:bruno` y solo el gateway 17, suscrito, lo recibe y lo escribe en el socket de Bruno.",
+      "more": "**El recorrido de un mensaje:**\n\n1. Ana manda el mensaje por su WebSocket al gateway 3 (un load balancer repartió las conexiones al abrirlas).\n2. El gateway 3 se lo pasa al servicio de mensajes, que lo guarda en la base de datos.\n3. El servicio publica el mensaje en el canal `user:bruno`.\n4. El gateway 17, suscrito porque Bruno está conectado allí, lo recibe y lo escribe en el socket de Bruno.\n5. Si Bruno no está conectado, se le manda una push notification.\n\n**Otra opción** al pub/sub: un registro en cache (`bruno → gateway 17`) y reenviar directo.\n\n**Sticky connections**: un WebSocket se queda en el gateway donde entró. Con long polling, cada petición puede caer en otro servidor; si este guarda algo del cliente, hacen falta las sticky sessions de la lección de load balancers.\n\n**En una entrevista**, la pregunta de oro en un chat es justo esta: «Ana está en un servidor y Bruno en otro, ¿cómo le llega el mensaje?». Ten preparada la capa de pub/sub, y di que el mensaje se guarda antes en la base de datos.",
       "callout": {
         "type": "insight",
         "text": "El mensaje se guarda antes en la base de datos: el pub/sub solo lo entrega en vivo, no lo guarda."
@@ -434,12 +418,6 @@
         "+ Pub/sub, con un canal por usuario",
         "~ La API ya no guarda sockets: es stateless"
       ],
-      "metrics": {
-        "req": 0,
-        "empty": 0,
-        "delay": "casi 0",
-        "conn": 2000000
-      },
       "panel": {
         "title": "Cuántos gateways",
         "rows": [
@@ -450,6 +428,12 @@
             "text": "Sin pasar del 70 % de cada uno: 58"
           }
         ]
+      },
+      "metrics": {
+        "req": 0,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 2000000
       },
       "nodes": [
         {
@@ -574,13 +558,206 @@
       ]
     },
     {
+      "short": "Presencia",
+      "chapter": "technique",
+      "title": "¿Bruno está en línea? Heartbeats con TTL",
+      "body": "La **presence** (presencia) es el «en línea» de un chat, y no basta con mirar si hay conexión: una conexión puede morir sin avisar. Bruno entra en un túnel y al gateway 17 no le llega ningún cierre.\n\nPor eso se usan **heartbeats**: la app manda un ping cada, por ejemplo, 30 s, y el servidor guarda `presence:ana` en una cache con un TTL de 60 s. Si dejan de llegar pings, la clave caduca sola y el usuario pasa a desconectado. Es lo que le pasa a Bruno.\n\nCuesta: 2 millones de usuarios con un ping cada 30 s son unas **67.000 escrituras por segundo**.",
+      "callout": {
+        "type": "tip",
+        "text": "Avisar a todos tus contactos de cada cambio es un fan-out como el de la lección de feeds. Por eso conviene consultar solo la presencia de quien está en pantalla."
+      },
+      "changes": [
+        "+ Presencia: una clave con TTL de 60 s",
+        "~ Bruno deja de mandar pings",
+        "− presence:bruno caduca"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "2.000.000 usuarios / 30 s ≈ 67.000 escrituras/s",
+            "tone": "bad"
+          },
+          {
+            "text": "Ping cada 30 s, TTL de 60 s"
+          },
+          {
+            "text": "Sin pings durante 60 s: desconectado"
+          }
+        ]
+      },
+      "metrics": {
+        "req": 67000,
+        "empty": 0,
+        "delay": "casi 0",
+        "conn": 2000000
+      },
+      "nodes": [
+        {
+          "id": "ana",
+          "kind": "client",
+          "label": "Ana",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "bruno",
+          "kind": "client",
+          "label": "Bruno",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "en un túnel",
+          "state": "dim"
+        },
+        {
+          "id": "gw3",
+          "kind": "service",
+          "label": "Gateway 3",
+          "at": [
+            0,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "gw17",
+          "kind": "service",
+          "label": "Gateway 17",
+          "at": [
+            2,
+            1.25
+          ],
+          "load": 0.5
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "ps",
+          "kind": "queue",
+          "label": "Pub/sub",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pres",
+          "kind": "cache",
+          "label": "Presencia",
+          "at": [
+            0,
+            2.5
+          ],
+          "items": [
+            "ana"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "ana-gw3",
+          "from": "ana",
+          "to": "gw3"
+        },
+        {
+          "id": "gw3-api",
+          "from": "gw3",
+          "to": "api"
+        },
+        {
+          "id": "api-db",
+          "from": "api",
+          "to": "db"
+        },
+        {
+          "id": "api-ps",
+          "from": "api",
+          "to": "ps",
+          "state": "dim"
+        },
+        {
+          "id": "ps-gw17",
+          "from": "ps",
+          "to": "gw17",
+          "state": "dim"
+        },
+        {
+          "id": "gw17-bruno",
+          "from": "gw17",
+          "to": "bruno",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "gw3-pres",
+          "from": "gw3",
+          "to": "pres",
+          "label": "ping cada 30 s"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ana-gw3"
+          ],
+          "kind": "ping",
+          "rate": 1
+        },
+        {
+          "via": [
+            "gw3-pres"
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "gw3-api"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "api-db"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
       "short": "App cerrada",
       "chapter": "case",
       "title": "Bruno cierra la app: push notification",
-      "body": "Con la app en segundo plano, el móvil corta su WebSocket para ahorrar batería y el gateway 17 ya no tiene a Bruno. La API guarda el mensaje igual y manda una **push notification** a APNs (iPhone) o FCM (Android) con el **device token** que la app registró. Al abrir la app, esta pide el mensaje a la API.",
+      "body": "Bruno cierra la app. Una app móvil en segundo plano no puede mantener un WebSocket: el sistema operativo lo corta para ahorrar batería. Para avisar con la app cerrada se pasa por el servicio de **push notifications** del fabricante, como APNs en iPhone o FCM (Firebase Cloud Messaging) en Android:\n\n1. La app pide al sistema un **device token**: la dirección de ese móvil para esa app.\n2. Se lo manda a tu backend, que lo guarda junto al usuario.\n3. Cuando hay algo que contar, tu backend envía la notificación con ese token al fabricante, que la entrega.\n\nLa API guarda el mensaje igual. Al abrir la app, esta se lo pide.",
+      "more": "**Tres avisos:**\n\n- Es **best-effort**: puede llegar tarde, agruparse con otras o no llegar. No sirve para entregar datos que no pueden perderse.\n- El mensaje es pequeño, de pocos KB. Úsalo para avisar («tienes un mensaje nuevo») y, al abrir la app, pide los datos a tu API.\n- Los tokens caducan y cambian. Si el servicio responde que uno ya no vale, bórralo.",
       "callout": {
-        "type": "warn",
-        "text": "La push es best-effort: puede llegar tarde, agruparse o no llegar, y solo caben unos pocos KB. Sirve para avisar, no para entregar datos."
+        "type": "tip",
+        "text": "Manda las push desde una cola, como en la lección de colas: un pico de miles de avisos no frena la API, y los fallos transitorios del proveedor se reintentan solos."
       },
       "changes": [
         "− El WebSocket de Bruno",
@@ -917,11 +1094,12 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- **Polling**: simple, pero con retraso y muchas respuestas vacías.\n- **Long polling**: responde en cuanto hay algo, a cambio de retener conexiones.\n- **SSE** baja eventos por una respuesta abierta; el **WebSocket** va en los dos sentidos.\n- Los gateways guardan los sockets y el pub/sub lleva cada mensaje al gateway de su destinatario.\n- App cerrada: push. Gateway caído: reconexión con backoff y jitter.",
+      "title": "Lo que te llevas",
+      "body": "- Polling es lo más simple pero tiene retraso y muchas peticiones vacías; long polling responde en cuanto hay algo, a cambio de retener conexiones.\n- SSE: el servidor envía eventos por una respuesta HTTP abierta, en un solo sentido. WebSocket: conexión persistente en los dos sentidos.\n- Con la app cerrada, el móvil se avisa con push notifications del fabricante (APNs, FCM): best-effort, pequeñas, para despertar a la app.\n- Los gateways mantienen las conexiones; una capa de pub/sub lleva cada mensaje al gateway donde está conectado su destinatario.\n- La presencia se basa en heartbeats con TTL: si dejan de llegar pings, el usuario pasa a desconectado.",
+      "more": "**Cuál elegir:**\n\n| Técnica | Dirección | Retraso | Coste | Úsala para |\n|---|---|---|---|---|\n| Polling | El cliente pregunta | Hasta un intervalo | Muchas peticiones vacías | Datos que cambian poco |\n| Long polling | El cliente pregunta; el servidor espera | Casi nada | Una conexión y una petición por mensaje | Si no hay SSE ni WebSockets |\n| SSE | Servidor → cliente | Casi nada | Una conexión abierta por cliente | Notificaciones, marcadores, progreso |\n| WebSocket | En los dos sentidos | Casi nada | Una conexión con estado por cliente | Chat, juegos, edición colaborativa |\n| Push móvil | Servidor → móvil (vía APNs o FCM) | Segundos, sin garantía | Casi ninguno | Avisar con la app cerrada |",
       "callout": {
         "type": "insight",
-        "text": "El polling no es un error: para datos que cambian cada minuto es lo más simple. Lo que sobra es un intervalo corto para algo que casi nunca cambia."
+        "text": "El polling no es un error: para datos que cambian cada minuto (el tiempo, un panel de ventas) es lo más sencillo y robusto. Lo que sobra es un intervalo corto para algo que casi nunca cambia."
       },
       "metrics": {
         "req": 0,

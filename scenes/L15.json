@@ -1,6 +1,7 @@
 {
   "id": "L15",
   "title": "MapReduce, en acción",
+  "lesson": true,
   "metrics": [
     {
       "id": "read",
@@ -26,37 +27,16 @@
     "event": "par (palabra, n)",
     "heavy": "trozo de texto"
   },
-  "goals": [
-    {
-      "text": "Cómo se reparte el trabajo: map, shuffle y reduce",
-      "step": 4
-    },
-    {
-      "text": "Por qué el combiner adelgaza el shuffle",
-      "step": 5
-    },
-    {
-      "text": "Qué pasa si una máquina muere a mitad",
-      "step": 6
-    },
-    {
-      "text": "Por qué un job tiene que poder relanzarse",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Una máquina",
       "chapter": "problem",
       "title": "Contar palabras en 10 TB con una máquina",
-      "body": "Quieres saber cuántas veces sale cada palabra en 10 TB de texto. Nadie espera el resultado delante de la pantalla: importa el **throughput**, cuántos datos procesas por hora. Pero una sola máquina, leyendo a 500 MB/s, tarda unas **5,5 horas** solo en leerlo.",
+      "body": "Hasta ahora casi todo era **online**: llega una petición y respondes en milisegundos. Pero hay trabajos que no son así: la factura de cada cliente a fin de mes, el informe de ventas de ayer, las recomendaciones de mañana.\n\nEl **batch processing** (procesar por lotes) toma un conjunto de datos **cerrado** (los pedidos de ayer, los logs de la semana), lo procesa entero y deja un resultado. Nadie espera delante de la pantalla: importa el **throughput**, cuántos datos procesas por hora, no la latencia.\n\nAquí, contar cuántas veces sale cada palabra en 10 TB de texto. Una sola máquina, leyendo a 500 MB/s, tarda unas **5,5 horas** solo en leerlo.",
+      "more": "| | Online | Batch |\n|---|---|---|\n| Entrada | Una petición | Un conjunto cerrado de datos |\n| Quién espera | Un usuario, ahora | Nadie: el resultado se usa después |\n| Lo que importa | Latencia | Throughput |\n| Cuándo corre | Siempre | Cada noche, cada hora o a demanda |\n\n**Un batch conviene** cuando el resultado puede esperar horas, cuando hay que mirar **todos** los datos a la vez (ordenar, deduplicar, recalcular) o cuando quieres poder rehacerlo desde cero si algo salió mal.",
       "callout": {
-        "type": "insight",
-        "text": "Es un **batch**: un conjunto cerrado de datos que se procesa entero, cuando el resultado puede esperar."
-      },
-      "metrics": {
-        "read": 330,
-        "machines": 1
+        "type": "tip",
+        "text": "Si te dicen «el informe se puede actualizar cada noche», es una invitación a un batch: mucho más simple que procesar cada evento al momento. Lo contrario lo verás en la lección de streaming."
       },
       "panel": {
         "title": "La cuenta",
@@ -66,6 +46,10 @@
             "tone": "bad"
           }
         ]
+      },
+      "metrics": {
+        "read": 330,
+        "machines": 1
       },
       "nodes": [
         {
@@ -133,17 +117,12 @@
       "short": "Map",
       "chapter": "technique",
       "title": "Map: cada máquina lee su trozo",
-      "body": "Repartes el texto entre 100 máquinas y cada una lee solo su trozo: unos **3 minutos**. Cada **mapper** corre donde su trozo ya está en disco (el código va a los datos, no los terabytes por la red) y emite un par `(palabra, 1)` por cada palabra. En el plano, dos de ellos con dos documentos de ejemplo.",
+      "body": "**MapReduce** es un modelo para repartir el trabajo entre muchas máquinas, en tres fases: map, shuffle y reduce. Repartes el texto entre 100 máquinas y cada una lee solo su trozo: unos **3 minutos**.\n\n**Map**: cada mapper lee su trozo de la entrada y, por cada palabra, emite un par `(palabra, 1)`. Corre en la máquina que ya tiene su trozo en disco: se lleva el código a los datos, en vez de mover terabytes por la red.\n\nEn el plano, dos mappers con dos documentos de ejemplo.",
       "changes": [
         "+ 100 mappers (aquí, dos)",
         "~ Leer 10 TB: 5,5 h → 3 min",
-        "+ Un par (palabra, 1) por palabra",
         "− La máquina sola"
       ],
-      "metrics": {
-        "read": 3,
-        "machines": 100
-      },
       "panel": {
         "title": "Lo que emite cada mapper",
         "rows": [
@@ -160,6 +139,10 @@
             "text": "→ (el,1) (perro,1) (come,1) (el,1) (pan,1)"
           }
         ]
+      },
+      "metrics": {
+        "read": 3,
+        "machines": 100
       },
       "predict": {
         "q": "Para sumar, todas las apariciones de «el» tienen que acabar en el mismo reducer, salgan del mapper que salgan. ¿Cómo decide cada mapper adónde manda cada par?",
@@ -246,16 +229,11 @@
       "short": "Shuffle",
       "chapter": "technique",
       "title": "Shuffle: cada palabra, a un solo reducer",
-      "body": "Los pares viajan por la red agrupados por clave: cada uno va al reducer `hash(palabra) mod 2`. Así todas las apariciones de «el» acaban en el mismo sitio, vengan del mapper que vengan. Es la fase cara: la que cruza la red.",
+      "body": "**Shuffle**: los pares se agrupan por clave. Cada par viaja por la red al reducer número `hash(palabra) mod R` (aquí R = 2). Así todas las apariciones de «el» acaban en el mismo sitio, vengan del mapper que vengan.\n\nEs la fase cara: la que cruza la red.",
       "changes": [
         "+ Reducer A y reducer B",
         "~ Cada par cruza la red hasta su reducer"
       ],
-      "metrics": {
-        "read": 3,
-        "machines": 100,
-        "pairs": 8
-      },
       "panel": {
         "title": "Supón que el hash reparte así",
         "rows": [
@@ -270,6 +248,11 @@
             "tone": "bad"
           }
         ]
+      },
+      "metrics": {
+        "read": 3,
+        "machines": 100,
+        "pairs": 8
       },
       "nodes": [
         {
@@ -404,10 +387,11 @@
       "short": "Reduce",
       "chapter": "solution",
       "title": "Reduce: sumar los unos de cada palabra",
-      "body": "Cada reducer suma los unos de las palabras que le han tocado y escribe su parte del resultado: «el» sale 3 veces, «come» 2 y las demás 1. Tú solo escribes `map` y `reduce`; el sistema reparte, mueve los datos y reintenta.",
+      "body": "**Reduce**: cada reducer suma los unos de cada palabra que le ha tocado y escribe su parte del resultado: «el» sale 3 veces, «come» 2 y las demás 1.\n\nTú escribes `map` y `reduce`; el sistema reparte, mueve los datos y reintenta.",
+      "more": "Las tres fases, con los dos documentos:\n\n```\n\"el gato come\"          map → (el,1) (gato,1) (come,1)\n\"el perro come el pan\"  map → (el,1) (perro,1) (come,1) (el,1) (pan,1)\n\nshuffle → el:[1,1,1]  come:[1,1]  gato:[1]  perro:[1]  pan:[1]\nreduce  → el:3  come:2  gato:1  perro:1  pan:1\n```",
       "callout": {
         "type": "tip",
-        "text": "El mismo patrón, map → shuffle por clave → reduce, sirve para contar, agrupar o unir dos conjuntos de datos por una clave."
+        "text": "Hoy casi nadie programa MapReduce a mano (se usan motores como Spark), pero el patrón map → shuffle por clave → reduce sale en muchas entrevistas: contar, agrupar, unir dos conjuntos de datos por una clave."
       },
       "changes": [
         "~ Reducer A: el:3, gato:1, pan:1",
@@ -581,7 +565,7 @@
       "short": "Combiner",
       "chapter": "technique",
       "title": "Combiner: sumar antes de enviar",
-      "body": "Cada mapper suma lo suyo antes de mandarlo. Mapper 2 tenía «el» dos veces: en vez de `(el,1)` y `(el,1)` manda `(el,2)`. Aquí se ahorra un par de 8; en un trozo real, donde «el» sale miles de veces, el shuffle adelgaza muchísimo.",
+      "body": "Un **combiner** suma en cada mapper antes de enviar. Mapper 2 tenía «el» dos veces: en vez de `(el,1)` y `(el,1)` manda `(el,2)`.\n\nAquí se ahorra un par de 8. En un trozo real, donde «el» sale miles de veces, el shuffle adelgaza muchísimo.",
       "callout": {
         "type": "insight",
         "text": "El shuffle es lo más caro porque cruza la red: cada par que no viaja es trabajo que te ahorras."
@@ -754,7 +738,7 @@
       "short": "Cae un mapper",
       "chapter": "case",
       "title": "Mapper 2 muere a mitad de su trozo",
-      "body": "La máquina de Mapper 2 se cae a medio leer. No pasa nada grave: la entrada no cambia y `map` es determinista, así que otra máquina, Mapper 3, repite su tarea desde el principio y emite los mismos pares. El resultado sale igual.",
+      "body": "La máquina de Mapper 2 se cae a medio leer. No pasa nada grave: reintentar es fácil, porque la entrada no cambia y cada tarea es determinista. Otra máquina, Mapper 3, repite su tarea desde el principio y emite los mismos pares. El resultado sale igual.",
       "callout": {
         "type": "tip",
         "text": "Por eso el sistema reintenta solo: una tarea que se repite con la misma entrada siempre da lo mismo."
@@ -967,10 +951,11 @@
       "short": "Relanzar",
       "chapter": "case",
       "title": "El job muere escribiendo y lo relanzas",
-      "body": "A las 3 de la madrugada el job muere justo cuando el reducer A ya ha escrito su parte. El **orquestador** lo relanza entero. Pero el job **añade** filas al resultado en vez de reescribirlas, así que la parte de A queda dos veces: «el» suma 6.",
+      "body": "A las 3 de la madrugada el job muere justo cuando el reducer A ya ha escrito su parte, y el **orquestador** lo relanza entero. Pero el job **añade** filas en vez de reescribirlas: la parte de A queda dos veces y «el» suma 6.\n\nUn batch fallará (una máquina que muere, un fichero que llega tarde, un bug), así que tiene que ser **idempotent**: el mismo resultado lo lances una vez o cinco, como los `PUT` de la lección de APIs. Tres reglas:\n\n- **Sobrescribe, no añadas**: cada ejecución reescribe entera la partición de su día.\n- **Escribe aparte y cambia al final**: la salida va a una ruta temporal y, completa, se renombra o se cambia el puntero. Nadie lee un resultado a medias.\n- **Entrada fija**: el job de un día procesa los datos de ese día, no «lo último que haya».",
+      "more": "Lo que **no** hay que hacer:\n\n```sql\n-- MAL: si el job muere a mitad y lo relanzas, suma dos veces\nINSERT INTO ventas_diarias (dia, tienda, total)\nSELECT dia, tienda, sum(importe) FROM pedidos\nWHERE dia = '2026-11-01' GROUP BY dia, tienda;\n```\n\nPara sobrescribir, un `DELETE` del día y el `INSERT` en la misma transacción, o un `INSERT … ON CONFLICT DO UPDATE` por clave:\n\n```sql\nBEGIN;\nDELETE FROM ventas_diarias WHERE dia = '2026-11-01';\nINSERT INTO ventas_diarias (dia, tienda, total)\nSELECT dia, tienda, sum(importe) FROM pedidos\nWHERE dia = '2026-11-01' GROUP BY dia, tienda;\nCOMMIT;\n```\n\nCon la entrada fija, relanzar el job de un día una semana después da lo mismo.",
       "callout": {
         "type": "tip",
-        "text": "Haz el job idempotent: que cada ejecución sobrescriba entera la partición de su día. Relanzarlo una vez o cinco deja lo mismo, y tras arreglar un bug basta con relanzar los días afectados (backfill)."
+        "text": "Con jobs así, el remedio a casi todo es el mismo: arreglas el bug y relanzas los días afectados. Eso se llama **backfill**."
       },
       "changes": [
         "+ Orquestador que relanza el job",
@@ -1172,14 +1157,410 @@
       ]
     },
     {
-      "short": "Repaso",
-      "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Un batch procesa un conjunto cerrado de datos; importa el throughput.\n- **Map** emite pares, el **shuffle** los agrupa por `hash(clave)` y **reduce** los combina.\n- El combiner suma antes de enviar y adelgaza el shuffle, la fase cara.\n- Si una máquina muere, otra repite su tarea y sale lo mismo.\n- Si el job sobrescribe su partición, se puede relanzar sin miedo.",
+      "short": "Pipeline",
+      "chapter": "technique",
+      "title": "Un pipeline de jobs acaba en el data warehouse",
+      "body": "Con el job ya idempotent, relanzarlo deja «el» en 3. Y un job casi nunca va solo. Un **pipeline** encadena varios: el primero limpia los logs de ayer, el segundo los une con los datos de los usuarios y el tercero calcula los totales. La salida de uno es la entrada del siguiente, y un orquestador (Airflow, por ejemplo) los lanza en orden y avisa si alguno falla. Al patrón clásico se le llama **ETL**: extraer, transformar y cargar.\n\n¿Cargar dónde? En un **data warehouse**: una base de datos pensada para consultas analíticas sobre años de historia («ventas por país y mes»), que guarda los datos por columnas para leer solo las que pide cada consulta. BigQuery, Redshift o Snowflake son ejemplos.",
       "callout": {
         "type": "insight",
-        "text": "Hoy casi nadie programa MapReduce a mano: se usan motores como Spark. Pero el patrón es el mismo."
+        "text": "Tu Postgres sigue sirviendo a la app y el warehouse a quien analiza, sin que sus consultas pesadas frenen a los usuarios."
       },
+      "changes": [
+        "~ Sobrescribe: «el» vuelve a 3",
+        "+ El resultado se carga en el warehouse"
+      ],
+      "metrics": {
+        "read": 3,
+        "machines": 100,
+        "pairs": 7,
+        "el": 3
+      },
+      "nodes": [
+        {
+          "id": "in",
+          "kind": "storage",
+          "label": "Texto, 10 TB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "orch",
+          "kind": "clock",
+          "label": "Orquestador",
+          "at": [
+            1,
+            1
+          ]
+        },
+        {
+          "id": "m1",
+          "kind": "worker",
+          "label": "Mapper 1",
+          "at": [
+            0,
+            1.15
+          ],
+          "badge": "3 pares"
+        },
+        {
+          "id": "m2",
+          "kind": "worker",
+          "label": "Mapper 2",
+          "at": [
+            2,
+            1.15
+          ],
+          "badge": "4 pares"
+        },
+        {
+          "id": "rA",
+          "kind": "worker",
+          "label": "Reducer A",
+          "at": [
+            0,
+            2.4
+          ],
+          "items": [
+            "el:3",
+            "gato:1",
+            "pan:1"
+          ]
+        },
+        {
+          "id": "rB",
+          "kind": "worker",
+          "label": "Reducer B",
+          "at": [
+            2,
+            2.4
+          ],
+          "items": [
+            "come:2",
+            "perro:1"
+          ]
+        },
+        {
+          "id": "out",
+          "kind": "storage",
+          "label": "Resultado",
+          "at": [
+            1,
+            3.3
+          ],
+          "mark": "good",
+          "items": [
+            "el:3",
+            "come:2",
+            "…"
+          ]
+        },
+        {
+          "id": "wh",
+          "kind": "db",
+          "label": "Warehouse",
+          "at": [
+            2,
+            3.3
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "orch-m1",
+          "from": "orch",
+          "to": "m1"
+        },
+        {
+          "id": "orch-m2",
+          "from": "orch",
+          "to": "m2"
+        },
+        {
+          "id": "in-m1",
+          "from": "in",
+          "to": "m1"
+        },
+        {
+          "id": "in-m2",
+          "from": "in",
+          "to": "m2"
+        },
+        {
+          "id": "m1-rA",
+          "from": "m1",
+          "to": "rA"
+        },
+        {
+          "id": "m1-rB",
+          "from": "m1",
+          "to": "rB"
+        },
+        {
+          "id": "m2-rA",
+          "from": "m2",
+          "to": "rA"
+        },
+        {
+          "id": "m2-rB",
+          "from": "m2",
+          "to": "rB"
+        },
+        {
+          "id": "rA-out",
+          "from": "rA",
+          "to": "out",
+          "bend": -0.6
+        },
+        {
+          "id": "rB-out",
+          "from": "rB",
+          "to": "out",
+          "bend": 0.6
+        },
+        {
+          "id": "out-wh",
+          "from": "out",
+          "to": "wh",
+          "label": "carga"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "orch-m1",
+              "orch-m2"
+            ]
+          ],
+          "kind": "req",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "in-m1"
+          ],
+          "kind": "heavy",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "in-m2"
+          ],
+          "kind": "heavy",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "m1-rA",
+              "m1-rA",
+              "m1-rB"
+            ]
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "m2-rA",
+              "m2-rA",
+              "m2-rB",
+              "m2-rB"
+            ]
+          ],
+          "kind": "event",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "rA-out"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "rB-out"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "out-wh"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Ordenar 1 TB",
+      "chapter": "technique",
+      "title": "Ordenar 1 TB con 10 GB de RAM",
+      "body": "Otro batch clásico: ordenar 1 TB con una máquina de 10 GB de RAM. No cabe en un `.sort()`. La solución es el **external merge sort** (ordenación externa por mezcla), en dos pasadas:\n\n1. **Trozos ordenados**: lees 10 GB, los ordenas en memoria y los escribes a disco como un trozo ordenado, un **run**. Repites: 1 TB / 10 GB = **100 runs**.\n2. **Mezcla**: abres los 100 runs a la vez, con un buffer de ~100 MB para cada uno (10 GB / 100). Escribes el menor de los primeros elementos de cada run y avanzas en ese run. Para encontrar el menor sin mirar los 100 cada vez, usas un **min-heap** con un elemento por run: cada paso cuesta unas log₂ 100 ≈ 7 comparaciones.",
+      "more": "La mezcla, en Python:\n\n```python\nimport heapq\n\ndef mezclar(runs):              # cada run: un iterador ya ordenado\n    heap = []\n    for i, run in enumerate(runs):\n        primero = next(run, None)\n        if primero is not None:\n            heapq.heappush(heap, (primero, i))\n    while heap:\n        valor, i = heapq.heappop(heap)\n        yield valor\n        siguiente = next(runs[i], None)\n        if siguiente is not None:\n            heapq.heappush(heap, (siguiente, i))\n```\n\n(La biblioteca estándar ya trae `heapq.merge`, que hace lo mismo.)\n\n**¿Cuánto tarda?** Cada pasada lee y escribe el TB entero: 4 TB de disco en total. Con un disco de 500 MB/s, 4 TB / 500 MB/s = 8.000 s, **unas 2,2 horas**. Las comparaciones son lo de menos: lo que cuesta es el disco, así que el objetivo es hacer **pocas pasadas**.\n\n**¿Cuántos runs caben en una mezcla?** La memoria entre el tamaño del buffer: con buffers de 10 MB, unos 1.000 runs, es decir, hasta ~10 TB en dos pasadas. Por encima, una pasada más de mezcla o repartir el trabajo entre máquinas (lo verás en el problema de ordenar un conjunto de datos enorme).",
+      "callout": {
+        "type": "warn",
+        "text": "Con datos que no caben en memoria, las cuentas se hacen en pasadas por el disco, no en operaciones de CPU: cada pasada de más es leer y escribir todo otra vez."
+      },
+      "changes": [
+        "+ 100 runs de 10 GB, ya ordenados",
+        "+ Un min-heap mezcla los 100",
+        "~ 2 pasadas: unas 2,2 h de disco"
+      ],
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "1 TB / 10 GB de RAM = 100 runs"
+          },
+          {
+            "text": "Mezcla: 100 buffers de ~100 MB y un min-heap"
+          },
+          {
+            "text": "Cada paso: log₂ 100 ≈ 7 comparaciones",
+            "tone": "good"
+          },
+          {
+            "text": "2 pasadas = 4 TB de disco a 500 MB/s ≈ 2,2 h",
+            "tone": "bad"
+          }
+        ]
+      },
+      "metrics": {
+        "read": null,
+        "machines": 1,
+        "pairs": null,
+        "el": null
+      },
+      "nodes": [
+        {
+          "id": "in",
+          "kind": "storage",
+          "label": "Datos, 1 TB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "solo",
+          "kind": "worker",
+          "label": "Una máquina",
+          "at": [
+            1,
+            1
+          ],
+          "badge": "10 GB RAM",
+          "mark": "good"
+        },
+        {
+          "id": "r1",
+          "kind": "storage",
+          "label": "Run 1",
+          "at": [
+            0,
+            2.4
+          ]
+        },
+        {
+          "id": "r100",
+          "kind": "storage",
+          "label": "Run 100",
+          "at": [
+            2,
+            2.4
+          ]
+        },
+        {
+          "id": "out",
+          "kind": "storage",
+          "label": "Ordenado",
+          "at": [
+            1,
+            3.3
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "in-solo",
+          "from": "in",
+          "to": "solo"
+        },
+        {
+          "id": "solo-r1",
+          "from": "solo",
+          "to": "r1"
+        },
+        {
+          "id": "solo-r100",
+          "from": "solo",
+          "to": "r100"
+        },
+        {
+          "id": "r1-out",
+          "from": "r1",
+          "to": "out",
+          "bend": -0.6
+        },
+        {
+          "id": "r100-out",
+          "from": "r100",
+          "to": "out",
+          "bend": 0.6
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "in-solo"
+          ],
+          "kind": "heavy",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "solo-r1"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "solo-r100"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "r1-out"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "r100-out"
+          ],
+          "kind": "event",
+          "rate": 1,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que te llevas",
+      "body": "- Batch: un conjunto cerrado de datos, procesado entero cuando el resultado puede esperar. Importa el throughput, no la latencia.\n- MapReduce: map emite pares clave-valor, el shuffle los agrupa por el hash de la clave y reduce los combina.\n- Para ordenar lo que no cabe en memoria: runs ordenados y una mezcla con un min-heap. Lo que cuesta son las pasadas por el disco.\n- Los jobs se encadenan en pipelines que suelen acabar en un data warehouse para el análisis.\n- Un job tiene que poder relanzarse: sobrescribe su partición en vez de añadir.",
       "metrics": {
         "read": 3,
         "machines": 100,
