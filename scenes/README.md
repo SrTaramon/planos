@@ -11,6 +11,21 @@ lección, después del gancho; el texto de la lección sigue debajo, para profun
 - Ver cómo queda en un iPhone y si algo se pisa: `node tools/check-scenes.mjs scenes/L12.json --shots <carpeta>`
 - La de referencia: `scenes/L11.json` (consistent hashing).
 
+## La escena ES la lección (`"lesson": true`)
+
+Desde noviembre de 2026 una lección no se cuenta dos veces: su escena lleva `"lesson": true` y la app ya
+no enseña las secciones de teoría (`sections`) ni «Lo que te llevas». Cada paso es plano + explicación:
+
+- `body` (≤ 900): la explicación de ese momento, **con la teoría de la lección que le toca**. 2-3 párrafos
+  cortos o una lista; se lee en una pantalla de iPhone debajo del plano.
+- `more` (≤ 1.800, opcional): «Saber más», plegado. Lo técnico que no cabe en el cuerpo: tablas, código,
+  cifras de detalle, ejemplos extra, «dónde se usa».
+- **No se pierde nada**: todo lo que contaban las `sections` de la lección (ideas, ejemplos, tablas, código,
+  callouts) está en algún `body`, `callout` o `more`. Si hace falta, añade un paso (10 como mucho).
+- El último paso (`recap`) se titula «Lo que te llevas» y su cuerpo son las `keyIdeas` de la lección.
+- Sin `goals` (ya no se enseñan). `changes`, como mucho 3 y cortos.
+- La referencia es `scenes/L11.json`.
+
 ## Cómo se cuenta
 
 Como una historia corta, de 5 a 8 pasos (10 como mucho), unos 3-4 minutos en total:
@@ -51,7 +66,8 @@ Un paso:
   "short": "Pico",                        // ≤ 14: el nombre en la línea de pasos y en «Siguiente: …»
   "chapter": "problem",                   // problem | technique | solution | case | recap
   "title": "Llega el Black Friday",       // ≤ 64
-  "body": "Markdown corto (≤ 520): 2-3 frases. `código`, **negrita**, listas con «- ».",
+  "body": "Markdown (≤ 520; ≤ 900 en una lección-escena). `código`, **negrita**, listas con «- ».",
+  "more": "Opcional: «Saber más», plegado (≤ 1.800). Tablas, código, detalle.",
   "callout": { "type": "warn", "text": "≤ 220" },   // insight (Idea clave) | tip (Truco) | warn (Ojo)
   "changes": ["+ Cola", "~ p95: 2 s → 80 ms", "− Llamada directa"],  // ≤ 4: «+» nuevo, «~» cambia, «−» se quita
   "metrics": { "p95": 2000, "lost": "3 %" },   // número (se compara con el paso anterior) o texto
