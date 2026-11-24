@@ -18,33 +18,20 @@
     "req": "envío (email o SMS)",
     "event": "job que coge un worker"
   },
-  "goals": [
-    {
-      "text": "Por qué un cron en varias copias envía de más, y cómo evitarlo",
-      "step": 2
-    },
-    {
-      "text": "Para qué sirve un lease y por qué un job puede repetirse",
-      "step": 4
-    },
-    {
-      "text": "De dónde sale la clave de idempotencia",
-      "step": 5
-    },
-    {
-      "text": "Por qué los reintentos llevan jitter",
-      "step": 7
-    }
-  ],
+  "lesson": true,
   "steps": [
     {
       "short": "4 copias",
       "chapter": "problem",
       "title": "El cron, en las 4 copias del servicio",
-      "body": "Cada día a las 08:00 sale un resumen por email: `0 8 * * *`. Si el cron vive en un solo servidor y ese servidor cae, no sale: es un SPOF. Así que lo pones en las 4 copias del servicio… y a las 08:00 lo lanzan las 4. **Cada usuario recibe 4 emails.**",
+      "body": "Los sistemas hacen cosas más tarde o cada cierto tiempo, y hay tres herramientas: **cron** para lo periódico, **delayed jobs** para lo puntual y una **tabla de jobs** cuando quieres consultar el estado de cada tarea.\n\nCada día a las 08:00 sale un resumen por email: `0 8 * * *`. cron es perfecto en una máquina, pero con varias tiene dos fallos:\n- Si vive en un solo servidor y ese servidor cae, la tarea no se ejecuta: es un SPOF.\n- Si lo pones en las 4 copias de tu servicio, la tarea se ejecuta 4 veces. A las 08:00 lo lanzan las 4: **cada usuario recibe 4 emails**.",
+      "more": "| Herramienta | Qué es | Para qué |\n|---|---|---|\n| **cron** | Un programa que lanza tareas según un calendario | Lo periódico: *cada noche a las 03:00* |\n| **Delayed job** | Un job que entra en la cola ya, pero no se entrega hasta su hora | Lo puntual: *dentro de 15 min, a este usuario* |\n| **Tabla de jobs** | Filas en la base de datos con su hora, que unos workers van mirando | Muchas tareas cuyo estado quieres consultar |\n\ncron usa expresiones de cinco campos:\n\n```\n# minuto  hora  día-del-mes  mes  día-de-la-semana\n0 3 * * *        todos los días a las 03:00\n*/15 * * * *     cada 15 minutos\n0 9 * * 1-5      de lunes a viernes a las 09:00\n```",
       "callout": {
-        "type": "insight",
-        "text": "cron es perfecto en una máquina. Con varias tiene dos fallos: en una sola, es un SPOF; en todas, la tarea se ejecuta una vez por copia."
+        "type": "warn",
+        "text": "cron usa la hora de la máquina, que en la nube suele ser UTC. Las 9:00 de España no son la misma hora UTC en invierno que en verano: decide la hora en la zona del usuario (Europe/Madrid)."
+      },
+      "metrics": {
+        "dup": 4
       },
       "predict": {
         "q": "Ahora las copias no envían: insertan el job `resumen-2026-11-02` en una tabla donde el id es único, y un worker lo ejecuta. ¿Cuántos emails recibe cada usuario?",
@@ -56,9 +43,6 @@
         ],
         "answer": 1,
         "explain": "La primera inserción crea la fila y las otras tres chocan con el id único: no entran, pero no borran la que ya está. Hay un solo job, y un solo worker lo coge. El número de workers no cambia nada: lo que se ejecuta es el job, y hay uno."
-      },
-      "metrics": {
-        "dup": 4
       },
       "nodes": [
         {
@@ -155,7 +139,7 @@
       "short": "Solo encola",
       "chapter": "solution",
       "title": "El cron solo encola, con un id que no se repite",
-      "body": "Ahora el cron no envía: **encola**. Las 4 copias insertan el job `resumen-2026-11-02`, y como ese id es único, solo entra una vez. Un worker lo coge y envía el resumen: **un email por usuario**. Y si una copia está caída, las otras lo encolan igual.",
+      "body": "La salida habitual: el cron no envía, solo **encola** el trabajo, con un id que no se repita. Las 4 copias insertan el job `resumen-2026-11-02`, y como ese id es único, solo entra una vez. La cola se lo da a un solo worker, que envía el resumen: **un email por usuario**.\n\nY si una copia está caída, las otras lo encolan igual: ya no hay SPOF.",
       "callout": {
         "type": "tip",
         "text": "La otra salida: que las copias compitan por un lock y solo la que lo gane lance la tarea."
@@ -331,10 +315,176 @@
       ]
     },
     {
+      "short": "Con retraso",
+      "chapter": "technique",
+      "title": "Un delayed job: entra ahora, sale a su hora",
+      "body": "La API también programa cosas puntuales: el recordatorio de una cita, **dentro de 24 h**. Es un **delayed job**: entra en la cola ahora, pero ningún worker lo recibe hasta su hora. Con BullMQ ya lo usas:\n\n```ts\nawait queue.add('recordatorio', { citaId }, { delay: 24 * 60 * 60 * 1000 }); // dentro de 24 h\n```\n\nPor dentro, la cola guarda los jobs con retraso ordenados por la hora a la que tocan (en Redis, un sorted set con la hora como puntuación) y pasa a la cola normal los que ya han vencido. Saber *qué toca ya* es barato: como están ordenados, basta con mirar el principio.",
+      "more": "BullMQ también tiene **jobs repetibles** con un patrón cron, que resuelven lo periódico sin un cron aparte.\n\nAquí la tabla de jobs hace el mismo papel: cada fila lleva su hora, `run_at`, y la API la inserta con la de mañana. Lo que viene ahora vale para las dos.",
+      "callout": {
+        "type": "warn",
+        "text": "**La hora es aproximada**: sale cuando vence *y* hay un worker libre; si todos están ocupados, espera. Al ejecutarlo, vuelve a comprobar que tiene sentido: ¿la cita sigue en pie? ¿sigue siendo buena hora para avisar?"
+      },
+      "changes": [
+        "+ La API encola un recordatorio",
+        "~ Sale dentro de 24 h, no ahora"
+      ],
+      "metrics": {
+        "dup": 1
+      },
+      "nodes": [
+        {
+          "id": "c1",
+          "kind": "service",
+          "label": "copia 1",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "c2",
+          "kind": "service",
+          "label": "copia 2",
+          "at": [
+            0,
+            1
+          ]
+        },
+        {
+          "id": "c3",
+          "kind": "service",
+          "label": "copia 3",
+          "at": [
+            0,
+            2
+          ]
+        },
+        {
+          "id": "c4",
+          "kind": "service",
+          "label": "copia 4",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "note": "recordatorio"
+        },
+        {
+          "id": "jobs",
+          "kind": "db",
+          "label": "Tabla jobs",
+          "at": [
+            1,
+            1.5
+          ],
+          "badge": "en 24 h",
+          "mark": "good"
+        },
+        {
+          "id": "w1",
+          "kind": "worker",
+          "label": "Worker 1",
+          "at": [
+            1.75,
+            0.75
+          ]
+        },
+        {
+          "id": "w2",
+          "kind": "worker",
+          "label": "Worker 2",
+          "at": [
+            1.75,
+            2.25
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            2.5,
+            1.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "c1-jobs",
+          "from": "c1",
+          "to": "jobs",
+          "state": "dim"
+        },
+        {
+          "id": "c2-jobs",
+          "from": "c2",
+          "to": "jobs",
+          "state": "dim"
+        },
+        {
+          "id": "c3-jobs",
+          "from": "c3",
+          "to": "jobs",
+          "state": "dim"
+        },
+        {
+          "id": "c4-jobs",
+          "from": "c4",
+          "to": "jobs",
+          "state": "dim"
+        },
+        {
+          "id": "api-jobs",
+          "from": "api",
+          "to": "jobs"
+        },
+        {
+          "id": "jobs-w1",
+          "from": "jobs",
+          "to": "w1"
+        },
+        {
+          "id": "jobs-w2",
+          "from": "jobs",
+          "to": "w2"
+        },
+        {
+          "id": "w1-prov",
+          "from": "w1",
+          "to": "prov"
+        },
+        {
+          "id": "w2-prov",
+          "from": "w2",
+          "to": "prov"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "api-jobs"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
       "short": "Lease",
       "chapter": "technique",
       "title": "Workers que cogen filas con un lease",
-      "body": "La tabla guarda cada job con su hora, `run_at` (en BullMQ sería un delayed job). Los workers hacen **polling**: cada pocos segundos cogen un lote de filas vencidas con `FOR UPDATE SKIP LOCKED`, así que nunca cogen la misma. Al cogerla, la marcan `running` con un **lease**: `locked_until = now() + 5 min`.",
+      "body": "Sin Redis, o cuando quieres consultar el estado de cada tarea con SQL, la **tabla de jobs** en Postgres funciona muy bien. Cada job lleva su hora, `run_at`. Los workers hacen **polling** (preguntan cada pocos segundos *¿hay algo que toque?*) y cogen un lote de filas vencidas con `FOR UPDATE SKIP LOCKED`: bloquea las filas que coge y los demás se saltan las bloqueadas en vez de esperar. Diez workers cogen diez lotes distintos sin pisarse.\n\nAl cogerla, la marcan `running` con un **lease**, una reserva con fecha de caducidad: `locked_until = now() + 5 min`. Al terminar, la marcan `done`.",
+      "more": "```sql\nUPDATE jobs\nSET status = 'running', attempts = attempts + 1,\n    locked_until = now() + interval '5 minutes'\nWHERE id IN (\n  SELECT id FROM jobs\n  WHERE run_at <= now()\n    AND (status = 'pending' OR (status = 'running' AND locked_until < now()))\n  ORDER BY run_at LIMIT 10\n  FOR UPDATE SKIP LOCKED\n)\nRETURNING id;\n```\n\nLa consulta busca también los `running` con el lease vencido: así recoge los de un worker que murió.\n\nLas colas hacen lo mismo con otro nombre. En SQS, la cola de AWS, es el **visibility timeout**: el mensaje se esconde un rato y, si nadie lo confirma, reaparece. BullMQ mantiene un lock sobre cada job activo que el worker va renovando; si deja de renovarlo, el job se da por *stalled* (atascado) y vuelve a la cola.",
       "callout": {
         "type": "insight",
         "text": "Un lease es una reserva que caduca sola. Si el worker muere a mitad, nadie libera la fila, pero el lease vence y otro la recoge."
@@ -344,6 +494,9 @@
         "~ Cada worker coge un lote distinto",
         "+ Un lease de 5 minutos por fila"
       ],
+      "metrics": {
+        "dup": 1
+      },
       "predict": {
         "q": "Worker 1 envía el email del resumen y muere justo antes de marcar la fila como `done`. ¿Qué pasa con esa fila?",
         "options": [
@@ -354,9 +507,6 @@
         ],
         "answer": 2,
         "explain": "Nadie la marca como hecha, pero su `locked_until` vence a los 5 minutos y la consulta de los workers también busca las `running` vencidas: Worker 2 la recoge y la ejecuta entera, email incluido. Antes de que venza, la fila está reservada; SKIP LOCKED solo evita que dos la cojan a la vez."
-      },
-      "metrics": {
-        "dup": 1
       },
       "nodes": [
         {
@@ -526,7 +676,7 @@
       "short": "Muere a medias",
       "chapter": "case",
       "title": "El worker envía y muere antes de apuntarlo",
-      "body": "Worker 1 envía el resumen y muere justo antes de marcar la fila como `done`. A los 5 minutos su lease vence, Worker 2 la recoge y la ejecuta otra vez: **el email sale dos veces**. Entre *hacer* y *apuntar que está hecho* siempre hay un instante en el que algo se puede caer.",
+      "body": "Worker 1 envía el resumen y muere justo antes de marcar la fila como `done`. A los 5 minutos su lease vence, Worker 2 la recoge y la ejecuta otra vez: **el email sale dos veces**. Entre *hacer* y *apuntar que está hecho* siempre hay un instante en el que algo se puede caer.\n\nEn la lección de colas viste que la entrega es **at-least-once** y que el trabajo tiene que ser idempotente. Con tareas programadas hay más formas de que una ejecución se repita: **el lease vence con el trabajo hecho**, como aquí, o **el cron corre en varias máquinas**, como al principio.",
       "callout": {
         "type": "warn",
         "text": "Sin lease, la fila se quedaría en running para siempre. Con lease no se pierde, pero puede repetirse: la entrega es at-least-once."
@@ -685,10 +835,11 @@
       "short": "Idempotencia",
       "chapter": "solution",
       "title": "La clave sale de la ejecución, no de la hora",
-      "body": "Cada envío se apunta en `Enviados` con una clave única que sale de lo que se ejecuta: el resumen del 2 de noviembre es `resumen-2026-11-02`, salga a las 08:00, a las 08:05 o al día siguiente. Cuando Worker 2 repite el job, la clave ya está: **no envía nada**.",
+      "body": "La defensa es la de siempre, con un truco propio: la **clave de idempotencia sale de la ejecución, no de cuándo corre**. Cada envío se apunta en `Enviados` con una clave única: el resumen del 2 de noviembre es `resumen-2026-11-02`, salga a las 08:00, a las 08:05 o al día siguiente. Cuando Worker 2 repite el job, la clave ya está: la segunda ejecución **no envía nada**.\n\nSi repetir es muy caro (una llamada, un cobro), invierte el orden: **reclama primero** la fila con una escritura condicional y actúa después. Si te caes en medio, no se repite, pero alguien tiene que revisar lo que quedó a medias.",
+      "more": "**Las ejecuciones perdidas.** Una pregunta que solo existe aquí: si el planificador estaba caído a las 03:00, ¿qué haces al volver?\n\n- **Recuperar la ejecución perdida**: el informe diario hay que hacerlo igual.\n- **Saltarla**: un *tu cita es dentro de una hora* ya no sirve a las 05:00.\n\nDecídelo tarea a tarea.",
       "callout": {
         "type": "tip",
-        "text": "Si repetir es muy caro (una llamada, un cobro), invierte el orden: reclama primero con una escritura condicional y actúa después."
+        "text": "**En una entrevista**, si dices «exactly-once», prepárate para explicar cómo. La respuesta madura: entrega at-least-once y jobs idempotentes, con la clave sacada de la ejecución."
       },
       "changes": [
         "+ Enviados, con la clave como única",
@@ -857,10 +1008,10 @@
       "short": "Medianoche",
       "chapter": "case",
       "title": "1.000 jobs a las 00:00 y el proveedor cae",
-      "body": "Medio mundo programa sus tareas a la hora en punto. A las 00:00 salen **1.000 jobs** a la vez, el proveedor se cae y fallan todos juntos. Con las mismas esperas de exponential backoff, **reintentan juntos** (al segundo 1, al 3, al 7…) y lo vuelven a tumbar.",
+      "body": "Los reintentos son los de la lección de colas: solo lo transitorio, con **exponential backoff** (1 s, 2 s, 4 s…) y, al agotarse, a la dead-letter queue.\n\nLo que cambia con las tareas programadas es que **todo tiende a pasar a la vez**: medio mundo programa sus tareas a las 00:00 o a la hora en punto. A las 00:00 salen **1.000 jobs**, el proveedor se cae y fallan todos juntos. Con las mismas esperas, **reintentan juntos** (al segundo 1, al 3, al 7…) y lo vuelven a tumbar.",
       "callout": {
         "type": "warn",
-        "text": "Un reintento tampoco debe pisar la siguiente ejecución: si una tarea corre cada 5 minutos y reintenta durante 20, se solapan cuatro."
+        "text": "Un reintento no debe pisar la siguiente ejecución: si una tarea corre cada 5 minutos y reintenta durante 20, se solapan cuatro. Limita los intentos o salta si ya empezó la siguiente."
       },
       "changes": [
         "~ 1.000 jobs salen a la vez",
@@ -1048,10 +1199,10 @@
       "short": "Jitter",
       "chapter": "solution",
       "title": "Jitter: cada uno espera un poco distinto",
-      "body": "Con **jitter**, cada reintento espera un tiempo al azar, por ejemplo entre la mitad y el total de lo que le toca: los reintentos se reparten y el proveedor se recupera. El mismo truco vale para la salida: en vez de 1.000 tareas a las 00:00:00, repártelas en 5 minutos, unas **3 por segundo**.",
+      "body": "Con **jitter** (azar), cada reintento espera un tiempo aleatorio, por ejemplo entre la mitad y el total de lo que le toca: los reintentos se reparten y el proveedor se recupera. El backoff de BullMQ acepta una opción `jitter`.\n\nEl mismo truco vale para la hora de salida: en vez de lanzar 1.000 tareas a las 00:00:00, repártelas en unos minutos. En 5 minutos son unas **3 por segundo**.",
       "callout": {
         "type": "tip",
-        "text": "Y antes de actuar, el worker vuelve a mirar la hora: si a partir de las 21:00 no se mandan SMS, el reintento que tocaba a las 21:01 no sale."
+        "text": "Un reintento respeta la franja: si a partir de las 21:00 no se mandan SMS, el que falló a las 20:59 y tocaba a las 21:01 no sale. Por eso el worker vuelve a mirar la hora justo antes de actuar."
       },
       "changes": [
         "+ Jitter en los reintentos y en la salida",
@@ -1233,12 +1384,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- cron para lo periódico; con varias copias, que solo encole con un id único.\n- Los workers cogen filas con SKIP LOCKED y un lease que caduca solo.\n- Al menos una vez: la clave de idempotencia sale de la ejecución.\n- Reintentos con backoff y jitter, y la salida repartida en el tiempo.",
-      "callout": {
-        "type": "insight",
-        "text": "Y una pregunta propia de lo programado: si el planificador estaba caído a las 03:00, ¿recuperas la ejecución perdida o la saltas? Se decide tarea a tarea."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Tres herramientas: cron para lo periódico, delayed jobs para lo puntual y una tabla de jobs cuando quieres el estado en SQL.\n- Con varias máquinas, cron se repite o es un SPOF: que solo encole, con un id que no se repita.\n- Un lease (locked_until, visibility timeout, el lock de BullMQ) evita que un job se quede colgado si su worker muere, a cambio de que pueda repetirse.\n- La clave de idempotencia sale de la ejecución (el día del informe), no de cuándo corre; y decide qué haces con las ejecuciones perdidas.\n- Jitter en los reintentos y en la hora de salida, reintentos que no pisan la siguiente ejecución y, antes de actuar, volver a mirar la hora.",
       "metrics": {
         "dup": 1,
         "peak": 3

@@ -25,30 +25,14 @@
     "event": "métrica, span o log",
     "heavy": "queja de un cliente"
   },
-  "goals": [
-    {
-      "text": "Por qué se alerta por síntomas, con un SLO y su error budget",
-      "step": 3
-    },
-    {
-      "text": "Cómo una traza dice dónde se va el tiempo",
-      "step": 4
-    },
-    {
-      "text": "Qué pregunta responden métricas, trazas y logs",
-      "step": 5
-    },
-    {
-      "text": "Por qué se muestrean logs y trazas, y no las métricas",
-      "step": 6
-    }
-  ],
+  "lesson": true,
   "steps": [
     {
       "short": "A ciegas",
       "chapter": "problem",
       "title": "Te enteras porque llama un cliente",
-      "body": "Pedidos llama a Stock, y Stock empieza a fallar: **5 de cada 100 pedidos** dan error. Nadie mira nada, así que te enteras cuando un cliente llama para quejarse. Y aun así no sabes cuánto falla, **dónde** ni **por qué**.",
+      "body": "Pedidos llama a Stock, y Stock empieza a fallar: **5 de cada 100 pedidos** dan error. Nadie mira nada, así que te enteras cuando un cliente llama para quejarse. Y aun así no sabes cuánto falla, **dónde** ni **por qué**.\n\nTe falta **observabilidad**. Se apoya en tres tipos de datos, y cada uno responde una pregunta distinta:\n- **Métricas**: ¿va bien? ¿cuánto? ¿desde cuándo?\n- **Trazas**: ¿por dónde pasó la petición y dónde se fue el tiempo?\n- **Logs**: ¿qué pasó exactamente con esto?",
+      "more": "| | Qué pregunta responde | Ejemplo | Coste |\n|---|---|---|---|\n| **Métricas** | ¿Va bien? ¿Cuánto? ¿Desde cuándo? | 1.200 peticiones/s, 0,4 % de errores, p99 de 350 ms | Bajo: números agregados |\n| **Logs** | ¿Qué pasó exactamente con esto? | `pedido 8812: pago rechazado por el banco` | Alto: una línea por evento |\n| **Trazas** | ¿Por dónde pasó la petición y dónde se fue el tiempo? | 900 ms en total, 700 en el servicio de stock | Medio: se muestrean |\n\nUn incidente típico las usa en orden: una **métrica** dispara una alerta (*los errores pasan del 0,4 % al 5 %*), una **traza** de una petición fallida dice qué servicio falla, y los **logs** de ese servicio dicen por qué.",
       "callout": {
         "type": "insight",
         "text": "Observabilidad es poder entender qué pasa dentro mirando lo que el sistema emite, sin desplegar código nuevo para averiguarlo."
@@ -149,15 +133,21 @@
       "short": "Métricas",
       "chapter": "technique",
       "title": "Métricas: ¿va bien?",
-      "body": "Cada servicio expone sus métricas: un **counter** de peticiones y errores y un **histogram** de latencias. Se guardan en una **TSDB** como series temporales, con un punto cada 10 s. Ya se ve: los errores están en el **5 %**. Y mira el **p99**, no la media: con una media de 120 ms, el 1 % más lento puede estar esperando segundos.",
+      "body": "Cada servicio expone sus métricas. Una métrica es una **serie temporal**: un nombre con etiquetas y una lista de pares (hora, valor), como `http_requests_total{service=\"api\", status=\"500\"}` con un valor cada 10 segundos. Se guardan en una **time-series database** (TSDB), hecha para escribir muchísimos puntos pequeños en orden de tiempo y leer rangos (*la última hora*). Tres tipos básicos:\n- **Counter** (contador): solo sube, como las peticiones totales. Lo útil es su ritmo: peticiones por segundo.\n- **Gauge** (indicador): sube y baja, como la memoria usada o los jobs en cola.\n- **Histogram**: cuenta cuántos valores caen en cada tramo (0-100 ms, 100-250 ms…), para los percentiles.\n\nYa se ve: los errores están en el **5 %**.",
+      "more": "**Percentiles, no medias.** El **p99** es el valor por debajo del cual queda el 99 % de las peticiones: si es 2 s, una de cada cien tarda más. Con una media de 120 ms puede haber un 1 % de usuarios esperando segundos, y la media no lo enseña. Y no se pueden promediar: la media de los p99 de 10 servidores no es el p99 del total. Por eso se guardan histogramas, que sí se suman, y el percentil se calcula al final.\n\n**La cuenta.** Prometheus es una TSDB conocida; según su documentación, guarda cada muestra en 1-2 bytes de media. Supón 1.000 servidores con 500 series cada uno y una muestra cada 10 s: son 500.000 series, 50.000 muestras por segundo y unos 4.300 millones al día. **~69 GB** al día sin comprimir (16 bytes por muestra) y **~9 GB** a 2 bytes.",
       "callout": {
         "type": "warn",
-        "text": "Cuidado con la cardinalidad: cada combinación de etiquetas es una serie. Con `user_id` de etiqueta, un millón de usuarios son un millón de series. Los ids, a logs y trazas."
+        "text": "Cuidado con la **cardinalidad**: cada combinación de etiquetas es una serie. Con `user_id` de etiqueta, un millón de usuarios son un millón de series y tumban la TSDB. Los ids, a logs y trazas."
       },
       "changes": [
         "+ TSDB con las métricas de cada servicio",
         "~ ¿Va bien?: no, 5 % de errores"
       ],
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "?",
+        "why": "?"
+      },
       "predict": {
         "q": "Ya tienes las métricas. ¿Por cuál conviene que salte la alerta que despierta a la guardia de madrugada?",
         "options": [
@@ -168,11 +158,6 @@
         ],
         "answer": 1,
         "explain": "Una alerta despierta a alguien, así que tiene que significar que los usuarios lo notan: errores y lentitud. Una CPU al 90 % puede ser un sistema trabajando a pleno rendimiento sin que nadie note nada; es una causa, y va a un dashboard para investigar."
-      },
-      "metrics": {
-        "ok": "5 % errores",
-        "where": "?",
-        "why": "?"
       },
       "nodes": [
         {
@@ -285,7 +270,8 @@
       "short": "Alerta",
       "chapter": "technique",
       "title": "Alerta por síntomas, con un SLO",
-      "body": "La alerta salta por lo que nota el usuario, no por una CPU al 90 %. Te pones un **SLO**: el 99,9 % de las peticiones bien en 30 días. Eso te deja un **error budget** de 43 minutos de fallo, y la alerta mira a qué ritmo lo gastas, el **burn rate**. Al 5 % de errores se gasta 50 veces más rápido de la cuenta: avisa ya a la guardia.",
+      "body": "Una alerta despierta a alguien, así que tiene que significar *los usuarios lo están notando*. Alertar por **causas** (*CPU al 90 %*, *un disco al 80 %*) da falsas alarmas: una CPU al 90 % puede ser un sistema trabajando a pleno rendimiento. Alerta por **síntomas**, los errores y la lentitud que ve el usuario, y deja las causas en un dashboard para investigar.\n\nTe pones un **SLO**: el 99,9 % de las peticiones bien en 30 días. Eso te deja un **error budget** de 43 minutos de fallo, y la alerta mira a qué ritmo lo gastas, el **burn rate**. Al 5 % de errores se gasta 50 veces más rápido de la cuenta: avisa ya a la guardia.",
+      "more": "Los tres términos:\n- **SLI** (*service level indicator*): lo que mides. *El porcentaje de peticiones que responden bien en menos de 300 ms.*\n- **SLO** (*service level objective*): tu objetivo para ese SLI. *El 99,9 % en una ventana de 30 días.*\n- **Error budget** (presupuesto de errores): lo que el SLO te deja fallar. Un 99,9 % en 30 días deja **43 minutos** de fallo; un 99,99 %, solo **4,3 minutos**.\n\n**En una entrevista**, cuando diseñes algo, di qué SLO tendría y qué métricas lo vigilan. Demuestra que piensas en operar el sistema, no solo en construirlo.",
       "callout": {
         "type": "tip",
         "text": "Si el presupuesto se gasta despacio, basta un aviso para mañana. Y si a final de mes sobra, puedes arriesgar más con los despliegues."
@@ -295,6 +281,11 @@
         "~ Avisa a la guardia, no un cliente",
         "~ Las causas (CPU, disco), a un dashboard"
       ],
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "?",
+        "why": "?"
+      },
       "panel": {
         "title": "El error budget",
         "rows": [
@@ -323,11 +314,6 @@
         ],
         "answer": 2,
         "explain": "Una traza sigue una petición por todos los servicios y dice cuánto tardó cada tramo: señala al culpable. Los logs dicen por qué, pero sin saber dónde mirar son una montaña: primero la traza, luego los logs de ese servicio. La media y la CPU no dicen qué servicio falla."
-      },
-      "metrics": {
-        "ok": "5 % errores",
-        "where": "?",
-        "why": "?"
       },
       "nodes": [
         {
@@ -468,7 +454,7 @@
       "short": "Traza",
       "chapter": "technique",
       "title": "Una traza: por dónde pasó y dónde se fue el tiempo",
-      "body": "Una **traza** sigue una petición por todos los servicios. Cada tramo de trabajo es un **span**, y todos comparten un **trace id** que viaja de servicio en servicio en una cabecera. La de un pedido que falló: 900 ms en total, **700 en Stock**. Ya sabes dónde mirar.",
+      "body": "Una **traza** sigue una petición por todos los servicios. Cada tramo de trabajo es un **span** (*API gateway, 900 ms → servicio de pedidos, 850 ms → servicio de stock, 700 ms*), y todos comparten un **trace id** que viaja de servicio en servicio en una cabecera.\n\nLa de un pedido que falló: 900 ms en total, **700 en Stock**. Ya sabes dónde mirar.",
       "callout": {
         "type": "insight",
         "text": "Las tres se usan en orden: la métrica dispara la alerta, la traza dice qué servicio falla y los logs de ese servicio dicen por qué."
@@ -477,6 +463,11 @@
         "+ Trazas, con un span por servicio",
         "~ ¿Dónde falla?: en Stock"
       ],
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "en Stock",
+        "why": "?"
+      },
       "panel": {
         "title": "La traza del pedido que falló",
         "rows": [
@@ -491,11 +482,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "metrics": {
-        "ok": "5 % errores",
-        "where": "en Stock",
-        "why": "?"
       },
       "nodes": [
         {
@@ -650,7 +636,7 @@
       "short": "Logs",
       "chapter": "technique",
       "title": "Los logs de Stock dicen por qué",
-      "body": "Los **logs** cuentan cada evento con detalle. Escritos **estructurados**, en JSON con campos fijos y con el trace id, de la traza saltas a sus líneas: Stock no llega a leer el inventario a tiempo. Pero guardarlo todo sale caro: 10.000 peticiones por segundo con 1 KB de logs cada una son **~860 GB al día**.",
+      "body": "Los **logs** cuentan cada evento con detalle. Escríbelos **estructurados**, en JSON con campos fijos, no como frases sueltas: así se filtran y se agregan. Si llevan también el trace id, de la traza saltas a sus líneas: Stock no llega a leer el inventario a tiempo.\n\nPero vigila el volumen: con 10.000 peticiones por segundo y 1 KB de logs por petición son 10 MB/s, **~860 GB al día**.",
       "callout": {
         "type": "tip",
         "text": "Campos fijos (`level`, `service`, `traceId`, `orderId`) y no frases sueltas: así se filtran y se agregan."
@@ -660,6 +646,12 @@
         "~ ¿Por qué?: un timeout en Stock",
         "~ Logs al día: ~860 GB"
       ],
+      "metrics": {
+        "ok": "5 % errores",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 860
+      },
       "panel": {
         "title": "Una línea de log de Stock",
         "rows": [
@@ -674,12 +666,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "metrics": {
-        "ok": "5 % errores",
-        "where": "en Stock",
-        "why": "timeout",
-        "logs": 860
       },
       "nodes": [
         {
@@ -843,16 +829,22 @@
       "short": "Muestreo",
       "chapter": "case",
       "title": "Guardarlo todo es carísimo: muestrea",
-      "body": "Arreglado Stock, toca la factura. Con **head sampling** decides al empezar (quedarte con el 1 %): barato, pero puede tirar justo el pedido que falló. Con **tail sampling** decides al terminar: guardas todo lo que falló o fue lento y un 1 % de lo demás. Los logs, igual. Las métricas no se muestrean: son baratas y son las que disparan las alertas.",
+      "body": "Arreglado Stock, toca la factura. Guardarlo todo es carísimo, así que se hace **sampling** (muestreo):\n- **Head sampling**: se decide al empezar la petición, por ejemplo quedarse con el 1 %. Es barato y sencillo, pero puede tirar justo el pedido que falló.\n- **Tail sampling**: se decide al terminar, cuando ya sabes cómo fue: guardas todas las que fallaron o fueron lentas y un 1 % de las normales. Da mejor resultado, a cambio de retener las trazas un rato antes de decidir.\n\nCon los logs, lo mismo: todos los errores y una muestra de lo que fue bien. Las métricas, en cambio, se cuentan enteras: son baratas y son las que disparan las alertas.",
       "callout": {
-        "type": "insight",
-        "text": "Y para las métricas viejas, el downsampling: un año con un punto cada 10 s ocupa ~3.150 GB; con resúmenes de 5 minutos, ~105 GB."
+        "type": "tip",
+        "text": "Mejor el muestreo que decide al final: guarda justo lo que te interesa, lo que falló o fue lento."
       },
       "changes": [
         "+ Tail sampling en logs y trazas",
         "~ Logs al día: ~860 GB → ~9,5 GB",
         "~ Las métricas, enteras"
       ],
+      "metrics": {
+        "ok": "sí",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 9.5
+      },
       "panel": {
         "title": "La cuenta de los logs",
         "rows": [
@@ -871,12 +863,6 @@
             "tone": "good"
           }
         ]
-      },
-      "metrics": {
-        "ok": "sí",
-        "where": "en Stock",
-        "why": "timeout",
-        "logs": 9.5
       },
       "nodes": [
         {
@@ -1047,14 +1033,205 @@
       ]
     },
     {
+      "short": "Un año",
+      "chapter": "solution",
+      "title": "Un año de métricas: agregar y reducir",
+      "body": "Nadie mira el detalle de cada servidor, cada 10 segundos, de hace un año. Por eso las métricas se **agregan**: en vez de 1.000 series de peticiones, una por servidor, se guarda la suma por servicio. Se calcula una vez, según llegan los datos, y los dashboards leen la serie agregada, que es pequeña.\n\nY con la edad se hace **downsampling** (bajar la resolución): lo reciente se guarda fino y lo viejo, en resúmenes. Con las cuentas de antes, a 2 bytes por muestra, un año con un punto cada 10 s ocupa ~3.150 GB; con resúmenes de 5 minutos, ~105 GB. Pasar de 10 s a 5 min es guardar 30 veces menos puntos.",
+      "more": "| Datos | Resolución | Cuánto ocupan |\n|---|---|---|\n| Últimos 15 días | 10 s | ~130 GB |\n| Un año, sin reducir | 10 s | ~3.150 GB |\n| Un año, reducido | 5 min | ~105 GB |\n\nLas cuentas salen de los 1.000 servidores con 500 series cada uno del paso de las métricas.",
+      "callout": {
+        "type": "warn",
+        "text": "Al reducir, guarda varios resúmenes de cada tramo (mínimo, máximo, suma y número de muestras), no solo la media: un pico de un minuto desaparece si solo guardas medias de cinco."
+      },
+      "changes": [
+        "~ Las series, sumadas por servicio",
+        "~ Lo viejo, en resúmenes de 5 min",
+        "~ Un año: ~3.150 GB → ~105 GB"
+      ],
+      "metrics": {
+        "ok": "sí",
+        "where": "en Stock",
+        "why": "timeout",
+        "logs": 9.5
+      },
+      "panel": {
+        "title": "Un año de métricas, a 2 bytes",
+        "rows": [
+          {
+            "text": "Últimos 15 días, cada 10 s: ~130 GB"
+          },
+          {
+            "text": "Un año sin reducir, cada 10 s: ~3.150 GB",
+            "tone": "bad"
+          },
+          {
+            "text": "Un año reducido, cada 5 min: ~105 GB",
+            "tone": "good"
+          },
+          {
+            "text": "De 10 s a 5 min: 30 veces menos puntos"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            0,
+            3
+          ]
+        },
+        {
+          "id": "ped",
+          "kind": "service",
+          "label": "Pedidos",
+          "at": [
+            1.2,
+            3
+          ]
+        },
+        {
+          "id": "stock",
+          "kind": "service",
+          "label": "Stock",
+          "at": [
+            2.4,
+            3
+          ]
+        },
+        {
+          "id": "alerts",
+          "kind": "service",
+          "label": "Alertas",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "oncall",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            1.2,
+            0
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            0,
+            1.5
+          ],
+          "badge": "105 GB/año",
+          "mark": "good"
+        },
+        {
+          "id": "traces",
+          "kind": "storage",
+          "label": "Trazas",
+          "at": [
+            1.2,
+            1.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "logs",
+          "kind": "search",
+          "label": "Logs",
+          "at": [
+            2.4,
+            1.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-ped",
+          "from": "users",
+          "to": "ped"
+        },
+        {
+          "id": "ped-stock",
+          "from": "ped",
+          "to": "stock"
+        },
+        {
+          "id": "ped-tsdb",
+          "from": "ped",
+          "to": "tsdb"
+        },
+        {
+          "id": "stock-tsdb",
+          "from": "stock",
+          "to": "tsdb"
+        },
+        {
+          "id": "tsdb-alerts",
+          "from": "tsdb",
+          "to": "alerts"
+        },
+        {
+          "id": "alerts-oncall",
+          "from": "alerts",
+          "to": "oncall"
+        },
+        {
+          "id": "ped-traces",
+          "from": "ped",
+          "to": "traces",
+          "state": "dim"
+        },
+        {
+          "id": "stock-traces",
+          "from": "stock",
+          "to": "traces",
+          "state": "dim"
+        },
+        {
+          "id": "stock-logs",
+          "from": "stock",
+          "to": "logs",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-ped",
+            "ped-stock"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        },
+        {
+          "via": [
+            "ped-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "stock-tsdb"
+          ],
+          "kind": "event",
+          "rate": 1.2
+        }
+      ]
+    },
+    {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Métricas para saber si va bien; trazas para ver por dónde pasó; logs para saber qué pasó.\n- Las métricas, en una TSDB: percentiles con histogramas y pocas etiquetas.\n- Alerta por síntomas, con un SLO y su error budget.\n- Logs estructurados con trace id, y muestreo (mejor el que decide al final) de logs y trazas.",
-      "callout": {
-        "type": "insight",
-        "text": "Cuando diseñes algo, di qué SLO tendría y qué métricas lo vigilan: demuestra que piensas en operarlo, no solo en construirlo."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Métricas para saber si va bien, logs para saber qué pasó con algo concreto y trazas para ver por dónde pasó y dónde se fue el tiempo.\n- Las métricas son series temporales en una TSDB: mira percentiles (p99) con histogramas y vigila la cardinalidad de las etiquetas.\n- Agrega y haz downsampling: datos finos para los últimos días y resúmenes para el año.\n- Alerta por síntomas con un SLO y su error budget; las causas, al dashboard.\n- Logs estructurados con trace id, y muestreo de logs y trazas (mejor el que decide al final), nunca de las métricas.",
+      "more": "**El recorrido completo**, de los servicios a las alertas:\n1. Cada servicio expone sus métricas y emite logs y spans con su trace id.\n2. Un agente en cada máquina los recoge, los agrupa y aplica el muestreo.\n3. Cada tipo va a su almacén: métricas a la TSDB, logs a un almacén con búsqueda por campos y texto, y trazas al suyo.\n4. Los dashboards leen de los tres; las alertas, de las métricas (por SLO y burn rate), y avisan a quien esté de guardia.",
       "metrics": {
         "ok": "sí",
         "where": "en Stock",
