@@ -1,0 +1,637 @@
+{
+  "id": "L04",
+  "title": "Leer bien los datos, en acción",
+  "metrics": [
+    {
+      "id": "reads",
+      "label": "Lecturas por consulta",
+      "better": "low"
+    },
+    {
+      "id": "writes",
+      "label": "Escrituras por pedido",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Por qué una consulta lee 8 millones de filas",
+      "step": 1
+    },
+    {
+      "text": "Cómo un índice B-tree lo deja en 3 saltos",
+      "step": 2
+    },
+    {
+      "text": "Qué cuesta cada índice",
+      "step": 3
+    },
+    {
+      "text": "Cómo elegir base de datos por el access pattern",
+      "step": 4
+    }
+  ],
+  "steps": [
+    {
+      "short": "Seq Scan",
+      "chapter": "problem",
+      "title": "8 millones de filas para encontrar unas pocas",
+      "body": "La tienda guarda los pedidos en Postgres: 8 millones de filas en `orders`. Cada vez que alguien abre «Mis pedidos», la consulta `WHERE user_id = 42` lee la tabla **entera** para quedarse con sus pocas filas. Es un **full table scan** (`Seq Scan` en `EXPLAIN`).",
+      "callout": {
+        "type": "tip",
+        "text": "Es como buscar una palabra leyendo el libro de principio a fin."
+      },
+      "metrics": {
+        "reads": 8000000,
+        "writes": null
+      },
+      "predict": {
+        "q": "Creas un índice B-tree sobre `user_id`, con 200 claves por nodo. ¿Cuántos saltos hacen falta para llegar al 42 entre 8 millones de valores?",
+        "options": [
+          "Unos 3",
+          "Unos 200",
+          "Unos 40.000",
+          "Los 8 millones, pero más rápido"
+        ],
+        "answer": 0,
+        "explain": "Cada nivel multiplica por 200: 200 × 200 × 200 = 8.000.000, así que con 3 niveles llegas. 200 serían las claves de un solo nodo, no los saltos; y el índice no lee lo mismo más deprisa: lee mucho menos."
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas",
+          "load": 0.95,
+          "state": "hot",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-pg",
+          "from": "app",
+          "to": "pg",
+          "label": "user_id = 42",
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 1200,
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Índice",
+      "chapter": "technique",
+      "title": "Un índice, como el del final del libro",
+      "body": "Con `CREATE INDEX … ON orders (user_id)`, Postgres crea un **B-tree**: un árbol ancho y poco profundo, con los valores ordenados. Con 200 claves por nodo, 3 niveles ya guardan 8 millones de valores. Encontrar el 42 son **3 saltos**, y la hoja dice dónde están sus filas.",
+      "callout": {
+        "type": "insight",
+        "text": "Como está ordenado, también sirve para rangos (`created_at > …`) y para `ORDER BY`."
+      },
+      "changes": [
+        "+ Índice B-tree sobre user_id",
+        "~ Lecturas: 8.000.000 → 3 saltos",
+        "~ Postgres ya no lee la tabla entera"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": null
+      },
+      "panel": {
+        "title": "La cuenta",
+        "rows": [
+          {
+            "text": "Sin índice: 8.000.000 filas leídas",
+            "tone": "bad"
+          },
+          {
+            "text": "200 × 200 × 200 = 8.000.000: 3 niveles"
+          },
+          {
+            "text": "Con índice: 3 saltos y las filas del 42",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas",
+          "load": 0.15
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "Índice",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx",
+          "label": "user_id = 42"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2
+        }
+      ]
+    },
+    {
+      "short": "El precio",
+      "chapter": "case",
+      "title": "El precio: cada pedido nuevo escribe más",
+      "body": "Cada `INSERT` escribe en la tabla **y en todos sus índices**. Con 5 índices, un pedido nuevo son 6 escrituras. Y cada índice es una copia ordenada de sus columnas: ocupa disco y memoria. Las lecturas por `user_id` siguen siendo rápidas; las escrituras, más lentas.",
+      "callout": {
+        "type": "tip",
+        "text": "Indexa las columnas por las que filtras, ordenas o haces join en las consultas frecuentes, y ninguna más."
+      },
+      "changes": [
+        "~ 5 índices: 1 pedido nuevo, 6 escrituras",
+        "~ Más disco y más memoria"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas",
+          "load": 0.3
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ],
+          "load": 0.75,
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-pg",
+          "from": "app",
+          "to": "pg",
+          "label": "INSERT"
+        },
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-pg"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "app-idx"
+          ],
+          "kind": "write",
+          "rate": 4
+        },
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        }
+      ],
+      "predict": {
+        "q": "La tienda también guarda la sesión de cada visitante, y siempre la lee por su id exacto, miles de veces por segundo. ¿Dónde encaja mejor?",
+        "options": [
+          "En un key-value: una clave, un valor",
+          "En Postgres, con un índice más",
+          "En una base de datos de grafos",
+          "En la misma tabla que los pedidos"
+        ],
+        "answer": 0,
+        "explain": "Leer por clave exacta es justo lo que un key-value hace sin esfuerzo. Postgres también podría, pero sería otro índice que pagar en cada escritura; y un grafo sirve para recorrer relaciones, no para buscar una clave."
+      }
+    },
+    {
+      "short": "Access pattern",
+      "chapter": "technique",
+      "title": "Antes de elegir: ¿cómo vas a leer?",
+      "body": "Escribe las 2-3 consultas más frecuentes y mira su forma. Los pedidos se leen por usuario y por fecha, y tienen que cuadrar con pagos y stock: transacciones y consultas libres, **SQL**. La sesión de cada visitante se lee por clave exacta, a todas horas: un **key-value** la responde sin esfuerzo.",
+      "callout": {
+        "type": "insight",
+        "text": "Puedes usar varias: cada dato, donde mejor encaja con cómo se lee."
+      },
+      "changes": [
+        "+ Key-value para las sesiones",
+        "~ Pedidos y pagos se quedan en Postgres"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "panel": {
+        "title": "La forma decide la familia",
+        "rows": [
+          {
+            "text": "¿Clave exacta? → key-value (sesiones, carritos)"
+          },
+          {
+            "text": "¿Entidad entera que cambia de forma? → document"
+          },
+          {
+            "text": "¿Clave y rango ordenado? → wide-column (chats)"
+          },
+          {
+            "text": "¿Relaciones a varios saltos? → graph"
+          },
+          {
+            "text": "¿Varias tablas que cuadran? → SQL",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ]
+        },
+        {
+          "id": "kv",
+          "kind": "db",
+          "label": "Key-value",
+          "at": [
+            2,
+            1.3
+          ],
+          "note": "sesiones",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        },
+        {
+          "id": "app-kv",
+          "from": "app",
+          "to": "kv",
+          "label": "por clave"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "app-kv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        }
+      ]
+    },
+    {
+      "short": "Consulta nueva",
+      "chapter": "case",
+      "title": "Mañana llega una consulta que nadie previó",
+      "body": "Piden los pedidos de los últimos 7 días con el nombre de cada cliente. En Postgres es una consulta más: un **join** entre `orders` y `users`. En el key-value, buscar las sesiones de un usuario no es buscar por clave: toca recorrerlo entero o guardar los datos otra vez por otra clave (**denormalization**).",
+      "callout": {
+        "type": "warn",
+        "text": "En key-value y wide-column diseñas la clave pensando en la consulta. Lo que no previste sale caro."
+      },
+      "changes": [
+        "+ Consulta nueva: un join en Postgres",
+        "~ En el key-value: recorrerlo entero"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas",
+          "mark": "good"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "kv",
+          "kind": "db",
+          "label": "Key-value",
+          "at": [
+            2,
+            1.3
+          ],
+          "note": "sesiones",
+          "load": 0.92,
+          "state": "hot",
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-pg",
+          "from": "app",
+          "to": "pg",
+          "label": "JOIN users"
+        },
+        {
+          "id": "app-kv",
+          "from": "app",
+          "to": "kv",
+          "label": "¿por usuario?",
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "app-kv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 1200,
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Elige por el access pattern: primero, las consultas frecuentes.\n- SQL: schema, joins, transacciones y consultas libres.\n- NoSQL: cuatro familias, cada una brilla con un acceso.\n- Un índice B-tree: de leer la tabla entera a 3 saltos.\n- Su precio: escrituras más lentas y más disco.",
+      "callout": {
+        "type": "tip",
+        "text": "«Los pedidos se leen por usuario y por fecha y cuadran con los pagos: Postgres con un índice en `(user_id, created_at)`. El precio: repartir escrituras cuesta más, pero una máquina aguanta.»"
+      },
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ]
+        },
+        {
+          "id": "kv",
+          "kind": "db",
+          "label": "Key-value",
+          "at": [
+            2,
+            1.3
+          ],
+          "note": "sesiones"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        },
+        {
+          "id": "app-kv",
+          "from": "app",
+          "to": "kv",
+          "label": "por clave"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "app-kv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        }
+      ]
+    }
+  ]
+}

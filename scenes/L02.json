@@ -1,0 +1,852 @@
+{
+  "id": "L02",
+  "title": "Una petición, en acción",
+  "metrics": [
+    {
+      "id": "code",
+      "label": "Código de estado"
+    },
+    {
+      "id": "charges",
+      "label": "Cobros por un pago",
+      "better": "low"
+    }
+  ],
+  "goals": [
+    {
+      "text": "Cómo encuentra tu móvil al servidor",
+      "step": 2
+    },
+    {
+      "text": "Qué viaja en una petición HTTP y qué vuelve",
+      "step": 3
+    },
+    {
+      "text": "Qué errores merece la pena reintentar",
+      "step": 5
+    },
+    {
+      "text": "Por qué un reintento puede cobrar dos veces, y cómo evitarlo",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Un nombre",
+      "chapter": "problem",
+      "title": "Tu móvil solo sabe un nombre",
+      "body": "Abres `https://api.ejemplo.com/users/42`. Tu móvil es el **cliente**: pide algo y espera la respuesta. Los datos están en un **servidor** de otra parte. Pero en internet las máquinas se encuentran por su dirección IP, y el móvil solo tiene un nombre: la petición no tiene adónde ir.",
+      "callout": {
+        "type": "tip",
+        "text": "Como en un restaurante: pides con la carta y la cocina prepara el plato. La carta es la **API**: qué puedes pedir, cómo pedirlo y qué te van a devolver."
+      },
+      "metrics": {
+        "code": null,
+        "charges": null
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "api.ejemplo.com",
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "¿IP?",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s"
+          ],
+          "kind": "req",
+          "failAt": 0.5,
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "DNS",
+      "chapter": "technique",
+      "title": "El DNS traduce el nombre a una IP",
+      "body": "Primero, el cliente pregunta al **DNS** (*Domain Name System*), la guía telefónica de internet: ¿qué IP tiene `api.ejemplo.com`? Con la respuesta ya sabe a qué máquina llamar. Y la guarda un rato: no vuelve a preguntar en cada petición.",
+      "changes": [
+        "+ DNS: del nombre a la IP",
+        "~ El móvil guarda la IP un rato"
+      ],
+      "metrics": {
+        "code": null,
+        "charges": null
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "note": "api.ejemplo.com"
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "label": "¿IP?"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "dashed": true
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-dns"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "HTTP",
+      "chapter": "technique",
+      "title": "La petición viaja y vuelve con un 200",
+      "body": "El cliente abre una conexión con esa IP (con HTTPS, cifrada) y manda una petición **HTTP**: método, ruta, cabeceras y, a veces, un cuerpo. El servidor busca el usuario 42 en su base de datos y responde con un **código de estado** y un cuerpo en **JSON**.",
+      "callout": {
+        "type": "insight",
+        "text": "El servidor también es cliente: de su base de datos, o de una API de pagos."
+      },
+      "changes": [
+        "+ Conexión HTTPS con el servidor",
+        "+ El servidor lee de su base de datos",
+        "~ Respuesta: 200 OK con JSON"
+      ],
+      "metrics": {
+        "code": "200 OK",
+        "charges": null
+      },
+      "panel": {
+        "title": "Lo que viaja",
+        "rows": [
+          {
+            "text": "GET /users/42 HTTP/1.1"
+          },
+          {
+            "text": "Host: api.ejemplo.com · Accept: application/json"
+          },
+          {
+            "text": "HTTP/1.1 200 OK",
+            "tone": "good"
+          },
+          {
+            "text": "{ \"id\": 42, \"city\": \"Bilbao\" }"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "id 42"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "GET /users/42"
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s",
+            "s-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Ahora la app crea un usuario nuevo con sus datos. ¿Qué petición encaja con REST?",
+        "options": [
+          "GET /createUser?name=…",
+          "POST /users, con los datos en el cuerpo",
+          "POST /createUser, con los datos en la URL",
+          "GET /users/43, para que el servidor lo cree"
+        ],
+        "answer": 1,
+        "explain": "En REST la URL dice el recurso (`/users`) y el método la acción: `POST` crea, con los datos en el cuerpo. Un verbo en la URL (`createUser`) repite lo que ya dice el método, y un `GET` solo lee: no debería crear nada."
+      }
+    },
+    {
+      "short": "REST",
+      "chapter": "technique",
+      "title": "REST: el recurso en la URL, la acción en el método",
+      "body": "La API expone **recursos** (usuarios, fotos, pedidos), cada uno con su URL, y el **método** dice qué haces con él. `POST /users` crea el usuario 43 y responde `201 Created`. Sustantivos en la URL, nunca verbos: `GET /users/42`, no `GET /getUser?id=42`.",
+      "callout": {
+        "type": "tip",
+        "text": "REST con JSON no es la única forma: entre servicios internos se usa mucho gRPC, con mensajes binarios y un contrato estricto."
+      },
+      "changes": [
+        "~ POST /users crea el usuario 43",
+        "~ Código: 201 Created"
+      ],
+      "metrics": {
+        "code": "201 Created",
+        "charges": null
+      },
+      "panel": {
+        "title": "Recursos y métodos",
+        "rows": [
+          {
+            "text": "GET /users/42 → leer"
+          },
+          {
+            "text": "POST /users → crear (201 Created)"
+          },
+          {
+            "text": "PUT /users/42 → reemplazar entero"
+          },
+          {
+            "text": "PATCH /users/42 → cambiar algunos campos"
+          },
+          {
+            "text": "DELETE /users/42 → borrar"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "id 42",
+            "id 43"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "POST /users"
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s",
+            "s-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1.2,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "4xx o 5xx",
+      "chapter": "case",
+      "title": "Un error: ¿es tuyo o del servidor?",
+      "body": "El primer dígito lo dice casi todo: **2xx**, bien; **3xx**, vete a otro sitio; **4xx**, el fallo es del cliente; **5xx**, del servidor. Aquí el servidor está sobrecargado y contesta `503`: tiene sentido esperar y reintentar. Ante un `400` o un `404`, repetir no sirve: hay que cambiar la petición.",
+      "callout": {
+        "type": "tip",
+        "text": "El servidor puede decir cuánto esperar con la cabecera `Retry-After`."
+      },
+      "changes": [
+        "~ El servidor, sobrecargado",
+        "~ Código: 503 Service Unavailable"
+      ],
+      "metrics": {
+        "code": "503",
+        "charges": null
+      },
+      "panel": {
+        "title": "¿Reintentar?",
+        "rows": [
+          {
+            "text": "400 Bad Request → no: arregla la petición",
+            "tone": "bad"
+          },
+          {
+            "text": "404 Not Found → no: fallará igual",
+            "tone": "bad"
+          },
+          {
+            "text": "429 Too Many Requests → sí, después de esperar",
+            "tone": "good"
+          },
+          {
+            "text": "503 Service Unavailable → sí, tras el Retry-After",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "load": 0.96,
+          "state": "hot",
+          "mark": "bad"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "id 42",
+            "id 43"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "GET /users/42",
+          "state": "hot"
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s"
+          ],
+          "kind": "req",
+          "back": "fail",
+          "rate": 1.8
+        },
+        {
+          "via": [
+            "c-s",
+            "s-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.5
+        }
+      ],
+      "predict": {
+        "q": "El móvil manda `POST /payments` y el servidor cobra, pero la respuesta se pierde por el camino. El móvil reintenta. ¿Qué pasa?",
+        "options": [
+          "Nada: el servidor sabe que es el mismo pago",
+          "Se cobra dos veces: para el servidor es un pago nuevo",
+          "El servidor responde 404 al segundo intento",
+          "El reintento falla con un 503 y no se cobra"
+        ],
+        "answer": 1,
+        "explain": "Sin nada que los distinga, los dos `POST` son dos pagos: el servidor no tiene forma de saber que el segundo es un reintento. No es un error del cliente (4xx) ni una sobrecarga (503): es que `POST` no es idempotente."
+      }
+    },
+    {
+      "short": "Cobro doble",
+      "chapter": "case",
+      "title": "El reintento que cobra dos veces",
+      "body": "`POST /payments` llega, el servidor guarda el pago y cobra, pero la respuesta se pierde por el camino. El móvil no sabe si ha ido bien y reintenta. Para el servidor es un pago nuevo: **cobra dos veces**.",
+      "callout": {
+        "type": "insight",
+        "text": "**Idempotente**: repetir la operación deja todo igual que hacerla una vez. `GET`, `PUT` y `DELETE` lo son; `POST`, no."
+      },
+      "changes": [
+        "~ La respuesta se pierde",
+        "+ pago 2: el reintento cobra otra vez"
+      ],
+      "metrics": {
+        "code": "ninguno",
+        "charges": 2
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "pago 1",
+            "pago 2"
+          ],
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "POST /payments",
+          "bend": 0.3
+        },
+        {
+          "id": "s-c",
+          "from": "s",
+          "to": "c",
+          "bend": 0.3
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db",
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s",
+            "s-db"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "s-c"
+          ],
+          "kind": "resp",
+          "failAt": 0.5,
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Clave única",
+      "chapter": "solution",
+      "title": "Una idempotency key por operación",
+      "body": "El móvil manda un id único por operación en la cabecera `Idempotency-Key`. Si un reintento llega con una clave que el servidor ya ha visto, devuelve el resultado anterior sin repetir nada. Un pago, un cobro, aunque el móvil reintente.",
+      "callout": {
+        "type": "tip",
+        "text": "Así el cliente puede reintentar tranquilo: ese `POST` se comporta como si fuera idempotente."
+      },
+      "changes": [
+        "+ Cabecera Idempotency-Key",
+        "~ El reintento recibe el resultado anterior",
+        "~ Cobros: 2 → 1"
+      ],
+      "metrics": {
+        "code": "201 Created",
+        "charges": 1
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ],
+          "badge": "clave vista",
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "pago 1"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "Idempotency-Key",
+          "bend": 0.3
+        },
+        {
+          "id": "s-c",
+          "from": "s",
+          "to": "c",
+          "bend": 0.3
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s"
+          ],
+          "kind": "req",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "s-db"
+          ],
+          "kind": "write",
+          "rate": 0.35,
+          "pop": true
+        },
+        {
+          "via": [
+            "s-c"
+          ],
+          "kind": "resp",
+          "failAt": 0.5,
+          "rate": 0.4
+        },
+        {
+          "via": [
+            "s-c"
+          ],
+          "kind": "resp",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- El cliente pide y el servidor responde; la API es el contrato.\n- DNS → conexión → petición HTTP → respuesta con su código.\n- 4xx: el fallo es del cliente, no reintentes. 5xx y 429: espera y reintenta.\n- REST: el recurso en la URL, la acción en el método.\n- Un `POST` que no debe repetirse lleva idempotency key.",
+      "callout": {
+        "type": "insight",
+        "text": "Mientras la API no cambie, el servidor puede cambiar por dentro sin que ningún cliente se entere."
+      },
+      "metrics": {
+        "code": "201 Created",
+        "charges": 1
+      },
+      "nodes": [
+        {
+          "id": "c",
+          "kind": "client",
+          "label": "Móvil",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "IP guardada"
+        },
+        {
+          "id": "dns",
+          "kind": "external",
+          "label": "DNS",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "s",
+          "kind": "service",
+          "label": "Servidor",
+          "at": [
+            2.4,
+            1.25
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2.4,
+            2.5
+          ],
+          "items": [
+            "pago 1"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "c-dns",
+          "from": "c",
+          "to": "dns",
+          "state": "dim"
+        },
+        {
+          "id": "c-s",
+          "from": "c",
+          "to": "s",
+          "label": "POST /payments"
+        },
+        {
+          "id": "s-db",
+          "from": "s",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "c-s",
+            "s-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    }
+  ]
+}
