@@ -1,0 +1,912 @@
+{
+  "id": "L05",
+  "title": "La cache, en acción",
+  "metrics": [
+    {
+      "id": "db",
+      "label": "Lecturas a la BD",
+      "unit": "/s",
+      "better": "low"
+    },
+    {
+      "id": "hit",
+      "label": "Hit rate",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "avg",
+      "label": "Lectura media",
+      "unit": "ms",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "DEL: borrar una clave"
+  },
+  "goals": [
+    {
+      "text": "Qué es un hit, qué es un miss y cuánto ahorra la cache",
+      "step": 2
+    },
+    {
+      "text": "Por qué 10 puntos de hit rate doblan la carga de la BD",
+      "step": 3
+    },
+    {
+      "text": "Cómo se borra un dato viejo y por qué hace falta TTL",
+      "step": 4
+    },
+    {
+      "text": "Qué es un cache stampede y cómo se evita",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Sin cache",
+      "chapter": "problem",
+      "title": "Cada lectura baja a la base de datos",
+      "body": "La tienda recibe **10.000 lecturas por segundo** y cada una es una consulta a la base de datos (supón 20 ms). Casi siempre se pide lo mismo: el 1 % de los productos se lleva el 80 % de las visitas. Aun así, la BD repite el trabajo cada vez y va al límite.",
+      "callout": {
+        "type": "insight",
+        "text": "Ese 1 % más visto son 100.000 fichas de 2 KB: unos 200 MB. Caben en memoria de sobra."
+      },
+      "metrics": {
+        "db": 10000,
+        "hit": 0,
+        "avg": 20
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "state": "hot",
+          "load": 0.95,
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "state": "hot",
+          "label": "SELECT"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3,
+          "wait": 500
+        }
+      ]
+    },
+    {
+      "short": "Cache-aside",
+      "chapter": "technique",
+      "title": "Cache-aside: primero, mirar en Redis",
+      "body": "Pones al lado una cache en memoria, **Redis**. La app busca `product:42` ahí primero: si está, es un **hit** y sale en 1 ms. Si no, es un **miss**: lee la BD y deja la ficha en Redis con un TTL de 10 minutos, para la próxima vez. Con un 90 % de hits, la BD solo ve el 10 % de las lecturas.",
+      "callout": {
+        "type": "tip",
+        "text": "Quien decide es la app: la cache no sabe nada de la base de datos. Si Redis cae, la app sigue funcionando, solo que más lenta."
+      },
+      "changes": [
+        "+ Redis, con TTL de 10 min",
+        "~ Hit rate: 0 → 90 %",
+        "~ A la BD: 10.000 → 1.000 lecturas/s"
+      ],
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": 2.9
+      },
+      "panel": {
+        "title": "Tiempo medio de lectura",
+        "rows": [
+          {
+            "text": "Supón: hit 1 ms; miss 20 ms (va a la BD)"
+          },
+          {
+            "text": "0,9 × 1 + 0,1 × 20 = 2,9 ms",
+            "tone": "good"
+          },
+          {
+            "text": "A la BD: el 10 % de 10.000 = 1.000/s",
+            "tone": "good"
+          }
+        ]
+      },
+      "predict": {
+        "q": "Redis se queda corto de memoria y el hit rate baja del 90 % al 80 %. Con las mismas 10.000 lecturas por segundo, ¿cuántas llegan ahora a la base de datos?",
+        "options": [
+          "1.100: un 10 % más que antes",
+          "2.000: el doble que antes",
+          "8.000: las del 80 %",
+          "1.000: igual, solo cambia Redis"
+        ],
+        "answer": 1,
+        "explain": "A la BD solo llegan los misses: antes el 10 % de 10.000 (1.000), ahora el 20 % (2.000). Diez puntos menos de hit rate doblan su carga. La tentadora, 1.100, suma un 10 % a la carga de antes, pero lo que se dobla es la parte que falla. Y 8.000 son los hits: esos los resuelve Redis."
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "miss"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.7
+        },
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 150
+        },
+        {
+          "via": [
+            "app-cache"
+          ],
+          "kind": "write",
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "Hit rate 80 %",
+      "chapter": "case",
+      "title": "Redis se llena y el hit rate baja",
+      "body": "Redis no es infinito. Cuando se llena, la **eviction** saca entradas para meter las nuevas: con **LRU**, sale la que lleva más tiempo sin usarse. Con poca memoria expulsa fichas que se vuelven a pedir enseguida: el hit rate cae al 80 % y a la BD le llega el doble.",
+      "callout": {
+        "type": "warn",
+        "text": "Si el hit rate baja, sospecha de dos cosas: una cache pequeña que expulsa lo que se vuelve a pedir, o un TTL demasiado corto."
+      },
+      "changes": [
+        "~ Redis, lleno: LRU expulsa fichas",
+        "~ Hit rate: 90 → 80 %",
+        "~ A la BD: 1.000 → 2.000 lecturas/s"
+      ],
+      "metrics": {
+        "db": 2000,
+        "hit": 80,
+        "avg": 4.8
+      },
+      "panel": {
+        "title": "Tiempo medio de lectura",
+        "rows": [
+          {
+            "text": "0,8 × 1 + 0,2 × 20 = 4,8 ms",
+            "tone": "bad"
+          },
+          {
+            "text": "A la BD: el 20 % de 10.000 = 2.000/s",
+            "tone": "bad"
+          },
+          {
+            "text": "10 puntos menos de hit rate: el doble de carga"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "load": 1,
+          "badge": "llena",
+          "note": "LRU expulsa",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.2
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "miss"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6,
+          "wait": 150
+        },
+        {
+          "via": [
+            "app-cache"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Un precio",
+      "chapter": "case",
+      "title": "Cambia un precio: borra la clave",
+      "body": "Con más memoria, el hit rate vuelve al 90 %. Ahora el admin cambia el precio del producto 42, y la copia de Redis pasa a ser un **dato viejo** (*stale data*). En cache-aside, la app escribe en la BD y **borra** `product:42`: la siguiente lectura hace miss y trae el precio nuevo.",
+      "callout": {
+        "type": "warn",
+        "text": "Borrar no basta: una lectura lenta que leyó antes del cambio puede guardar el precio viejo justo después del borrado. Pon siempre TTL: es la red de seguridad."
+      },
+      "changes": [
+        "+ Admin: escribe el precio nuevo",
+        "~ Redis: se borra p:42",
+        "~ Más memoria: hit rate de vuelta al 90 %"
+      ],
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": 2.9
+      },
+      "predict": {
+        "q": "La portada es la clave más pedida de la tienda. A medianoche vence su TTL. ¿Qué pasa en el segundo siguiente?",
+        "options": [
+          "Redis se satura: la portada es una hot key",
+          "Nada grave: la primera petición la guarda y las demás hacen hit",
+          "Miles de peticiones hacen miss a la vez y van todas a la BD",
+          "Se sirve la portada vieja hasta que alguien la borre"
+        ],
+        "answer": 2,
+        "explain": "Mientras nadie la vuelve a guardar, cada petición de la portada hace miss, y llegan miles a la vez: todas van a la BD a calcular lo mismo. Es un cache stampede. La tentadora, «la primera la guarda», olvida que recalcular tarda: en ese rato llegan todas las demás. Una hot key satura Redis mientras la clave está; aquí el problema es que no está."
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "admin",
+          "kind": "client",
+          "label": "Admin",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "portada",
+            "p:7"
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "admin-app",
+          "from": "admin",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "DEL p:42"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "UPDATE"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 150
+        },
+        {
+          "via": [
+            "admin-app",
+            "app-db"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "app-cache"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Stampede",
+      "chapter": "case",
+      "title": "Caduca la portada: todos a la base de datos",
+      "body": "A medianoche vence el TTL de la portada. Hasta que alguien la vuelve a guardar, **cada** petición de la portada hace miss, y son miles a la vez: todas van a la BD a calcular lo mismo, y la BD se satura. Es un **cache stampede** (o *thundering herd*).",
+      "callout": {
+        "type": "warn",
+        "text": "No es una hot key: esa satura el nodo de la cache mientras la clave está. El stampede llega cuando la clave no está."
+      },
+      "changes": [
+        "− portada (caducada)",
+        "~ Miles de misses a la vez",
+        "~ La BD se satura"
+      ],
+      "metrics": {
+        "db": "miles",
+        "hit": "se hunde",
+        "avg": "se dispara"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "p:42",
+            "p:7"
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "state": "hot",
+          "load": 1,
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "miss",
+          "state": "hot"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 5,
+          "wait": 600
+        },
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Lock y jitter",
+      "chapter": "solution",
+      "title": "Un lock: solo una petición recalcula",
+      "body": "Cada miss pide el **lock** de su clave. La primera petición que lo consigue lee la BD y vuelve a guardar la portada; las demás esperan o sirven la versión anterior. A la BD llega una consulta, no miles. Y el TTL lleva algo de azar (**jitter**): 10 minutos, más o menos unos segundos.",
+      "callout": {
+        "type": "tip",
+        "text": "Sin jitter, las claves que se guardaron a la vez caducan a la vez, y el stampede vuelve cada 10 minutos."
+      },
+      "changes": [
+        "+ Lock por clave: un solo recálculo",
+        "+ Jitter en el TTL",
+        "~ La BD vuelve a 1.000 lecturas/s"
+      ],
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": 2.9
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min ± azar",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ]
+        },
+        {
+          "id": "lock",
+          "kind": "lock",
+          "label": "Lock",
+          "at": [
+            1,
+            2.4
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit"
+        },
+        {
+          "id": "app-lock",
+          "from": "app",
+          "to": "lock",
+          "label": "miss"
+        },
+        {
+          "id": "lock-db",
+          "from": "lock",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.7
+        },
+        {
+          "via": [
+            "users-app",
+            "app-lock",
+            "lock-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 150
+        },
+        {
+          "via": [
+            "app-cache"
+          ],
+          "kind": "write",
+          "rate": 0.3
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Pocos datos se llevan casi todas las lecturas: tenerlos en memoria ahorra mucho.\n- Cache-aside: el hit sale de Redis; el miss, de la BD, y se guarda con TTL.\n- El hit rate manda: del 90 % al 80 %, el doble de carga en la BD.\n- Al escribir, borra la clave; el TTL es la red de seguridad.\n- Contra el stampede, un lock por clave y TTL con jitter.",
+      "callout": {
+        "type": "insight",
+        "text": "Al escribir hay más estrategias: **write-through** escribe en la cache y en la BD a la vez; **write-back**, solo en la cache, y vuelca en lotes. Para dinero, nunca write-back."
+      },
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": 2.9
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "admin",
+          "kind": "client",
+          "label": "Admin",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min ± azar",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ]
+        },
+        {
+          "id": "lock",
+          "kind": "lock",
+          "label": "Lock",
+          "at": [
+            1,
+            2.4
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "admin-app",
+          "from": "admin",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit"
+        },
+        {
+          "id": "app-lock",
+          "from": "app",
+          "to": "lock"
+        },
+        {
+          "id": "lock-db",
+          "from": "lock",
+          "to": "db"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "UPDATE"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "users-app",
+            "app-lock",
+            "lock-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 150
+        },
+        {
+          "via": [
+            "admin-app",
+            "app-db"
+          ],
+          "kind": "write",
+          "rate": 0.4
+        }
+      ]
+    }
+  ]
+}

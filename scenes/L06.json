@@ -1,0 +1,1207 @@
+{
+  "id": "L06",
+  "title": "Los IDs, en acción",
+  "metrics": [
+    {
+      "id": "dup",
+      "label": "IDs repetidos"
+    },
+    {
+      "id": "free",
+      "label": "Sin preguntar a nadie"
+    },
+    {
+      "id": "sorted",
+      "label": "Ordenado por tiempo"
+    },
+    {
+      "id": "len",
+      "label": "Código en base62",
+      "unit": "car.",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "ajuste de hora (NTP)"
+  },
+  "goals": [
+    {
+      "text": "Por qué dos contadores repiten y uno solo se atasca",
+      "step": 2
+    },
+    {
+      "text": "Qué cuesta un UUID y qué arregla el v7",
+      "step": 4
+    },
+    {
+      "text": "Cómo da Snowflake IDs sin coordinarse, y su punto débil",
+      "step": 6
+    },
+    {
+      "text": "Por qué un número pequeño da un código corto",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Dos contadores",
+      "chapter": "problem",
+      "title": "Dos bases de datos, el mismo pedido 1001",
+      "body": "Los pedidos se reparten entre dos bases de datos y cada una numera con **auto-increment**: 1, 2, 3… Es corto y ordenado, pero cada una cuenta por su lado: las dos acaban creando el pedido **1001**. Dentro de cada BD el número es único; entre las dos, no.",
+      "callout": {
+        "type": "insight",
+        "text": "Con una sola base de datos, auto-increment es perfecto. El lío empieza cuando escribe más de una máquina."
+      },
+      "metrics": {
+        "dup": "sí",
+        "free": "no",
+        "sorted": "sí",
+        "len": 7
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ]
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ],
+          "items": [
+            "1000",
+            "1001"
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ],
+          "items": [
+            "1000",
+            "1001"
+          ],
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.2
+        }
+      ]
+    },
+    {
+      "short": "Un contador",
+      "chapter": "problem",
+      "title": "Un contador central: un cuello de botella",
+      "body": "Para no repetir, todos los servidores piden cada ID a **un único contador**. Ya no hay repetidos, pero cada inserción espera a esa máquina y, con muchos servidores, se satura. Y si se cae, nadie crea nada: es un **SPOF**.",
+      "callout": {
+        "type": "tip",
+        "text": "El truco de Flickr: dos contadores, uno da los impares y otro los pares. Funciona, pero añadir un tercero obliga a cambiar el reparto."
+      },
+      "changes": [
+        "+ Un contador central",
+        "~ Cada ID, una pregunta al contador",
+        "~ IDs repetidos: sí → no"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "no",
+        "sorted": "sí",
+        "len": 7
+      },
+      "predict": {
+        "q": "Quitas el contador: cada servidor genera su ID como un **UUID v4**, 122 bits al azar, sin preguntar a nadie. ¿Qué se resiente?",
+        "options": [
+          "Los repetidos: con tres servidores generando, chocarán a diario",
+          "El índice de la BD: cada fila nueva cae en una página cualquiera",
+          "La velocidad: sacar 122 bits al azar tarda más que contar",
+          "Nada: es único, corto y no depende de nadie"
+        ],
+        "answer": 1,
+        "explain": "Un UUID v4 no tiene orden: cada inserción cae en una página cualquiera del índice (un B-tree) y, cuando no cabe en memoria, toca leer del disco. Los repetidos tientan, pero son absurdamente improbables: con mil millones por segundo, unos 86 años hasta un 50 % de probabilidad de una sola colisión. Y corto no es: 36 caracteres."
+      },
+      "nodes": [
+        {
+          "id": "ctr",
+          "kind": "service",
+          "label": "Contador",
+          "at": [
+            1,
+            0
+          ],
+          "state": "hot",
+          "load": 0.95,
+          "mark": "bad"
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ]
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ],
+          "items": [
+            "1001",
+            "1003"
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ],
+          "items": [
+            "1002",
+            "1004"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "a-ctr",
+          "from": "a",
+          "to": "ctr",
+          "state": "hot"
+        },
+        {
+          "id": "b-ctr",
+          "from": "b",
+          "to": "ctr",
+          "state": "hot"
+        },
+        {
+          "id": "c-ctr",
+          "from": "c",
+          "to": "ctr",
+          "state": "hot"
+        },
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-ctr",
+              "b-ctr",
+              "c-ctr"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 4,
+          "wait": 300
+        },
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "UUID v4",
+      "chapter": "technique",
+      "title": "UUID v4: cada servidor, el suyo",
+      "body": "Cada servidor genera un **UUID v4**: 128 bits, 122 al azar. No pregunta a nadie y repetir uno es absurdamente improbable. El precio está en el índice, un **B-tree** ordenado: cada ID nuevo cae en una página cualquiera y, cuando el índice ya no cabe en memoria, muchas inserciones leen del disco.",
+      "callout": {
+        "type": "warn",
+        "text": "Además es largo: 16 bytes y, como texto, 36 caracteres (`9b2f4c1e-7a3d-…`). En base62 son 22: inservible como código corto."
+      },
+      "changes": [
+        "− El contador central",
+        "+ Un UUID v4 en cada servidor",
+        "~ El índice: páginas al azar, lee del disco",
+        "~ Código en base62: 7 → 22 caracteres"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "sí",
+        "sorted": "no",
+        "len": 22
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ]
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ],
+          "load": 0.8,
+          "badge": "lee disco",
+          "items": [
+            "9b2f…",
+            "1d5a…"
+          ],
+          "mark": "bad"
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ],
+          "load": 0.8,
+          "badge": "lee disco",
+          "items": [
+            "7a3d…",
+            "c04e…"
+          ],
+          "mark": "bad"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "UUID v7",
+      "chapter": "solution",
+      "title": "UUID v7: la hora, delante",
+      "body": "El **UUID v7** pone la hora en milisegundos en los primeros 48 bits y deja el resto al azar. Se genera igual de libre que un v4, pero cada ID nuevo es mayor que los anteriores: todos van **al final del índice**, a la última página, que siempre está en memoria. Es la **localidad**.",
+      "callout": {
+        "type": "warn",
+        "text": "Sigue siendo largo: 22 caracteres en base62. Bien para la base de datos; para un enlace corto, no."
+      },
+      "changes": [
+        "~ UUID v4 → v7: empieza por la hora",
+        "~ El índice: siempre al final, en memoria",
+        "~ Ordenado por tiempo: no → sí"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "sí",
+        "sorted": "sí",
+        "len": 22
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ]
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ],
+          "load": 0.3,
+          "badge": "en memoria",
+          "items": [
+            "01a202…",
+            "01a203…"
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ],
+          "load": 0.3,
+          "badge": "en memoria",
+          "items": [
+            "01a202…",
+            "01a203…"
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Snowflake",
+      "chapter": "technique",
+      "title": "Snowflake: hora, máquina y contador",
+      "body": "Twitter quería IDs de 64 bits (caben en un `bigint`), ordenados y sin coordinarse. **Snowflake** junta tres trozos: la hora, el número de la máquina y un contador dentro del mismo milisegundo. Como cada servidor tiene su número, dos nunca generan el mismo ID. En base62, 11 caracteres.",
+      "callout": {
+        "type": "tip",
+        "text": "Como la hora va delante, ordenar por ID es ordenar por fecha de creación. Casi: entre máquinas hay unos milisegundos de baile."
+      },
+      "changes": [
+        "+ Cada servidor, con su número de máquina",
+        "~ 64 bits en vez de 128",
+        "~ Código en base62: 22 → 11 caracteres"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "sí",
+        "sorted": "casi",
+        "len": 11
+      },
+      "panel": {
+        "title": "Los 64 bits de un Snowflake",
+        "rows": [
+          {
+            "text": "41 bits: ms desde la epoch → ~69 años"
+          },
+          {
+            "text": "10 bits: la máquina → 1.024 máquinas"
+          },
+          {
+            "text": "12 bits: contador → 4.096 IDs por ms"
+          },
+          {
+            "text": "1 bit: el signo, siempre a 0"
+          }
+        ]
+      },
+      "predict": {
+        "q": "NTP corrige el reloj del servidor B y lo atrasa unos milisegundos. Si su generador de Snowflake no lo vigila, ¿qué puede pasar?",
+        "options": [
+          "Nada: el número de máquina ya hace único cada ID",
+          "Que B y C generen el mismo ID",
+          "Que B repita IDs que ya dio en esos milisegundos",
+          "Que los IDs de B dejen de caber en 64 bits"
+        ],
+        "answer": 2,
+        "explain": "Con el reloj atrás, B vuelve a pasar por milisegundos ya usados y su contador vuelve a empezar: misma hora, misma máquina, misma secuencia, mismo ID. La tentadora es «el número de máquina lo hace único»: eso evita choques entre máquinas, como B y C, pero no los de B consigo mismo."
+      },
+      "nodes": [
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ],
+          "note": "máquina 1"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ],
+          "note": "máquina 2"
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ],
+          "note": "máquina 3"
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Reloj atrás",
+      "chapter": "case",
+      "title": "NTP atrasa el reloj de B",
+      "body": "Los servidores se ponen en hora con **NTP**, y a veces la corrección los mueve hacia atrás. B volvería a pasar por milisegundos ya usados y podría repetir IDs. Por eso el generador recuerda la última hora que usó: si el reloj retrocede, **espera** a alcanzarla o da error.",
+      "callout": {
+        "type": "warn",
+        "text": "El número de máquina también tiene que ser único: se fija en la configuración o lo reparte un servicio de coordinación. Dos servidores con el mismo número sí chocarían."
+      },
+      "changes": [
+        "+ NTP corrige la hora",
+        "~ El reloj de B va hacia atrás",
+        "~ B espera a su última hora antes de dar IDs"
+      ],
+      "metrics": {
+        "dup": "no: B espera",
+        "free": "sí",
+        "sorted": "casi",
+        "len": 11
+      },
+      "nodes": [
+        {
+          "id": "ntp",
+          "kind": "clock",
+          "label": "NTP",
+          "at": [
+            2,
+            0
+          ],
+          "note": "atrasa la hora"
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ],
+          "note": "máquina 1"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ],
+          "note": "máquina 2",
+          "badge": "espera",
+          "mark": "bad"
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ],
+          "note": "máquina 3"
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ntp-b",
+          "from": "ntp",
+          "to": "b",
+          "dashed": true
+        },
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1",
+          "state": "dim"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2",
+          "state": "dim"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ntp-b"
+          ],
+          "kind": "event",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "a-db1"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "c-db2"
+          ],
+          "kind": "write",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Rangos",
+      "chapter": "solution",
+      "title": "Rangos: un bloque de 1.000 de golpe",
+      "body": "¿Y números pequeños y seguidos con muchos servidores? Un solo contador, pero cada servidor le pide un **bloque** de 1.000 y lo gasta en memoria. El contador recibe una petición por cada 1.000 IDs: deja de ser un cuello de botella. Y con números pequeños, el código en **base62** es corto: mil millones son `15FTGg`, 6 caracteres.",
+      "callout": {
+        "type": "warn",
+        "text": "Si A se cae a mitad de bloque, los números que le quedaban se pierden: habrá huecos, nunca repetidos."
+      },
+      "changes": [
+        "+ Un contador que reparte bloques",
+        "~ Cada servidor gasta su bloque en memoria",
+        "~ Código en base62: 11 → 7 caracteres"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "casi",
+        "sorted": "no",
+        "len": 7
+      },
+      "panel": {
+        "title": "Códigos posibles en base62",
+        "rows": [
+          {
+            "text": "6 caracteres → ~56.800 millones"
+          },
+          {
+            "text": "7 caracteres → ~3,5 billones",
+            "tone": "good"
+          },
+          {
+            "text": "8 caracteres → ~218 billones"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ctr",
+          "kind": "service",
+          "label": "Contador",
+          "at": [
+            1,
+            0
+          ],
+          "note": "siguiente: 3.001",
+          "load": 0.1,
+          "mark": "good"
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ],
+          "note": "1–1.000"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ],
+          "note": "1.001–2.000"
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ],
+          "note": "2.001–3.000"
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "a-ctr",
+          "from": "a",
+          "to": "ctr"
+        },
+        {
+          "id": "b-ctr",
+          "from": "b",
+          "to": "ctr"
+        },
+        {
+          "id": "c-ctr",
+          "from": "c",
+          "to": "ctr"
+        },
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-ctr",
+              "b-ctr",
+              "c-ctr"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Auto-increment: perfecto en una BD; con varias, repite o se atasca.\n- UUID: sin preguntar; el v4 dispersa el índice y el v7 no.\n- Snowflake: hora, máquina y contador en 64 bits. Vigila el reloj.\n- Rangos: bloques de 1.000, números pequeños, algunos huecos.\n- Número pequeño, código corto en base62.",
+      "callout": {
+        "type": "tip",
+        "text": "Un contador da códigos seguidos: tras `aZ3kQ9x` viene `aZ3kQ9y`. Si importa que no se adivinen, baraja los bits antes de codificar; lo verás en el acortador."
+      },
+      "metrics": {
+        "dup": "no",
+        "free": "casi",
+        "sorted": "no",
+        "len": 7
+      },
+      "panel": {
+        "title": "Caracteres en base62 y su pega",
+        "rows": [
+          {
+            "text": "Auto-increment · 6-7 · una sola BD"
+          },
+          {
+            "text": "UUID v4 · 22 · dispersa el índice"
+          },
+          {
+            "text": "UUID v7 · 22 · largo para enseñarlo"
+          },
+          {
+            "text": "Snowflake · 10-11 · relojes que retroceden"
+          },
+          {
+            "text": "Rangos · 6-7 · huecos; cuidar el contador"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ctr",
+          "kind": "service",
+          "label": "Contador",
+          "at": [
+            1,
+            0
+          ],
+          "note": "siguiente: 3.001",
+          "load": 0.1
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ],
+          "note": "1–1.000"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ],
+          "note": "1.001–2.000"
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ],
+          "note": "2.001–3.000"
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "a-ctr",
+          "from": "a",
+          "to": "ctr"
+        },
+        {
+          "id": "b-ctr",
+          "from": "b",
+          "to": "ctr"
+        },
+        {
+          "id": "c-ctr",
+          "from": "c",
+          "to": "ctr"
+        },
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-ctr",
+              "b-ctr",
+              "c-ctr"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5
+        }
+      ]
+    }
+  ]
+}
