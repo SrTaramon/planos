@@ -1,0 +1,1384 @@
+{
+  "id": "P45",
+  "title": "Las métricas, en acción",
+  "metrics": [
+    {
+      "id": "series",
+      "label": "Series",
+      "unit": "M",
+      "better": "low"
+    },
+    {
+      "id": "pts",
+      "label": "Puntos por segundo"
+    },
+    {
+      "id": "disk",
+      "label": "Un año en disco",
+      "unit": "GB",
+      "better": "low"
+    },
+    {
+      "id": "lag",
+      "label": "Esperando en el log",
+      "unit": "M",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "write": "lote de puntos"
+  },
+  "goals": [
+    {
+      "text": "Por dónde viajan 100.000 puntos por segundo",
+      "step": 1
+    },
+    {
+      "text": "Cómo baja un punto de 16 bytes a 2",
+      "step": 2
+    },
+    {
+      "text": "Cómo se pinta un año sin leer 1.580 millones de puntos",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa con los puntos si se paran los ingesters",
+      "step": 5
+    },
+    {
+      "text": "Por qué una etiqueta puede tumbar el sistema",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Escritura",
+      "chapter": "solution",
+      "title": "10.000 servidores, una muestra cada 10 s",
+      "body": "Los colectores visitan los `/metrics` de sus servidores (dos por servidor, por si cae uno) y dejan los puntos en un log tipo Kafka. Los ingesters lo leen a su ritmo, los juntan por serie y los escriben en la TSDB.",
+      "callout": {
+        "type": "insight",
+        "text": "Lo difícil no son los bytes (1,6 MB/s), es el número de escrituras. Por eso todo va en lotes y por serie."
+      },
+      "changes": [
+        "+ 1 millón de series",
+        "+ 100.000 puntos por segundo",
+        "+ Log entre recogida y almacén"
+      ],
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 50000,
+        "lag": 0
+      },
+      "panel": {
+        "title": "Las cuentas",
+        "rows": [
+          {
+            "text": "10.000 servidores × 100 métricas = 1 M series"
+          },
+          {
+            "text": "1 M series / 10 s = 100.000 puntos por segundo"
+          },
+          {
+            "text": "× 16 B, un año sin comprimir: ~50 TB",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "srv-col",
+            "col-log",
+            "log-ing",
+            "ing-tsdb"
+          ],
+          "kind": "write",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
+      "short": "Comprimir",
+      "chapter": "solution",
+      "title": "Chunks de 2 horas, de 16 bytes a 2 por punto",
+      "body": "Cada ingester junta en memoria el chunk abierto de cada serie y apunta cada lote en su WAL. Cada 2 horas comprime el chunk y lo escribe en disco. Los datos son tan regulares que casi no queda nada que guardar.",
+      "callout": {
+        "type": "tip",
+        "text": "Si el ingester se reinicia, relee su WAL y recupera el chunk que tenía en memoria."
+      },
+      "changes": [
+        "+ Chunk de 2 h en memoria + WAL",
+        "~ 16 B → 2 B por punto",
+        "~ Un año: 50 TB → 6,3 TB"
+      ],
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 6300,
+        "lag": 0
+      },
+      "panel": {
+        "title": "Lo que se repite",
+        "rows": [
+          {
+            "text": "Instantes: 1793527200, +10, +10… → 0 bits",
+            "tone": "good"
+          },
+          {
+            "text": "Valores: 0,73, 0,74… → XOR con el anterior",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "WAL",
+          "mark": "good"
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ],
+          "badge": "2 B/punto"
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "srv-col",
+            "col-log",
+            "log-ing",
+            "ing-tsdb"
+          ],
+          "kind": "write",
+          "rate": 2.5,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Lectura",
+      "chapter": "solution",
+      "title": "Una gráfica y una regla preguntan lo mismo",
+      "body": "El dashboard pide «la CPU media por zona, la última hora». Cada shard de la TSDB calcula su parte (sumas y recuentos) y el servicio de consultas las junta. Las alertas usan el mismo camino: cada 30 s, la regla como una consulta.",
+      "callout": {
+        "type": "warn",
+        "text": "Viajan sumas y recuentos, no medias: la media de las medias sale mal si cada shard tiene un número distinto de puntos."
+      },
+      "changes": [
+        "+ Dashboard → consultas → TSDB",
+        "+ Reglas cada 30 s, con su for de 5 min"
+      ],
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 6300,
+        "lag": 0
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "note": "cada 30 s"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col",
+          "state": "dim"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing",
+          "state": "dim"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "dash-qry",
+            "qry-tsdb"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "alert-qry",
+            "qry-tsdb"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "log-ing",
+            "ing-tsdb"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        }
+      ],
+      "predict": {
+        "q": "Ahora alguien abre la gráfica del último año de la CPU de 500 servidores. Su pantalla tiene 1.000 píxeles de ancho. ¿Qué debería leer el servicio de consultas?",
+        "options": [
+          "Todos los puntos crudos: si no, la gráfica miente",
+          "Una muestra al azar de 1.000 puntos por serie",
+          "Los resúmenes de 1 hora, con mínimo, máximo, suma y recuento",
+          "Solo el último mes, que es lo que se mira"
+        ],
+        "answer": 2,
+        "explain": "En crudo serían ~1.580 millones de puntos para 1.000 píxeles: cada píxel son ~9 horas. Los resúmenes de 1 hora son 8.760 por serie y, con mínimo y máximo, no esconden los picos. Una muestra al azar sí se los saltaría."
+      }
+    },
+    {
+      "short": "Un año",
+      "chapter": "solution",
+      "title": "Resúmenes para lo viejo, y cada nivel con su plazo",
+      "body": "El compactador resume los bloques en tramos de 5 minutos y de 1 hora, y los sube a object storage. La retención borra cada nivel a su plazo. Para un año, el servicio de consultas lee los resúmenes de 1 hora.",
+      "callout": {
+        "type": "tip",
+        "text": "Un dashboard repite las mismas consultas cada pocos segundos: se cachean los tramos ya cerrados y solo se calcula el último."
+      },
+      "changes": [
+        "+ Resúmenes de 5 min y de 1 h",
+        "~ Un año: 6,3 TB → ~814 GB",
+        "~ Gráfica de un año: 1.580 M → 4,4 M puntos"
+      ],
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 814,
+        "lag": 0
+      },
+      "panel": {
+        "title": "Retención por niveles",
+        "rows": [
+          {
+            "text": "Crudo, cada 10 s, 15 días: ~259 GB"
+          },
+          {
+            "text": "Resumen de 5 min, 90 días: ~415 GB"
+          },
+          {
+            "text": "Resumen de 1 hora, 1 año: ~140 GB"
+          },
+          {
+            "text": "Total: ~814 GB en vez de 6,3 TB",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col",
+          "state": "dim"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing",
+          "state": "dim"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "label": "resúmenes"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "tsdb-obj"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "dash-qry",
+            "qry-obj"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ],
+      "predict": {
+        "q": "Un despliegue fallido para los ingesters 10 minutos. ¿Qué pasa con los puntos que los servidores mandan mientras tanto?",
+        "options": [
+          "Se pierden: la gráfica tendrá un hueco de 10 minutos",
+          "Esperan en el log y se escriben cuando vuelven los ingesters",
+          "Los colectores los rechazan y los servidores los reenvían después",
+          "Van directos a object storage"
+        ],
+        "answer": 1,
+        "explain": "Para eso está el log entre la recogida y el almacén: guarda lo que llega aunque nadie lo esté leyendo. 100.000 por segundo durante 600 s son 60 millones de puntos esperando. Al volver, los ingesters se ponen al día. Los servidores no guardan nada: si dependiera de ellos, sí habría hueco."
+      }
+    },
+    {
+      "short": "Ingesters",
+      "chapter": "case",
+      "title": "Los ingesters se paran 10 minutos",
+      "body": "Los colectores siguen escribiendo en el log y el log aguanta: en 10 minutos se acumulan 60 millones de puntos. Las gráficas van con retraso, pero no se pierde nada. Al volver, los ingesters se ponen al día.",
+      "callout": {
+        "type": "warn",
+        "text": "Mientras tanto, las reglas no ven datos nuevos. Una regla para la falta de datos avisa de que algo va mal en vez de enseñarlo todo en verde."
+      },
+      "changes": [
+        "− Ingesters",
+        "~ El log acumula 60 M puntos",
+        "~ Las gráficas, con retraso; sin huecos"
+      ],
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 814,
+        "lag": 60
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ],
+          "state": "hot",
+          "badge": "60 M",
+          "mark": "good"
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ],
+          "state": "down"
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "note": "falta de datos"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing",
+          "state": "down"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb",
+          "state": "down"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "srv-col",
+            "col-log"
+          ],
+          "kind": "write",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-ing"
+          ],
+          "kind": "write",
+          "fail": true,
+          "failAt": 0.5,
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Cardinalidad",
+      "chapter": "case",
+      "title": "Alguien añade user_id como etiqueta",
+      "body": "Un despliegue añade `user_id` a `http_requests_total`. Con un millón de usuarios, sus 5.000 series pueden pasar a ser 5.000 millones. Cada serie ocupa memoria en los ingesters y sitio en el índice: se ahogan. La defensa es un tope de series por métrica, y el usuario, a los logs.",
+      "callout": {
+        "type": "insight",
+        "text": "Las etiquetas, con pocos valores: servicio, zona, host. Lo que tiene muchos valores (usuarios, pedidos) va a los logs."
+      },
+      "changes": [
+        "~ 5.000 series → hasta 5.000 millones",
+        "~ Ingesters y TSDB, saturados",
+        "+ Tope de series por métrica"
+      ],
+      "metrics": {
+        "series": 5001,
+        "pts": "se dispara",
+        "disk": 814,
+        "lag": 0
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "+ user_id",
+          "mark": "bad"
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ],
+          "state": "hot",
+          "load": 0.97
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "hot",
+          "badge": "índice lleno"
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing",
+          "state": "hot"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb",
+          "state": "hot"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb",
+          "state": "dim"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry",
+          "state": "dim"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "srv-col",
+            "col-log",
+            "log-ing",
+            "ing-tsdb"
+          ],
+          "kind": "write",
+          "rate": 6
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Colectores, un log y los ingesters: 100.000 puntos por segundo, en lotes y por serie.\n- Chunks de 2 h con WAL y compresión: 2 B por punto.\n- Resúmenes de 5 min y de 1 h: ~814 GB al año.\n- El log aguanta si se paran los ingesters.\n- Etiquetas con pocos valores.",
+      "callout": {
+        "type": "insight",
+        "text": "Toda la arquitectura aprovecha tres cosas: los datos solo se añaden, llegan casi en orden y lo reciente se lee mucho más."
+      },
+      "metrics": {
+        "series": 1,
+        "pts": 100000,
+        "disk": 814,
+        "lag": 0
+      },
+      "nodes": [
+        {
+          "id": "srv",
+          "kind": "service",
+          "label": "Servidores",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colectores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "ing",
+          "kind": "worker",
+          "label": "Ingesters",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dash",
+          "kind": "client",
+          "label": "Dashboard",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "qry",
+          "kind": "service",
+          "label": "Consultas",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "tsdb",
+          "kind": "db",
+          "label": "TSDB",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "alert",
+          "kind": "worker",
+          "label": "Alertas",
+          "at": [
+            0,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "srv-col",
+          "from": "srv",
+          "to": "col"
+        },
+        {
+          "id": "col-log",
+          "from": "col",
+          "to": "log"
+        },
+        {
+          "id": "log-ing",
+          "from": "log",
+          "to": "ing"
+        },
+        {
+          "id": "ing-tsdb",
+          "from": "ing",
+          "to": "tsdb"
+        },
+        {
+          "id": "dash-qry",
+          "from": "dash",
+          "to": "qry"
+        },
+        {
+          "id": "qry-tsdb",
+          "from": "qry",
+          "to": "tsdb"
+        },
+        {
+          "id": "alert-qry",
+          "from": "alert",
+          "to": "qry"
+        },
+        {
+          "id": "tsdb-obj",
+          "from": "tsdb",
+          "to": "obj"
+        },
+        {
+          "id": "qry-obj",
+          "from": "qry",
+          "to": "obj"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "srv-col",
+            "col-log",
+            "log-ing",
+            "ing-tsdb"
+          ],
+          "kind": "write",
+          "rate": 2
+        },
+        {
+          "via": [
+            "dash-qry",
+            "qry-tsdb"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "alert-qry"
+          ],
+          "kind": "req",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "tsdb-obj"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

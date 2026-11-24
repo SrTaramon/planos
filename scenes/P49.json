@@ -1,0 +1,1038 @@
+{
+  "id": "P49",
+  "title": "El key-value store, en acción",
+  "metrics": [
+    {
+      "id": "ver",
+      "label": "Versión"
+    },
+    {
+      "id": "ok",
+      "label": "Escrituras aceptadas",
+      "unit": "%",
+      "better": "high"
+    },
+    {
+      "id": "lost",
+      "label": "Escrituras perdidas",
+      "better": "low"
+    },
+    {
+      "id": "sib",
+      "label": "Valores en el get"
+    }
+  ],
+  "legend": {
+    "event": "pista para B"
+  },
+  "goals": [
+    {
+      "text": "Dónde viven las 3 copias de una clave",
+      "step": 1
+    },
+    {
+      "text": "Por qué W=2 y R=2 leen siempre lo último",
+      "step": 2
+    },
+    {
+      "text": "Cómo se sigue escribiendo con un nodo caído",
+      "step": 3
+    },
+    {
+      "text": "Qué pasa cuando dos escrituras chocan",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Put",
+      "chapter": "solution",
+      "title": "put(carrito:42): tres copias, esperas a dos",
+      "body": "El hash de la clave cae en el anillo (el punto naranja), justo antes de A. Su preference list son los 3 primeros nodos físicos en el sentido del reloj: A, B y C. El coordinador escribe en los tres y confirma cuando responden dos (W=2).",
+      "callout": {
+        "type": "insight",
+        "text": "Esperar a los 2 más rápidos de 3: una réplica lenta no frena a nadie."
+      },
+      "changes": [
+        "+ Preference list: A, B y C",
+        "+ W=2: confirma con 2 de 3"
+      ],
+      "metrics": {
+        "ver": "{A:1}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 1
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo",
+          "badge": "W=2"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ]
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-co"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "co-a",
+              "co-b",
+              "co-c"
+            ]
+          ],
+          "kind": "write",
+          "rate": 2.4,
+          "pop": true
+        }
+      ],
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    },
+    {
+      "short": "Get",
+      "chapter": "solution",
+      "title": "get(carrito:42) con R=2",
+      "body": "El coordinador pregunta a los tres y se queda con las dos primeras respuestas. Como R + W = 4 > 3, al menos una de ellas tiene la última escritura: gana la versión más nueva. Si una réplica devolvió una vieja, le manda la nueva (**read repair**).",
+      "callout": {
+        "type": "tip",
+        "text": "Cada petición puede elegir: un contador de visitas escribe con W=1; un carrito, con W=2."
+      },
+      "changes": [
+        "+ R=2: lee de 2 de 3",
+        "~ 2 + 2 > 3: se solapan",
+        "+ Read repair de la réplica vieja"
+      ],
+      "metrics": {
+        "ver": "{A:1}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 1
+      },
+      "panel": {
+        "title": "La regla de oro",
+        "rows": [
+          {
+            "text": "N=3 copias, W=2 al escribir, R=2 al leer"
+          },
+          {
+            "text": "R + W = 4 > 3: una copia leída es la última",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo",
+          "badge": "R=2"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ]
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-co"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "co-a",
+              "co-b",
+              "co-c"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        }
+      ],
+      "predict": {
+        "q": "B se cae diez minutos y llega un put de carrito:42 con W=2. ¿Qué pasa?",
+        "options": [
+          "Se rechaza: falta una de las tres copias",
+          "Se queda esperando a que B vuelva",
+          "Se confirma con A y C, y la copia de B la guarda D con una nota para devolvérsela",
+          "Se confirma solo con A, la primera de la lista"
+        ],
+        "answer": 2,
+        "explain": "Con W=2 bastan A y C para confirmar. Para no quedarse con 2 copias, el coordinador manda la tercera al siguiente nodo sano del anillo, D, marcada «es de B» (hinted handoff). Rechazar la escritura sería lo que haría un store CP sin mayoría, no uno AP."
+      },
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    },
+    {
+      "short": "Cae B",
+      "chapter": "case",
+      "title": "B se cae: D guarda su copia",
+      "body": "La escritura va a A, C y, en lugar de B, a D, el siguiente nodo sano del anillo, con una pista: «esto es de B». Se confirma igual. A esto se le llama **sloppy quorum**: cuenta un nodo que no es de la preference list.",
+      "callout": {
+        "type": "warn",
+        "text": "Mientras dura, R + W > N ya no garantiza del todo leer lo último: una lectura con R=2 podría ir a B al volver, antes de recibir su copia."
+      },
+      "changes": [
+        "− Nodo B",
+        "+ D guarda la copia de B",
+        "~ Escrituras aceptadas: siguen al 100 %"
+      ],
+      "metrics": {
+        "ver": "{A:2}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 1
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ],
+          "state": "down"
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ]
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "note": "pista de B",
+          "mark": "good"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b",
+          "state": "down"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-co"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "co-a",
+              "co-c",
+              "co-d"
+            ]
+          ],
+          "kind": "write",
+          "rate": 2.4,
+          "pop": true
+        },
+        {
+          "via": [
+            "co-b"
+          ],
+          "kind": "write",
+          "fail": true,
+          "failAt": 0.6,
+          "rate": 0.5
+        }
+      ],
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    },
+    {
+      "short": "Vuelve B",
+      "chapter": "case",
+      "title": "B vuelve y recibe lo que se perdió",
+      "body": "El gossip avisa de que B vuelve a latir. D le entrega las escrituras que guardaba en su nombre y las borra de su lado. Si B hubiera perdido el disco, se reconstruiría desde A y C comparando **Merkle trees**: solo se copian las ramas que difieren.",
+      "callout": {
+        "type": "tip",
+        "text": "Como el vecino que te recoge un paquete y te lo da al volver."
+      },
+      "changes": [
+        "+ B vuelve al anillo",
+        "~ D entrega la pista a B",
+        "~ Tres copias al día otra vez"
+      ],
+      "metrics": {
+        "ver": "{A:2}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 1
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42",
+          "state": "dim"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "note": "pista de B"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co",
+          "state": "dim"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a",
+          "state": "dim"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c",
+          "state": "dim"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d"
+        },
+        {
+          "id": "d-b",
+          "from": "d",
+          "to": "b",
+          "dashed": true,
+          "bend": -0.25
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "d-b"
+          ],
+          "kind": "event",
+          "rate": 0.9,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "El móvil de Ana leyó `{A:1}` y añade un libro por A: `{A:2}`. A la vez, su portátil, que también leyó `{A:1}`, añade unos auriculares por B: `{A:1, B:1}`. ¿Qué devuelve el siguiente get?",
+        "options": [
+          "El libro: `{A:2}` tiene el contador más alto",
+          "Los auriculares: es la versión con más réplicas",
+          "Las dos versiones como siblings, para que la app las fusione",
+          "Un error: el store no sabe cuál es la buena"
+        ],
+        "answer": 2,
+        "explain": "Ninguna desciende de la otra: `{A:2}` no conoce a B:1 y `{A:1, B:1}` no conoce a A:2. Son concurrentes, así que el store guarda las dos. Quedarse con el contador más alto es un last-write-wins disfrazado: perdería los auriculares en silencio."
+      },
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    },
+    {
+      "short": "Choque",
+      "chapter": "case",
+      "title": "Dos escrituras a la vez, por A y por B",
+      "body": "Los vector clocks dicen que `{A:2}` y `{A:1, B:1}` son concurrentes: ninguna conocía a la otra. El store guarda las dos y el get devuelve ambas. La app las fusiona (libro y auriculares) y escribe `{A:2, B:1}`, que desciende de las dos.",
+      "callout": {
+        "type": "warn",
+        "text": "Con last-write-wins, el que escribió un milisegundo después borraría el otro producto sin avisar."
+      },
+      "changes": [
+        "+ Dos siblings",
+        "~ La app fusiona: libro + auriculares",
+        "+ {A:2, B:1} sustituye a las dos"
+      ],
+      "metrics": {
+        "ver": "{A:2, B:1}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 2
+      },
+      "panel": {
+        "title": "Las dos versiones",
+        "rows": [
+          {
+            "text": "{A:2}: libro (móvil, por A)"
+          },
+          {
+            "text": "{A:1, B:1}: auriculares (portátil, por B)"
+          },
+          {
+            "text": "Ninguna conoce a la otra: siblings",
+            "tone": "good"
+          },
+          {
+            "text": "Fusión: {A:2, B:1} = libro + auriculares",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42",
+          "badge": "fusiona"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ],
+          "items": [
+            "libro"
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ],
+          "items": [
+            "auric."
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ]
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-co"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            [
+              "co-a",
+              "co-b"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        }
+      ],
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- El anillo: cada clave, en 3 nodos físicos seguidos.\n- W=2 y R=2 de 3: se solapan y un nodo lento no frena.\n- Un nodo caído no para nada: hinted handoff.\n- Vector clocks: los choques se guardan y la app los fusiona.\n- Es AP: siempre escribe; las copias se ponen de acuerdo después.",
+      "callout": {
+        "type": "insight",
+        "text": "Dentro de cada nodo, un LSM tree: commit log, memtable y SSTables que la compaction va juntando."
+      },
+      "metrics": {
+        "ver": "{A:2, B:1}",
+        "ok": 100,
+        "lost": 0,
+        "sib": 1
+      },
+      "nodes": [
+        {
+          "id": "cli",
+          "kind": "client",
+          "label": "Servicio",
+          "at": [
+            0,
+            1.35
+          ],
+          "note": "carrito:42"
+        },
+        {
+          "id": "co",
+          "kind": "service",
+          "label": "Coordinador",
+          "at": [
+            1.75,
+            1.35
+          ],
+          "note": "cualquier nodo"
+        },
+        {
+          "id": "a",
+          "kind": "db",
+          "label": "Nodo A",
+          "at": [
+            2.49,
+            0.56
+          ]
+        },
+        {
+          "id": "b",
+          "kind": "db",
+          "label": "Nodo B",
+          "at": [
+            2.88,
+            1.53
+          ]
+        },
+        {
+          "id": "c",
+          "kind": "db",
+          "label": "Nodo C",
+          "at": [
+            2.14,
+            2.31
+          ]
+        },
+        {
+          "id": "d",
+          "kind": "db",
+          "label": "Nodo D",
+          "at": [
+            1.09,
+            2.19
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "e",
+          "kind": "db",
+          "label": "Nodo E",
+          "at": [
+            1.01,
+            0.56
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "cli-co",
+          "from": "cli",
+          "to": "co"
+        },
+        {
+          "id": "co-a",
+          "from": "co",
+          "to": "a"
+        },
+        {
+          "id": "co-b",
+          "from": "co",
+          "to": "b"
+        },
+        {
+          "id": "co-c",
+          "from": "co",
+          "to": "c"
+        },
+        {
+          "id": "co-d",
+          "from": "co",
+          "to": "d",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "cli-co"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "wait": 400,
+          "rate": 0.7
+        },
+        {
+          "via": [
+            [
+              "co-a",
+              "co-b",
+              "co-c"
+            ]
+          ],
+          "kind": "write",
+          "rate": 2,
+          "pop": true
+        }
+      ],
+      "ring": {
+        "center": [
+          1.75,
+          1.35
+        ],
+        "radius": 1.15,
+        "ticks": [
+          {
+            "a": 15,
+            "c": 0
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,1405 @@
+{
+  "id": "P48",
+  "title": "La flota, en acción",
+  "metrics": [
+    {
+      "id": "pend",
+      "label": "Pendientes"
+    },
+    {
+      "id": "run",
+      "label": "En marcha"
+    },
+    {
+      "id": "done",
+      "label": "Hechas",
+      "better": "high"
+    },
+    {
+      "id": "dup",
+      "label": "Contadas dos veces",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "req": "heartbeat",
+    "resp": "tareas asignadas",
+    "write": "datos o resultado"
+  },
+  "goals": [
+    {
+      "text": "Cómo pide trabajo un worker y demuestra que vive",
+      "step": 2
+    },
+    {
+      "text": "Qué pasa con las tareas de una máquina que calla",
+      "step": 3
+    },
+    {
+      "text": "Por qué un resultado tardío no cuenta dos veces",
+      "step": 4
+    },
+    {
+      "text": "Cómo se sustituye al coordinador sin perder el trabajo",
+      "step": 5
+    },
+    {
+      "text": "Cómo se sabe que ha terminado sin esperar al más lento",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Enviar",
+      "chapter": "solution",
+      "title": "Un anuncio de 30 s: 720 fotogramas",
+      "body": "El equipo sube el código y la lista de fotogramas a object storage y crea el trabajo. El coordinador apunta 720 tareas `pending` en la base de datos. Por la API solo viajan referencias: ni un fotograma pasa por el coordinador.",
+      "callout": {
+        "type": "insight",
+        "text": "El coordinador es un director de orquesta: mueve metadatos pequeños, no toca ningún instrumento."
+      },
+      "changes": [
+        "+ Trabajo j_81",
+        "+ 720 tareas pending"
+      ],
+      "metrics": {
+        "pend": 720,
+        "run": 0,
+        "done": 0,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "En espera",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd",
+          "state": "dim"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord",
+          "state": "dim"
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord",
+          "state": "dim"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-api",
+            "api-coord",
+            "coord-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "Heartbeat",
+      "chapter": "solution",
+      "title": "Los workers piden trabajo cada 5 s",
+      "body": "Cada worker manda su heartbeat: «sigo vivo, voy por aquí, tengo 2 huecos». La respuesta trae tareas, cada una con un **lease** de 30 s que renueva cada heartbeat. El worker descarga la entrada, renderiza y sube el resultado a su propia ruta.",
+      "callout": {
+        "type": "tip",
+        "text": "Pull: el worker nunca recibe más de lo que puede hacer, y el coordinador no necesita llegar a cada máquina."
+      },
+      "changes": [
+        "+ Heartbeat = vivo + pide trabajo",
+        "+ Lease de 30 s por tarea",
+        "+ Resultado en out/t_40/a1"
+      ],
+      "metrics": {
+        "pend": 48,
+        "run": 160,
+        "done": 512,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "En espera",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ],
+          "note": "t_9 · intento 1"
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord",
+          "state": "dim"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord"
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "w17-coord"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "wf-coord"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "wf-obj"
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        },
+        {
+          "via": [
+            "coord-db"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        }
+      ],
+      "predict": {
+        "q": "w_17 deja de mandar heartbeats con 4 tareas a medias, entre ellas t_9. ¿Qué pasa con ellas?",
+        "options": [
+          "Esperan a que w_17 vuelva, para no repetir trabajo",
+          "El coordinador llama a w_17 para preguntarle cómo va",
+          "Sus leases caducan a los 30 s: vuelven a pending con el intento 2 y las coge otro worker",
+          "El trabajo entero se marca como fallido"
+        ],
+        "answer": 2,
+        "explain": "Nadie tiene que avisar: el silencio es la notificación. Sin heartbeats, el lease no se renueva y caduca; un proceso del coordinador devuelve esas tareas a pending y sube su intento. Esperar a w_17 podría dejar el trabajo colgado para siempre si la máquina no vuelve."
+      }
+    },
+    {
+      "short": "Silencio",
+      "chapter": "case",
+      "title": "w_17 se calla con 4 tareas a medias",
+      "body": "Pasan 30 s sin heartbeat: seis perdidos seguidos. Los leases de sus 4 tareas caducan y el coordinador las devuelve a `pending` con el intento 2. En su siguiente heartbeat, otro worker de la flota se las lleva.",
+      "callout": {
+        "type": "insight",
+        "text": "Con 2.000 máquinas caen unas 5,5 al día: casi una por cada trabajo de 4 horas. Es rutina."
+      },
+      "changes": [
+        "− w_17",
+        "~ 4 leases caducan",
+        "~ t_9: intento 1 → 2, a la flota"
+      ],
+      "metrics": {
+        "pend": 30,
+        "run": 160,
+        "done": 530,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "lease caduca"
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "En espera",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "down",
+          "note": "t_9 · intento 1"
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ],
+          "note": "t_9 · intento 2",
+          "mark": "good"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord",
+          "state": "dim"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd",
+          "state": "dim"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord",
+          "state": "down",
+          "dashed": true
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "w17-coord"
+          ],
+          "kind": "req",
+          "fail": true,
+          "failAt": 0.5,
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "wf-coord"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.6
+        },
+        {
+          "via": [
+            "coord-db"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        }
+      ],
+      "predict": {
+        "q": "w_17 no estaba muerta, solo sin red. Vuelve a los 60 s y entrega el resultado del intento 1 de t_9, que ya va por el intento 2. ¿Qué hace el coordinador?",
+        "options": [
+          "Lo acepta: el fotograma está bien hecho",
+          "Lo ignora: su UPDATE pide el intento vigente, toca 0 filas, y a w_17 le manda cancelar",
+          "Acepta los dos resultados y suma dos tareas hechas",
+          "Marca t_9 como fallida, porque hay dos resultados distintos"
+        ],
+        "answer": 1,
+        "explain": "El número de intento es el fencing token: el coordinador solo acepta un resultado con `attempt = 2`. El del intento 1 no cambia ninguna fila, así que no se cuenta. Aceptarlo parece inofensivo, pero sumaría t_9 dos veces si el intento 2 también acaba."
+      }
+    },
+    {
+      "short": "Vuelve",
+      "chapter": "case",
+      "title": "w_17 vuelve con un resultado viejo",
+      "body": "w_17 entrega t_9 con el intento 1. El `UPDATE … WHERE attempt = 1` no encuentra la fila: 0 filas, nada se cuenta. En su heartbeat recibe «cancela t_9». Cada intento escribió en su ruta (`a1`, `a2`), así que nada se pisa.",
+      "callout": {
+        "type": "tip",
+        "text": "At-least-once con idempotencia: una tarea puede ejecutarse dos veces, pero su resultado solo cuenta una."
+      },
+      "changes": [
+        "~ Resultado del intento 1: 0 filas",
+        "+ Orden de cancelar t_9",
+        "~ Contadas dos veces: ninguna"
+      ],
+      "metrics": {
+        "pend": 0,
+        "run": 120,
+        "done": 600,
+        "dup": 0
+      },
+      "panel": {
+        "title": "El resultado tardío",
+        "rows": [
+          {
+            "text": "UPDATE … WHERE attempt = $2 AND status = running"
+          },
+          {
+            "text": "w_17, intento 1: 0 filas → se ignora",
+            "tone": "good"
+          },
+          {
+            "text": "Flota, intento 2: 1 fila → done + 1",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "attempt = 2"
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "En espera",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ],
+          "note": "cancela t_9",
+          "mark": "bad"
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord",
+          "state": "dim"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd",
+          "state": "dim"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord"
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "w17-coord",
+            "coord-db"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "wf-coord",
+            "coord-db"
+          ],
+          "kind": "write",
+          "rate": 1,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Relevo",
+      "chapter": "case",
+      "title": "Se cae el coordinador a mitad del trabajo",
+      "body": "El líder deja de renovar su lease en etcd. A los pocos segundos caduca y el de espera se hace líder, con un mandato nuevo. Lee el estado de la base de datos y, antes de mirar nada, **renueva todos los leases** una vez. Los workers ni paran.",
+      "callout": {
+        "type": "warn",
+        "text": "Sin esa prórroga, el nuevo líder vería leases vencidos por el propio relevo y daría por muerta a media flota."
+      },
+      "changes": [
+        "− Líder",
+        "+ Nuevo líder, mandato 2",
+        "~ Estado leído de la BD",
+        "~ Todos los leases, renovados"
+      ],
+      "metrics": {
+        "pend": 0,
+        "run": 70,
+        "done": 650,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "down"
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ],
+          "badge": "mandato 2"
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "Líder 2",
+          "at": [
+            3,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord",
+          "state": "down"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db",
+          "state": "down"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd",
+          "state": "down"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord",
+          "state": "down"
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord",
+          "state": "down"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "coord2-etcd"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "coord2-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "wf-coord2"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.4
+        },
+        {
+          "via": [
+            "wf-obj"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        }
+      ]
+    },
+    {
+      "short": "Final",
+      "chapter": "solution",
+      "title": "Las 7 últimas tareas, y el trabajo cerrado",
+      "body": "Quedan 7 tareas y una va en una máquina lenta. El líder lanza una **backup task** de cada una en otra máquina: gana la primera que acaba. Cada tarea que pasa a `done` suma 1 en la misma transacción; con `done + failed = total`, publica `job.done`.",
+      "callout": {
+        "type": "insight",
+        "text": "El contador solo sube si el UPDATE ganó: la copia que llega segunda no suma nada."
+      },
+      "changes": [
+        "+ Copias de las 7 últimas",
+        "~ Hechas: 720 de 720",
+        "+ job.done → email o webhook"
+      ],
+      "metrics": {
+        "pend": 0,
+        "run": 0,
+        "done": 720,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "720 = total"
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "Líder 2",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "api",
+          "to": "users"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "wf-coord2",
+            "coord2-db"
+          ],
+          "kind": "write",
+          "rate": 1.2,
+          "pop": true
+        },
+        {
+          "via": [
+            "users-api"
+          ],
+          "kind": "event",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Pull: el heartbeat dice «sigo vivo» y trae tareas.\n- Cada tarea con un lease: si caduca, vuelve a pending.\n- El intento es el fencing token: solo cuenta un resultado.\n- El estado en una BD replicada y un líder elegido en etcd.\n- Contadores al cambiar de estado y backup tasks al final.",
+      "callout": {
+        "type": "insight",
+        "text": "Con miles de máquinas los fallos son rutina: lo difícil no es la carga, es no perder ni duplicar trabajo."
+      },
+      "metrics": {
+        "pend": 0,
+        "run": 0,
+        "done": 720,
+        "dup": 0
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "client",
+          "label": "Equipos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "BD tareas",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "coord",
+          "kind": "service",
+          "label": "Líder",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "etcd",
+          "kind": "lock",
+          "label": "etcd",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "coord2",
+          "kind": "service",
+          "label": "En espera",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "w17",
+          "kind": "worker",
+          "label": "w_17",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "wf",
+          "kind": "worker",
+          "label": "Flota",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "users-api",
+          "from": "users",
+          "to": "api"
+        },
+        {
+          "id": "api-coord",
+          "from": "api",
+          "to": "coord"
+        },
+        {
+          "id": "coord-db",
+          "from": "coord",
+          "to": "db"
+        },
+        {
+          "id": "coord-etcd",
+          "from": "coord",
+          "to": "etcd"
+        },
+        {
+          "id": "coord2-etcd",
+          "from": "coord2",
+          "to": "etcd",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "coord2-db",
+          "from": "coord2",
+          "to": "db",
+          "state": "dim"
+        },
+        {
+          "id": "w17-coord",
+          "from": "w17",
+          "to": "coord"
+        },
+        {
+          "id": "wf-coord",
+          "from": "wf",
+          "to": "coord"
+        },
+        {
+          "id": "wf-obj",
+          "from": "wf",
+          "to": "obj"
+        },
+        {
+          "id": "wf-coord2",
+          "from": "wf",
+          "to": "coord2",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-api",
+            "api-coord",
+            "coord-db"
+          ],
+          "kind": "write",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "wf-coord"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "w17-coord"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "wf-obj"
+          ],
+          "kind": "write",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "coord-etcd"
+          ],
+          "kind": "ping",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

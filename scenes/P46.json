@@ -1,0 +1,1197 @@
+{
+  "id": "P46",
+  "title": "Los logs, en acción",
+  "metrics": [
+    {
+      "id": "in",
+      "label": "Entrada",
+      "unit": "MB/s"
+    },
+    {
+      "id": "lag",
+      "label": "Sin indexar",
+      "unit": "GB",
+      "better": "low"
+    },
+    {
+      "id": "lost",
+      "label": "Líneas perdidas",
+      "better": "low"
+    },
+    {
+      "id": "wait",
+      "label": "Espera de la app",
+      "unit": "ms",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "write": "lote de líneas",
+    "event": "línea leída del log"
+  },
+  "goals": [
+    {
+      "text": "Cómo salen los logs sin que la app espere nunca",
+      "step": 1
+    },
+    {
+      "text": "Cómo se encuentra un error en 1,8 TB de una hora",
+      "step": 2
+    },
+    {
+      "text": "Por qué el live tail y las cifras no pasan por el índice",
+      "step": 3
+    },
+    {
+      "text": "Qué aguanta el log en medio durante un pico",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa con las líneas de una máquina sin red",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Recoger",
+      "chapter": "solution",
+      "title": "La app escribe; el agente se encarga del resto",
+      "body": "La aplicación escribe en su salida y sigue. El agente junta las líneas en lotes de 1 s, los comprime y los manda a los receptores, que los dejan en el log, en una partición de su servicio. El archivador copia todo a object storage.",
+      "callout": {
+        "type": "insight",
+        "text": "La aplicación nunca espera al sistema de logs: si algo va lento, espera el agente, no la tienda."
+      },
+      "changes": [
+        "+ Lotes de 1 s, comprimidos",
+        "+ Log con 3 réplicas, por servicio",
+        "+ Copia de todo en object storage"
+      ],
+      "metrics": {
+        "in": 500,
+        "lag": 0,
+        "lost": 0,
+        "wait": 0
+      },
+      "panel": {
+        "title": "Las cuentas",
+        "rows": [
+          {
+            "text": "10.000 máquinas × 100 líneas × 500 B = 500 MB/s"
+          },
+          {
+            "text": "Al día: ~43,2 TB en bruto, ~4,3 TB comprimidos"
+          },
+          {
+            "text": "~300 veces los bytes de las métricas",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ],
+          "note": "archivador"
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv"
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail",
+          "state": "dim"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg",
+          "state": "dim"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ag-recv",
+            "recv-log"
+          ],
+          "kind": "write",
+          "rate": 3
+        },
+        {
+          "via": [
+            "log-obj"
+          ],
+          "kind": "write",
+          "rate": 1
+        }
+      ]
+    },
+    {
+      "short": "Buscar",
+      "chapter": "solution",
+      "title": "«timeout» en payments, la última hora",
+      "body": "El indexador mete cada línea en el índice invertido de su hora, repartido en 40 shards. La búsqueda solo abre la hora pedida, manda la consulta a los 40 a la vez y junta sus listas: las 100 más recientes y un cursor.",
+      "callout": {
+        "type": "tip",
+        "text": "Si un shard tarda demasiado, responde sin él y lo marca como parcial: en una avería, mejor algo ahora que todo dentro de un minuto."
+      },
+      "changes": [
+        "+ Un índice por hora, 40 shards",
+        "+ Scatter-gather sobre la hora pedida"
+      ],
+      "metrics": {
+        "in": 500,
+        "lag": 0,
+        "lost": 0,
+        "wait": 0
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ],
+          "badge": "40 shards"
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv",
+          "state": "dim"
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail",
+          "state": "dim"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg",
+          "state": "dim"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "log-idx",
+            "idx-es"
+          ],
+          "kind": "write",
+          "rate": 2
+        },
+        {
+          "via": [
+            "eng-es"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "wait": 300,
+          "rate": 0.9
+        }
+      ]
+    },
+    {
+      "short": "Directo",
+      "chapter": "solution",
+      "title": "Live tail y errores por minuto, desde el log",
+      "body": "El live tail lee del log solo las particiones de `payments`, filtra y empuja las líneas al navegador en uno o dos segundos. El agregador cuenta las líneas por servicio y nivel en ventanas de un minuto y escribe las cifras para los dashboards y las alertas.",
+      "callout": {
+        "type": "insight",
+        "text": "Ninguno de los dos toca el índice: cada lector del log va a su ritmo y no frena a los demás."
+      },
+      "changes": [
+        "+ Live tail: lee, filtra y empuja",
+        "+ Agregador: ventanas de 1 minuto"
+      ],
+      "metrics": {
+        "in": 500,
+        "lag": 0,
+        "lost": 0,
+        "wait": 0
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ],
+          "note": "errores/min"
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv",
+          "state": "dim"
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log",
+          "state": "dim"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "log-tail",
+            "tail-eng"
+          ],
+          "kind": "event",
+          "rate": 2,
+          "pop": true
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 2
+        }
+      ],
+      "predict": {
+        "q": "Llega una avería: los servicios escriben 3 veces más, 1,5 GB/s, y el indexador solo da para 500 MB/s. ¿Qué notan los ingenieros?",
+        "options": [
+          "La tienda va lenta: sus servicios esperan a que se escriban sus logs",
+          "Se pierden las líneas que el indexador no puede procesar",
+          "El live tail y los errores por minuto van al día; la búsqueda, unos minutos por detrás",
+          "Todo el sistema de logs se para hasta que baje el pico"
+        ],
+        "answer": 2,
+        "explain": "Lo que el indexador no procesa espera en el log, que guarda un día. El live tail y el agregador leen del log, no del índice, así que siguen al día. La tienda no nota nada: escribe en su salida y sigue. Perder líneas sería lo que pasa sin un log en medio."
+      }
+    },
+    {
+      "short": "Pico",
+      "chapter": "case",
+      "title": "Una avería triplica los logs",
+      "body": "Entran 1,5 GB/s. El indexador da para 500 MB/s y cada segundo deja 1 GB esperando en el log: 600 GB tras 10 minutos de pico. La búsqueda va por detrás, pero el live tail y el agregador siguen al día. Al bajar el pico, el indexador recupera.",
+      "callout": {
+        "type": "warn",
+        "text": "Los picos llegan justo cuando más se necesitan los logs. Por eso el log se dimensiona para 3×: unas 150 particiones."
+      },
+      "changes": [
+        "~ Entrada: 500 MB/s → 1,5 GB/s",
+        "~ El log acumula lo que no se indexa",
+        "~ Live tail y cifras, al día"
+      ],
+      "metrics": {
+        "in": 1500,
+        "lag": 600,
+        "lost": 0,
+        "wait": 0
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ],
+          "badge": "+600 GB",
+          "mark": "good"
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "hot",
+          "load": 1
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv",
+          "state": "hot"
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log",
+          "state": "hot"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ag-recv",
+            "recv-log"
+          ],
+          "kind": "write",
+          "rate": 6
+        },
+        {
+          "via": [
+            "log-idx",
+            "idx-es"
+          ],
+          "kind": "write",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "log-tail",
+            "tail-eng"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 2
+        }
+      ],
+      "predict": {
+        "q": "Una máquina se queda 30 minutos sin red. Sus errores de esa media hora, ¿cuándo y cómo llegan a la gráfica de errores por minuto?",
+        "options": [
+          "Nunca: lo que no salió de la máquina se pierde",
+          "Al volver la red, tarde: esas ventanas ya se cerraron, así que corrigen la cifra o se cuentan aparte",
+          "Al instante: el agregador espera a todas las máquinas antes de cerrar cada minuto",
+          "Al volver la red, como si fueran líneas de ahora, en el minuto en curso"
+        ],
+        "answer": 1,
+        "explain": "El agente las guarda en su buffer en disco y las manda al volver. El agregador cerró esas ventanas cuando la watermark las pasó: no espera a todas las máquinas, o no cerraría nunca. Contarlas en el minuto actual inventaría un pico que no ocurrió ahora."
+      }
+    },
+    {
+      "short": "Sin red",
+      "chapter": "case",
+      "title": "Una máquina se queda media hora sin red",
+      "body": "El envío falla y el agente guarda las líneas en su buffer en disco: a 50 KB/s, media hora son 90 MB de sus 500. La aplicación ni se entera. Al volver la red, el agente lo manda todo; el agregador ya cerró esas ventanas y corrige la cifra.",
+      "callout": {
+        "type": "tip",
+        "text": "Si el buffer se llena (unas 2,8 horas), el agente descarta primero los debug y cuenta cuántos tiró: mejor perder logs que tumbar la tienda."
+      },
+      "changes": [
+        "− La red de una máquina",
+        "+ Buffer en disco: 90 MB de 500",
+        "~ Líneas tardías: corrigen su ventana"
+      ],
+      "metrics": {
+        "in": 500,
+        "lag": 0,
+        "lost": 0,
+        "wait": 0
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "buffer 90 MB",
+          "mark": "good"
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ],
+          "note": "watermark"
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv",
+          "state": "down",
+          "dashed": true
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj",
+          "state": "dim"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx",
+          "state": "dim"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail",
+          "state": "dim"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es",
+          "state": "dim"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ag-recv"
+          ],
+          "kind": "write",
+          "fail": true,
+          "failAt": 0.5,
+          "rate": 1
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 1.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Agente con lotes, compresión y buffer en disco: la app nunca espera.\n- Un log en medio: aguanta picos y cada lector va a su ritmo.\n- Índices por hora en 40 shards, con scatter-gather.\n- Live tail y agregador leen del log, no del índice.\n- Caliente 7 días; frío un año en object storage.",
+      "callout": {
+        "type": "insight",
+        "text": "Un log se escribe una vez y casi nunca se lee; cuando se lee, es urgente y de la última hora. Todo el diseño sale de ahí."
+      },
+      "metrics": {
+        "in": 500,
+        "lag": 0,
+        "lost": 0,
+        "wait": 0
+      },
+      "nodes": [
+        {
+          "id": "ag",
+          "kind": "service",
+          "label": "App + agente",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "recv",
+          "kind": "lb",
+          "label": "Receptores",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "log",
+          "kind": "stream",
+          "label": "Log",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "obj",
+          "kind": "storage",
+          "label": "Object st.",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "idx",
+          "kind": "worker",
+          "label": "Indexador",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "tail",
+          "kind": "service",
+          "label": "Live tail",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "agg",
+          "kind": "worker",
+          "label": "Agregador",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "es",
+          "kind": "search",
+          "label": "Búsqueda",
+          "at": [
+            1,
+            2.5
+          ]
+        },
+        {
+          "id": "eng",
+          "kind": "client",
+          "label": "Ingeniero",
+          "at": [
+            2,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "ag-recv",
+          "from": "ag",
+          "to": "recv"
+        },
+        {
+          "id": "recv-log",
+          "from": "recv",
+          "to": "log"
+        },
+        {
+          "id": "log-obj",
+          "from": "log",
+          "to": "obj"
+        },
+        {
+          "id": "log-idx",
+          "from": "log",
+          "to": "idx"
+        },
+        {
+          "id": "log-tail",
+          "from": "log",
+          "to": "tail"
+        },
+        {
+          "id": "log-agg",
+          "from": "log",
+          "to": "agg"
+        },
+        {
+          "id": "idx-es",
+          "from": "idx",
+          "to": "es"
+        },
+        {
+          "id": "eng-es",
+          "from": "eng",
+          "to": "es"
+        },
+        {
+          "id": "tail-eng",
+          "from": "tail",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "ag-recv",
+            "recv-log"
+          ],
+          "kind": "write",
+          "rate": 2
+        },
+        {
+          "via": [
+            "log-idx",
+            "idx-es"
+          ],
+          "kind": "write",
+          "rate": 1
+        },
+        {
+          "via": [
+            "log-tail",
+            "tail-eng"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "log-agg"
+          ],
+          "kind": "event",
+          "rate": 1
+        },
+        {
+          "via": [
+            "log-obj"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    }
+  ]
+}

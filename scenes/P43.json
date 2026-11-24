@@ -1,0 +1,1276 @@
+{
+  "id": "P43",
+  "title": "Las guardias, en acción",
+  "metrics": [
+    {
+      "id": "hora",
+      "label": "Hora"
+    },
+    {
+      "id": "quien",
+      "label": "Lo tiene"
+    },
+    {
+      "id": "estado",
+      "label": "Estado"
+    },
+    {
+      "id": "abiertos",
+      "label": "Incidentes abiertos",
+      "better": "low"
+    }
+  ],
+  "legend": {
+    "event": "aviso o timer vencido"
+  },
+  "goals": [
+    {
+      "text": "Cómo nace un incidente y sale su aviso",
+      "step": 1
+    },
+    {
+      "text": "Qué hace el temporizador si nadie contesta",
+      "step": 2
+    },
+    {
+      "text": "Por qué un ack y un escalado a la vez no se pisan",
+      "step": 3
+    },
+    {
+      "text": "Cómo aguanta una tormenta de 1.000 alertas",
+      "step": 4
+    },
+    {
+      "text": "Qué pasa si se cae el proveedor de SMS",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "short": "Alerta",
+      "chapter": "solution",
+      "title": "Las 3:00: el checkout falla y nace el incidente 812",
+      "body": "La API crea el incidente y el motor mira el calendario: la guardia es Ana. En **una sola transacción** guarda la asignación y el temporizador de las 3:05. Después sale el aviso por la cola: push y SMS.",
+      "callout": {
+        "type": "insight",
+        "text": "Si el COMMIT falla, no queda ni el incidente ni el timer: nunca una asignación que nadie vaya a revisar."
+      },
+      "changes": [
+        "+ Incidente 812, asignado a Ana",
+        "+ Timer: 3:05, intento 3",
+        "+ Aviso: push y SMS"
+      ],
+      "metrics": {
+        "hora": "3:00",
+        "quien": "Ana · dev",
+        "estado": "asignado",
+        "abiertos": 1
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "timer 3:05"
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mgr",
+          "kind": "client",
+          "label": "Luis · mgr",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev"
+        },
+        {
+          "id": "prov-mgr",
+          "from": "prov",
+          "to": "mgr",
+          "state": "dim"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim",
+          "state": "dim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "mon-api",
+            "api-eng",
+            "eng-db"
+          ],
+          "kind": "write",
+          "back": "resp",
+          "rate": 0.9
+        },
+        {
+          "via": [
+            "eng-q",
+            "q-prov",
+            "prov-dev"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Sin ack",
+      "chapter": "solution",
+      "title": "Las 3:05: Ana no contesta y sube a Luis",
+      "body": "El worker de timers encuentra el de las 3:05. El motor **relee** el incidente: sigue en el intento 3 y sin ack. Lo pasa a Luis (intento 4), programa el siguiente timer y avisa.",
+      "callout": {
+        "type": "tip",
+        "text": "Un timer repetido o viejo no hace daño: el motor solo actúa si el intento coincide."
+      },
+      "changes": [
+        "~ Vence el timer de las 3:05",
+        "~ Ana → Luis, intento 3 → 4",
+        "+ Timer: 3:15"
+      ],
+      "metrics": {
+        "hora": "3:05",
+        "quien": "Luis · mgr",
+        "estado": "asignado",
+        "abiertos": 1
+      },
+      "panel": {
+        "title": "La noche, si nadie contesta",
+        "rows": [
+          {
+            "text": "3:00  Ana: push y SMS"
+          },
+          {
+            "text": "3:02  Ana otra vez, ahora con llamada"
+          },
+          {
+            "text": "3:05  Luis (manager)"
+          },
+          {
+            "text": "3:15  Marta (directora)"
+          },
+          {
+            "text": "3:30  Cola de pendientes y email a dirección",
+            "tone": "bad"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ],
+          "badge": "sin ack",
+          "state": "dim"
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ],
+          "note": "812 · intento 3"
+        },
+        {
+          "id": "mgr",
+          "kind": "client",
+          "label": "Luis · mgr",
+          "at": [
+            0,
+            2.5
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng",
+          "state": "dim"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev",
+          "state": "dim"
+        },
+        {
+          "id": "prov-mgr",
+          "from": "prov",
+          "to": "mgr"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "db-tim"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "tim-eng",
+            "eng-db"
+          ],
+          "kind": "event",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "eng-q",
+            "q-prov",
+            "prov-mgr"
+          ],
+          "kind": "event",
+          "rate": 0.7,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Otra noche: a las 3:05:00 salta el timer de Ana y, en el mismo segundo, ella pulsa ack. Las dos escrituras llevan `WHERE status = 'assigned' AND attempt = 3`. ¿Qué queda?",
+        "options": [
+          "Reconocido por Ana y, a la vez, avisando a Luis",
+          "Gana la que llega primero; la otra toca 0 filas y no hace nada",
+          "Siempre gana el timer, porque es el sistema quien decide",
+          "Las dos fallan y el incidente se queda sin dueño"
+        ],
+        "answer": 1,
+        "explain": "La primera escritura cambia el estado o el intento, así que la condición de la segunda ya no se cumple: 0 filas. Sin la condición pasaría lo primero, reconocido y escalado a la vez. Nadie tiene prioridad: decide el orden en la base de datos."
+      }
+    },
+    {
+      "short": "Carrera",
+      "chapter": "case",
+      "title": "Ack y timer en el mismo segundo",
+      "body": "El ack de Ana entra primero: el incidente pasa a reconocido. El escalado del timer llega justo detrás con la misma condición, `attempt = 3` y sin ack, y no encuentra la fila: no hace nada. Luis sigue durmiendo.",
+      "callout": {
+        "type": "warn",
+        "text": "Leer, decidir y escribir sin condición deja una ventana: las dos decisiones se aplicarían y el incidente acabaría en dos estados."
+      },
+      "changes": [
+        "~ Ack: 1 fila, reconocido",
+        "~ Escalado: 0 filas, no hace nada",
+        "~ Luis no recibe nada"
+      ],
+      "metrics": {
+        "hora": "3:05",
+        "quien": "Ana · dev",
+        "estado": "reconocido",
+        "abiertos": 1
+      },
+      "panel": {
+        "title": "Las dos escrituras",
+        "rows": [
+          {
+            "text": "UPDATE … WHERE status = assigned AND attempt = 3"
+          },
+          {
+            "text": "Ack de Ana: 1 fila → reconocido",
+            "tone": "good"
+          },
+          {
+            "text": "Escalado del timer: 0 filas → nada",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "attempt = 3"
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ],
+          "note": "3:05 · intento 3"
+        },
+        {
+          "id": "mgr",
+          "kind": "client",
+          "label": "Luis · mgr",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q",
+          "state": "dim"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov",
+          "state": "dim"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev",
+          "state": "dim"
+        },
+        {
+          "id": "prov-mgr",
+          "from": "prov",
+          "to": "mgr",
+          "state": "dim"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true,
+          "label": "ack"
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "dev-api",
+            "api-eng",
+            "eng-db"
+          ],
+          "kind": "write",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "tim-eng",
+            "eng-db"
+          ],
+          "kind": "write",
+          "fail": true,
+          "rate": 0.6
+        }
+      ]
+    },
+    {
+      "short": "Tormenta",
+      "chapter": "case",
+      "title": "Cae una base de datos: 1.000 alertas en un minuto",
+      "body": "40 servicios avisan a la vez, unas 17 alertas por segundo. La API ve que traen la misma `dedupKey` y las suma al incidente abierto en vez de crear otros. Ana recibe **un** aviso, no mil.",
+      "callout": {
+        "type": "insight",
+        "text": "El pico de este sistema no es de carga, 17 por segundo es poco: es de atención. Mil avisos a la vez no los lee nadie."
+      },
+      "changes": [
+        "~ Alertas: ~17 por segundo",
+        "~ La misma dedupKey: 1 incidente",
+        "~ Ana: 1 aviso en vez de 1.000"
+      ],
+      "metrics": {
+        "hora": "4:10",
+        "quien": "Ana · dev",
+        "estado": "asignado",
+        "abiertos": 1
+      },
+      "panel": {
+        "title": "Una caída, 1.000 alertas",
+        "rows": [
+          {
+            "text": "Sin agrupar: 1.000 incidentes y 1.000 avisos",
+            "tone": "bad"
+          },
+          {
+            "text": "Con dedupKey: 1 incidente con 1.000 alertas",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "1.000/min",
+          "state": "hot"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "badge": "dedupKey",
+          "mark": "good"
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "mgr",
+          "kind": "client",
+          "label": "Luis · mgr",
+          "at": [
+            0,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api",
+          "state": "hot"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev"
+        },
+        {
+          "id": "prov-mgr",
+          "from": "prov",
+          "to": "mgr",
+          "state": "dim"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim",
+          "state": "dim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "mon-api"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 6
+        },
+        {
+          "via": [
+            "api-eng",
+            "eng-db"
+          ],
+          "kind": "write",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            "eng-q",
+            "q-prov",
+            "prov-dev"
+          ],
+          "kind": "event",
+          "rate": 0.3,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "A las 3:00 el proveedor de SMS deja de contestar justo cuando sale el aviso a Ana. ¿Qué pasa con el incidente?",
+        "options": [
+          "Se pierde: si el aviso no sale, nadie se entera",
+          "Espera en la cola hasta que vuelva el proveedor, aunque tarde una hora",
+          "El aviso sale por el proveedor de reserva, y si Ana no hace ack, a las 3:05 sube a Luis",
+          "Pasa a pendientes: sin aviso no se puede asignar"
+        ],
+        "answer": 2,
+        "explain": "El circuit breaker aparta al proveedor que falla y el aviso sale por el otro. Y aunque fallaran los dos, el timer no mira si el SMS salió, mira el ack: a las 3:05 escala igual. Esperar en la cola parece prudente, pero deja el incidente parado justo cuando importa."
+      }
+    },
+    {
+      "short": "Proveedor",
+      "chapter": "case",
+      "title": "Se cae el proveedor de SMS",
+      "body": "Los envíos al proveedor principal fallan y el circuit breaker lo aparta: los workers mandan el SMS por el de reserva. El timer de las 3:05 sigue en pie, porque la confirmación es el ack, no el «entregado».",
+      "callout": {
+        "type": "tip",
+        "text": "Un aviso de prueba a quien empieza su turno descubre un teléfono mal apuntado un martes por la tarde, no a las 3:00."
+      },
+      "changes": [
+        "− Proveedor principal",
+        "+ El SMS sale por la reserva",
+        "~ El timer de las 3:05 sigue en pie"
+      ],
+      "metrics": {
+        "hora": "3:00",
+        "quien": "Ana · dev",
+        "estado": "asignado",
+        "abiertos": 1
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ],
+          "badge": "timer 3:05"
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ],
+          "state": "down"
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "prov2",
+          "kind": "external",
+          "label": "Reserva",
+          "at": [
+            1,
+            2.5
+          ],
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api",
+          "state": "dim"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng",
+          "state": "dim"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov",
+          "state": "down"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev",
+          "state": "down"
+        },
+        {
+          "id": "q-prov2",
+          "from": "q",
+          "to": "prov2"
+        },
+        {
+          "id": "prov2-dev",
+          "from": "prov2",
+          "to": "dev"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "q-prov"
+          ],
+          "kind": "event",
+          "fail": true,
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "eng-q",
+            "q-prov2",
+            "prov2-dev"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        },
+        {
+          "via": [
+            "db-tim"
+          ],
+          "kind": "ping",
+          "back": "resp",
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Incidente y timer, en la misma transacción.\n- Sin ack a tiempo, el timer sube de nivel; el motor relee antes de actuar.\n- Escrituras condicionadas al intento: un ack y un escalado no se pisan.\n- `dedupKey`: una caída es un incidente.\n- Varios proveedores, y el ack como única confirmación.",
+      "callout": {
+        "type": "insight",
+        "text": "Todo cabe en un PostgreSQL con réplica. Lo que se diseña aquí es la corrección y la fiabilidad, no la escala."
+      },
+      "metrics": {
+        "hora": "3:05",
+        "quien": "Luis · mgr",
+        "estado": "asignado",
+        "abiertos": 1
+      },
+      "nodes": [
+        {
+          "id": "mon",
+          "kind": "external",
+          "label": "Monitor",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "api",
+          "kind": "service",
+          "label": "API",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "eng",
+          "kind": "service",
+          "label": "Motor",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "PostgreSQL",
+          "at": [
+            3,
+            0
+          ]
+        },
+        {
+          "id": "dev",
+          "kind": "client",
+          "label": "Ana · dev",
+          "at": [
+            0,
+            1.25
+          ]
+        },
+        {
+          "id": "prov",
+          "kind": "external",
+          "label": "Proveedor",
+          "at": [
+            1,
+            1.25
+          ]
+        },
+        {
+          "id": "q",
+          "kind": "queue",
+          "label": "Avisos",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "tim",
+          "kind": "worker",
+          "label": "Timers",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "mgr",
+          "kind": "client",
+          "label": "Luis · mgr",
+          "at": [
+            0,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "mon-api",
+          "from": "mon",
+          "to": "api"
+        },
+        {
+          "id": "api-eng",
+          "from": "api",
+          "to": "eng"
+        },
+        {
+          "id": "eng-db",
+          "from": "eng",
+          "to": "db"
+        },
+        {
+          "id": "eng-q",
+          "from": "eng",
+          "to": "q"
+        },
+        {
+          "id": "q-prov",
+          "from": "q",
+          "to": "prov"
+        },
+        {
+          "id": "prov-dev",
+          "from": "prov",
+          "to": "dev"
+        },
+        {
+          "id": "prov-mgr",
+          "from": "prov",
+          "to": "mgr"
+        },
+        {
+          "id": "dev-api",
+          "from": "dev",
+          "to": "api",
+          "dashed": true
+        },
+        {
+          "id": "db-tim",
+          "from": "db",
+          "to": "tim"
+        },
+        {
+          "id": "tim-eng",
+          "from": "tim",
+          "to": "eng"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "mon-api",
+            "api-eng",
+            "eng-db"
+          ],
+          "kind": "write",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "eng-q",
+            "q-prov",
+            "prov-dev"
+          ],
+          "kind": "event",
+          "rate": 0.7
+        },
+        {
+          "via": [
+            "dev-api"
+          ],
+          "kind": "req",
+          "rate": 0.5
+        },
+        {
+          "via": [
+            "db-tim",
+            "tim-eng"
+          ],
+          "kind": "ping",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}

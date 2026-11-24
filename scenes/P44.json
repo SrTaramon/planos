@@ -1,0 +1,1405 @@
+{
+  "id": "P44",
+  "title": "La salud del clúster, en acción",
+  "metrics": [
+    {
+      "id": "sanos",
+      "label": "Nodos sanos",
+      "better": "high"
+    },
+    {
+      "id": "sosp",
+      "label": "Sospechosos",
+      "better": "low"
+    },
+    {
+      "id": "avisos",
+      "label": "Avisos a la guardia",
+      "better": "low"
+    },
+    {
+      "id": "lat",
+      "label": "Latidos",
+      "unit": "/s"
+    }
+  ],
+  "legend": {
+    "ping": "latido o sonda",
+    "event": "cambio de estado"
+  },
+  "goals": [
+    {
+      "text": "Qué viaja en un latido y dónde se apunta",
+      "step": 1
+    },
+    {
+      "text": "Por qué un silencio no basta para dar un nodo por muerto",
+      "step": 3
+    },
+    {
+      "text": "Cómo 200 silencios se convierten en un solo aviso",
+      "step": 4
+    },
+    {
+      "text": "Por qué la automatización necesita frenos",
+      "step": 5
+    },
+    {
+      "text": "Quién avisa cuando se cae el propio monitor",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Latido",
+      "chapter": "solution",
+      "title": "Cada 5 s, 5.000 agentes dicen «sigo aquí»",
+      "body": "El agente de cada nodo ejecuta sus 20 chequeos y manda el latido con los resultados. El load balancer lo lleva a cualquier colector, que solo anota: `last_seen` y los chequeos, en memoria. Al historial va solo lo que cambia.",
+      "callout": {
+        "type": "insight",
+        "text": "El volumen es pequeño: cabe en una máquina. Hay varias copias para no tener un SPOF, no por la carga."
+      },
+      "changes": [
+        "+ Latido con 20 chequeos",
+        "~ last_seen y chequeos, en memoria",
+        "+ Historial: solo los cambios"
+      ],
+      "metrics": {
+        "sanos": 5000,
+        "sosp": 0,
+        "avisos": 0,
+        "lat": 1000
+      },
+      "panel": {
+        "title": "Las cuentas",
+        "rows": [
+          {
+            "text": "5.000 nodos / 5 s = 1.000 latidos por segundo"
+          },
+          {
+            "text": "5.000 × 20 chequeos × 200 B ≈ 20 MB en memoria",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "probe",
+          "kind": "external",
+          "label": "Sonda",
+          "at": [
+            1,
+            1.25
+          ],
+          "note": "otra zona",
+          "state": "dim"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem",
+          "state": "dim"
+        },
+        {
+          "id": "det-probe",
+          "from": "det",
+          "to": "probe",
+          "state": "dim"
+        },
+        {
+          "id": "probe-n",
+          "from": "probe",
+          "to": "n",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules",
+          "state": "dim"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager",
+          "state": "dim"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb",
+            "lb-col",
+            "col-mem"
+          ],
+          "kind": "ping",
+          "rate": 3
+        }
+      ]
+    },
+    {
+      "short": "Silencio",
+      "chapter": "solution",
+      "title": "web-0412 deja de latir",
+      "body": "El detector repasa sus nodos cada segundo. web-0412 lleva 15 s sin latir: tres latidos perdidos. Lo marca **sospechoso**. Sospechoso todavía no despierta a nadie.",
+      "callout": {
+        "type": "tip",
+        "text": "Sin el inventario de nodos esperados, una máquina que calla para siempre simplemente desaparece del dashboard."
+      },
+      "changes": [
+        "~ web-0412: 15 s sin latido",
+        "~ Sano → sospechoso",
+        "~ Avisos: todavía ninguno"
+      ],
+      "metrics": {
+        "sanos": 4999,
+        "sosp": 1,
+        "avisos": 0,
+        "lat": 999.8
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "web-0412",
+          "mark": "bad"
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "probe",
+          "kind": "external",
+          "label": "Sonda",
+          "at": [
+            1,
+            1.25
+          ],
+          "note": "otra zona",
+          "state": "dim"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem"
+        },
+        {
+          "id": "det-probe",
+          "from": "det",
+          "to": "probe",
+          "state": "dim"
+        },
+        {
+          "id": "probe-n",
+          "from": "probe",
+          "to": "n",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules",
+          "state": "dim"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager",
+          "state": "dim"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb",
+            "lb-col",
+            "col-mem"
+          ],
+          "kind": "ping",
+          "rate": 2
+        },
+        {
+          "via": [
+            "det-mem"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        }
+      ],
+      "predict": {
+        "q": "web-0412 lleva 15 s sin latir. ¿Qué hace el detector ahora?",
+        "options": [
+          "Avisa ya a la guardia: tres latidos perdidos bastan",
+          "Pide a una sonda de otra zona que pruebe el nodo; solo si tampoco responde, lo da por caído",
+          "Lo reinicia, por si acaso, y espera al siguiente latido",
+          "Nada: espera dos minutos más por si vuelve solo"
+        ],
+        "answer": 1,
+        "explain": "Un silencio puede ser un nodo muerto o un camino cortado entre él y tu colector. La segunda opinión, desde otra zona, separa las dos cosas. Avisar ya despertaría a la guardia por un cable; esperar dos minutos se come el margen para avisar dentro del minuto."
+      }
+    },
+    {
+      "short": "Caído",
+      "chapter": "solution",
+      "title": "La sonda tampoco llega: caído confirmado",
+      "body": "La sonda de otra zona llama al `/health` de web-0412 y no contesta. Ahora sí: **caído**. Las reglas avisan a la guardia con prioridad baja y el automatizador lo reemplaza por un nodo nuevo.",
+      "callout": {
+        "type": "insight",
+        "text": "Si la sonda hubiera respondido, el nodo estaba bien y el problema, en el camino: nada de reemplazos."
+      },
+      "changes": [
+        "+ Segunda opinión desde otra zona",
+        "~ Sospechoso → caído",
+        "+ Aviso de prioridad baja",
+        "+ Reemplazo automático"
+      ],
+      "metrics": {
+        "sanos": 4999,
+        "sosp": 0,
+        "avisos": 1,
+        "lat": 999.8
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "web-0412",
+          "state": "down"
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "probe",
+          "kind": "external",
+          "label": "Sonda",
+          "at": [
+            1,
+            1.25
+          ],
+          "note": "otra zona"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "reemplaza"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem"
+        },
+        {
+          "id": "det-probe",
+          "from": "det",
+          "to": "probe"
+        },
+        {
+          "id": "probe-n",
+          "from": "probe",
+          "to": "n",
+          "dashed": true,
+          "label": "/health"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "det-probe",
+            "probe-n"
+          ],
+          "kind": "ping",
+          "fail": true,
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "det-rules",
+            "rules-pager"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "rules-auto"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Rack 12",
+      "chapter": "case",
+      "title": "Se cae el switch del rack 12: 200 nodos callan",
+      "body": "De golpe, 200 nodos dejan de latir. Que mueran 200 a la vez es raro; que caiga lo que comparten, no. El detector cuenta los silencios por rack, por zona y por colector, y manda **un** aviso: «perdido el contacto con el rack 12».",
+      "callout": {
+        "type": "warn",
+        "text": "Doscientos avisos iguales a las 3:00 no ayudan a nadie: esconden la causa, que es una sola."
+      },
+      "changes": [
+        "~ 200 nodos callan a la vez",
+        "~ Silencios agrupados por rack",
+        "~ 1 aviso en vez de 200"
+      ],
+      "metrics": {
+        "sanos": 4800,
+        "sosp": 200,
+        "avisos": 1,
+        "lat": 960
+      },
+      "panel": {
+        "title": "200 silencios a la vez",
+        "rows": [
+          {
+            "text": "Uno por nodo: 200 avisos a la guardia",
+            "tone": "bad"
+          },
+          {
+            "text": "Agrupados por rack: 1 aviso con la causa",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "rack 12",
+          "state": "hot"
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "probe",
+          "kind": "external",
+          "label": "Sonda",
+          "at": [
+            1,
+            1.25
+          ],
+          "note": "otra zona"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ],
+          "badge": "200 callan"
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem"
+        },
+        {
+          "id": "det-probe",
+          "from": "det",
+          "to": "probe"
+        },
+        {
+          "id": "probe-n",
+          "from": "probe",
+          "to": "n",
+          "dashed": true
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto",
+          "state": "dim"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb"
+          ],
+          "kind": "ping",
+          "fail": true,
+          "failAt": 0.5,
+          "rate": 2
+        },
+        {
+          "via": [
+            "det-mem"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "det-rules",
+            "rules-pager"
+          ],
+          "kind": "event",
+          "rate": 0.5,
+          "pop": true
+        }
+      ],
+      "predict": {
+        "q": "Ahora cae la base de datos compartida y el chequeo de la API falla en los 5.000 nodos. La receta dice «proceso que no responde: reiniciarlo». ¿Qué hace el automatizador?",
+        "options": [
+          "Reinicia los 5.000: es lo que dice la receta",
+          "Reinicia 100 cada vez, el 2 %, hasta pasar por todos",
+          "Saca los 5.000 nodos del load balancer",
+          "Nada: falla más del 10 % a la vez, así que la causa es común y decide una persona"
+        ],
+        "answer": 3,
+        "explain": "Si falla casi todo a la vez, el problema no está en cada nodo. Reiniciar solo añade una avalancha de reconexiones a la base de datos que ya está caída. El tope del 2 % frena el ritmo, pero el freno que manda aquí es el del 10 %: no actuar."
+      }
+    },
+    {
+      "short": "Causa común",
+      "chapter": "case",
+      "title": "Cae la base de datos: los frenos paran al automatizador",
+      "body": "Los 5.000 nodos siguen latiendo, pero su chequeo de la API falla. Más del 10 % a la vez: el automatizador **no actúa**. Las reglas mandan un aviso urgente a una persona, con un enlace al dashboard.",
+      "callout": {
+        "type": "tip",
+        "text": "Los otros frenos: un reinicio por nodo cada 15 minutos y como mucho el 2 % del clúster (100 nodos) en acción a la vez."
+      },
+      "changes": [
+        "~ La API falla en los 5.000",
+        "~ Más del 10 %: causa común",
+        "− Reinicios automáticos",
+        "+ Aviso urgente a una persona"
+      ],
+      "metrics": {
+        "sanos": 0,
+        "sosp": 0,
+        "avisos": 1,
+        "lat": 1000
+      },
+      "panel": {
+        "title": "Falla el 100 %",
+        "rows": [
+          {
+            "text": "Reiniciar 5.000 = avalancha sobre la BD caída",
+            "tone": "bad"
+          },
+          {
+            "text": "Más del 10 % a la vez: nada automático",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ],
+          "badge": "API: 5.000 ✗",
+          "state": "hot"
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "probe",
+          "kind": "external",
+          "label": "Sonda",
+          "at": [
+            1,
+            1.25
+          ],
+          "note": "otra zona",
+          "state": "dim"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ],
+          "mark": "good"
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "note": "frenado",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem"
+        },
+        {
+          "id": "det-probe",
+          "from": "det",
+          "to": "probe",
+          "state": "dim"
+        },
+        {
+          "id": "probe-n",
+          "from": "probe",
+          "to": "n",
+          "dashed": true,
+          "state": "dim"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto",
+          "state": "down"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb",
+            "lb-col",
+            "col-mem"
+          ],
+          "kind": "ping",
+          "rate": 2.5
+        },
+        {
+          "via": [
+            "det-rules",
+            "rules-pager"
+          ],
+          "kind": "event",
+          "rate": 0.6,
+          "pop": true
+        },
+        {
+          "via": [
+            "rules-auto"
+          ],
+          "kind": "event",
+          "fail": true,
+          "failAt": 0.6,
+          "rate": 0.5
+        }
+      ]
+    },
+    {
+      "short": "Vigilante",
+      "chapter": "case",
+      "title": "Se cae el propio monitor",
+      "body": "Los colectores, el detector y las reglas se quedan sin red. Nadie avisaría de nada. Pero el monitor mandaba cada minuto un latido propio a un **vigilante** en otro proveedor: deja de llegar y el vigilante despierta a la guardia.",
+      "callout": {
+        "type": "insight",
+        "text": "Un dead man's switch convierte el silencio del monitor en una alerta."
+      },
+      "changes": [
+        "− Colector, estado, detector y reglas",
+        "+ Vigilante externo: sin latido",
+        "+ Aviso a la guardia"
+      ],
+      "metrics": {
+        "sanos": "?",
+        "sosp": "?",
+        "avisos": 1,
+        "lat": 0
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ],
+          "state": "down"
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria",
+          "state": "down"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ],
+          "state": "down"
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ],
+          "state": "down"
+        },
+        {
+          "id": "dms",
+          "kind": "external",
+          "label": "Vigilante",
+          "at": [
+            1,
+            2.5
+          ],
+          "note": "otro proveedor",
+          "mark": "good"
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ],
+          "state": "dim"
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col",
+          "state": "down"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem",
+          "state": "down"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem",
+          "state": "down"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules",
+          "state": "down"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager",
+          "state": "down"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto",
+          "state": "dim"
+        },
+        {
+          "id": "det-dms",
+          "from": "det",
+          "to": "dms",
+          "dashed": true,
+          "state": "down",
+          "label": "1 latido/min"
+        },
+        {
+          "id": "dms-pager",
+          "from": "dms",
+          "to": "pager"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb",
+            "lb-col"
+          ],
+          "kind": "ping",
+          "fail": true,
+          "rate": 2
+        },
+        {
+          "via": [
+            "dms-pager"
+          ],
+          "kind": "event",
+          "rate": 0.8,
+          "pop": true
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que has visto",
+      "body": "- Latidos con los chequeos dentro; en memoria, solo el estado.\n- Sospechoso a los 15 s; caído solo si otra zona lo confirma.\n- Muchos silencios a la vez: un aviso con la causa.\n- La automatización, con frenos: nada si falla más del 10 %.\n- Un vigilante externo para el propio monitor.",
+      "callout": {
+        "type": "insight",
+        "text": "Lo difícil no es el volumen, son 1.000 latidos por segundo: es decidir bien qué significa un silencio."
+      },
+      "metrics": {
+        "sanos": 5000,
+        "sosp": 0,
+        "avisos": 0,
+        "lat": 1000
+      },
+      "nodes": [
+        {
+          "id": "n",
+          "kind": "service",
+          "label": "Nodos",
+          "at": [
+            0,
+            0
+          ]
+        },
+        {
+          "id": "lb",
+          "kind": "lb",
+          "label": "LB",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "col",
+          "kind": "service",
+          "label": "Colector",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "mem",
+          "kind": "cache",
+          "label": "Estado",
+          "at": [
+            3,
+            0
+          ],
+          "note": "en memoria"
+        },
+        {
+          "id": "det",
+          "kind": "worker",
+          "label": "Detector",
+          "at": [
+            2,
+            1.25
+          ]
+        },
+        {
+          "id": "rules",
+          "kind": "service",
+          "label": "Reglas",
+          "at": [
+            3,
+            1.25
+          ]
+        },
+        {
+          "id": "dms",
+          "kind": "external",
+          "label": "Vigilante",
+          "at": [
+            1,
+            2.5
+          ],
+          "note": "otro proveedor"
+        },
+        {
+          "id": "pager",
+          "kind": "client",
+          "label": "Guardia",
+          "at": [
+            2,
+            2.5
+          ]
+        },
+        {
+          "id": "auto",
+          "kind": "worker",
+          "label": "Automatizador",
+          "at": [
+            3,
+            2.5
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "n-lb",
+          "from": "n",
+          "to": "lb"
+        },
+        {
+          "id": "lb-col",
+          "from": "lb",
+          "to": "col"
+        },
+        {
+          "id": "col-mem",
+          "from": "col",
+          "to": "mem"
+        },
+        {
+          "id": "det-mem",
+          "from": "det",
+          "to": "mem"
+        },
+        {
+          "id": "det-rules",
+          "from": "det",
+          "to": "rules"
+        },
+        {
+          "id": "rules-pager",
+          "from": "rules",
+          "to": "pager"
+        },
+        {
+          "id": "rules-auto",
+          "from": "rules",
+          "to": "auto"
+        },
+        {
+          "id": "det-dms",
+          "from": "det",
+          "to": "dms",
+          "dashed": true
+        },
+        {
+          "id": "dms-pager",
+          "from": "dms",
+          "to": "pager"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "n-lb",
+            "lb-col",
+            "col-mem"
+          ],
+          "kind": "ping",
+          "rate": 2
+        },
+        {
+          "via": [
+            "det-mem"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "det-dms"
+          ],
+          "kind": "ping",
+          "rate": 0.5
+        }
+      ]
+    }
+  ]
+}
