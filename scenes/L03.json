@@ -1,6 +1,7 @@
 {
   "id": "L03",
-  "title": "Las cuentas, en acción",
+  "title": "Las cuentas, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "reads",
@@ -22,33 +23,15 @@
   "legend": {
     "heavy": "una foto"
   },
-  "goals": [
-    {
-      "text": "Cómo pasar de usuarios a peticiones por segundo",
-      "step": 2
-    },
-    {
-      "text": "Por qué se diseña para el pico",
-      "step": 3
-    },
-    {
-      "text": "Qué cabe en una máquina y qué no",
-      "step": 4
-    },
-    {
-      "text": "Dónde está el número grande",
-      "step": 5
-    }
-  ],
   "steps": [
     {
       "short": "¿Cuánto?",
       "chapter": "problem",
       "title": "Una app de fotos: ¿una máquina o cien?",
-      "body": "10 millones de personas al día suben y ven fotos. Antes de dibujar cajas, unas cuentas de servilleta. No buscan el número exacto, sino el **orden de magnitud**: si sale 30 o 50 por segundo, el diseño es el mismo; si sale 30 o 30.000, no.",
+      "body": "10 millones de personas al día suben y ven fotos. Antes de dibujar cajas, unas **estimaciones de servilleta** (*back-of-the-envelope*). Como antes de una mudanza: ¿basta con el coche o hace falta un camión?\n\nNo buscan el número exacto, sino el **orden de magnitud**: si sale 30 o 50 peticiones por segundo, el diseño es el mismo; si sale 30 o 30.000, no. Responden a las preguntas que deciden el diseño:\n- **¿Cabe en una máquina?** Si los datos caben en un disco y el tráfico en un servidor, no hace falta repartirlos entre máquinas (otra cosa es tener copias por si una falla).\n- **¿Lee más que escribe?** Si lee mucho más, el diseño se centra en que leer sea rápido.\n- **¿Dónde está el número grande?** A veces no son las peticiones, sino los bytes que salen hacia los usuarios.\n\nSon el paso 2 del método: 3-5 minutos, no más.",
       "callout": {
-        "type": "insight",
-        "text": "Son el paso 2 del método: 3-5 minutos, no más. Y cada cuenta se cierra con una decisión de diseño."
+        "type": "tip",
+        "text": "Di los supuestos en voz alta («supongo 10 millones de usuarios al día»), redondea sin miedo y cierra cada cuenta con una conclusión: «…así que las escrituras caben de sobra en una sola base de datos»."
       },
       "metrics": {
         "reads": null,
@@ -153,10 +136,11 @@
       "short": "QPS",
       "chapter": "technique",
       "title": "De usuarios a peticiones por segundo",
-      "body": "QPS medio = DAU × acciones al día / 86.400. Redondea el día a **10⁵** segundos y las cuentas salen de cabeza: dividir es restar exponentes. Subidas: 10⁶ / 10⁵ = **10 por segundo**. Vistas: 10⁹ / 10⁵ = **10.000 por segundo**.",
+      "body": "Casi siempre empiezas por los **DAU** (*daily active users*, usuarios activos al día) y por cuántas veces hace cada uno cada acción. De ahí sale el **QPS** (*queries per second*, peticiones por segundo):\n\n`QPS medio = DAU × acciones por usuario al día / 86.400`\n\nUn día tiene 86.400 segundos; para hacerlo de cabeza, redondea a **100.000 = 10⁵**. Con potencias de 10, multiplicar es sumar exponentes y dividir es restarlos: 10⁷ usuarios × 10² vistas = 10⁹ al día, y 10⁹ / 10⁵ = **10⁴, ~10.000 por segundo**. Subidas: 10⁶ / 10⁵ = **10 por segundo**.\n\nLa cuenta exacta da 11.574 vistas por segundo: el truco se queda un 14 % corto, y para decidir da igual.",
+      "more": "**El tiempo, para redondear:**\n\n| Periodo | Segundos | Para redondear |\n|---|---|---|\n| Un día | 86.400 | ~10⁵ |\n| Un mes | ~2,6 millones | ~2,6 × 10⁶ |\n| Un año | ~31,5 millones | ~3 × 10⁷ |\n\nCon 86.400 exacto, las subidas salen 12 por segundo en vez de 10.",
       "callout": {
         "type": "tip",
-        "text": "Con 86.400 exacto salen 12 y 11.574 por segundo: el truco se queda un 14 % corto, y para decidir da igual."
+        "text": "**X millones al día ≈ 12 × X por segundo.** Un millón al día son ~12/s; mil millones, ~12.000/s."
       },
       "changes": [
         "+ Escrituras: ~10/s",
@@ -248,10 +232,10 @@
       "short": "Pico",
       "chapter": "technique",
       "title": "Diseña para el pico, y mira el ratio",
-      "body": "El tráfico no es plano: en la hora punta hay 3 veces más. **~30 subidas y ~30.000 vistas por segundo**. Y por cada foto subida se ven 1.000: el sistema es **read-heavy**. Las 30 escrituras por segundo no son un problema; lo que hay que cuidar es la lectura.",
+      "body": "El tráfico no es plano: hay horas punta. Si no te dan el dato, supón un pico de 2-3 veces la media, y **diseña para el pico**. Aquí, 3 veces: **~30 subidas y ~30.000 vistas por segundo**.\n\nCuenta por separado lecturas y escrituras, porque se resuelven con piezas distintas: es el **ratio lectura:escritura**. Por cada foto subida se ven 1.000: el sistema es **read-heavy** (lee mucho más de lo que escribe) y hay que optimizar la lectura. Las ~30 escrituras por segundo del pico no son un problema.\n\nNo siempre es así: un feed se lee mucho más de lo que se escribe, pero un sistema que recoge métricas de miles de servidores escribe mucho más de lo que lee.",
       "callout": {
         "type": "insight",
-        "text": "Separa lecturas y escrituras: se resuelven con piezas distintas."
+        "text": "Separa lecturas y escrituras: el ratio te dice qué parte del sistema hay que cuidar."
       },
       "changes": [
         "~ Pico: 3 × la media",
@@ -346,10 +330,11 @@
       "short": "Almacenamiento",
       "chapter": "technique",
       "title": "Los datos caben; las fotos, no",
-      "body": "Almacenamiento = tamaño × elementos al día × 365 × años. Los datos de cada foto (1 KB) en 5 años: **~1,8 TB**, caben en una base de datos. Las fotos (2 MB): **~3,7 PB**. No caben en ninguna máquina: van a un almacén de ficheros repartido entre muchas.",
+      "body": "El **almacenamiento** es una multiplicación:\n\n`almacenamiento = tamaño de cada elemento × elementos nuevos al día × 365 × años`\n\nPara el tamaño de una fila, suma sus campos: un entero de 64 bits ocupa 8 bytes; un UUID, 16 (36 si lo guardas como texto); cada carácter, de 1 a 4 bytes en UTF-8. Redondea hacia arriba: los índices también ocupan.\n\nLos datos de cada foto (autor, fecha, texto…: 1 KB) en 5 años: **~1,8 TB**, caben en una sola base de datos. Las fotos (2 MB): **~3,7 PB**. No caben en ninguna máquina: van a un almacén de ficheros repartido entre muchas máquinas, como verás en la lección de object storage.",
+      "more": "**Los tamaños.** En estimaciones, 1 KB son mil bytes (en rigor pueden ser 1.024):\n\n| Unidad | Cuánto es | Potencia de 10 |\n|---|---|---|\n| 1 KB | mil bytes | 10³ |\n| 1 MB | un millón de bytes | 10⁶ |\n| 1 GB | mil millones de bytes | 10⁹ |\n| 1 TB | un billón de bytes | 10¹² |\n| 1 PB | mil billones de bytes | 10¹⁵ |\n\nGuardar también las versiones del feed (200 KB) añadiría un 10 % al almacenamiento: tampoco cambia nada.",
       "callout": {
-        "type": "tip",
-        "text": "Para el tamaño de una fila, suma sus campos y redondea hacia arriba: los índices también ocupan."
+        "type": "insight",
+        "text": "¿Cabe en una máquina? Los datos, sí; las fotos, no. Esa respuesta ya decide dos piezas del diseño."
       },
       "changes": [
         "+ Almacén repartido para las fotos",
@@ -486,10 +471,11 @@
       "short": "Ancho de banda",
       "chapter": "case",
       "title": "El número grande: lo que sale",
-      "body": "Ancho de banda = peticiones por segundo × tamaño de cada respuesta. Subir: 2 MB × 10/s = 20 MB/s. Bajar: 200 KB × 10.000/s = 2 GB/s, **16 Gbit/s**, y ~48 en el pico. Todo sale del mismo sitio, hacia usuarios de todo el mundo: ahí está el cuello de botella.",
+      "body": "El **ancho de banda** (*bandwidth*) son los bytes por segundo que entran o salen:\n\n`ancho de banda = peticiones por segundo × tamaño de cada respuesta`\n\nSepara la entrada (lo que suben los usuarios) de la salida (lo que descargan). Subir: 2 MB × 10/s = 20 MB/s, 160 Mbit/s. Bajar: 200 KB × 10.000/s = 2 GB/s, **16 Gbit/s**, y ~48 en el pico.\n\nSi cada cosa se sube una vez y se descarga mil, el número grande es la salida. Todo sale del mismo sitio, hacia usuarios de todo el mundo: ahí está el cuello de botella.",
+      "more": "Con 86.400 en vez de 10⁵ salen 12 escrituras/s, 11.574 lecturas/s, 23 MB/s de subida y 2,3 GB/s de bajada: las mismas conclusiones.",
       "callout": {
         "type": "warn",
-        "text": "Si cada cosa se sube una vez y se descarga mil, el número grande es la salida."
+        "text": "La red se mide en **bits** por segundo y el disco en **bytes**. 1 byte = 8 bits: 100 MB/s son 800 Mbit/s."
       },
       "changes": [
         "~ Bajada: 16 Gbit/s (~48 en el pico)",
@@ -621,10 +607,11 @@
       "short": "CDN",
       "chapter": "solution",
       "title": "Las fotos, desde una CDN",
-      "body": "Las fotos se sirven desde una **CDN**: una red de servidores repartidos por el mundo, cerca de los usuarios. Los 16 Gbit/s de bajada salen de ella, no de tu servidor, que se queda con las subidas y los datos de cada foto.",
+      "body": "Las fotos se sirven desde una **CDN**: una red de servidores repartidos por el mundo, cerca de los usuarios. Las decenas de Gbit/s de bajada salen de ella, no de tu servidor, que se queda con las subidas y los datos de cada foto.\n\n¿Por qué cerca? Por la **latencia**, cuánto tarda en llegar un dato. Una ida y vuelta dentro del mismo centro de datos cuesta del orden de 0,5 ms; entre California y los Países Bajos, 150 ms. Leer un dato de la RAM, 100 ns; 4 KB al azar de un SSD, 150 µs.\n\nPor eso se guarda en memoria lo que más se pide (la **cache**) y el contenido se sirve cerca del usuario.",
+      "more": "**La latencia**, con los órdenes de magnitud de la tabla clásica de Jeff Dean y Peter Norvig (cifras de hacia 2012):\n\n| Leer o enviar… | Tarda del orden de |\n|---|---|\n| Un dato de la memoria (RAM) | 100 ns |\n| 4 KB al azar de un SSD | 150 µs |\n| Ida y vuelta dentro del mismo centro de datos | 0,5 ms |\n| Ida y vuelta California ↔ Países Bajos | 150 ms |\n\n(1 ms = 1.000 µs = 1.000.000 ns.) Desde entonces algunas cifras han mejorado (los SSD de hoy son más rápidos), pero los saltos entre filas siguen sirviendo para razonar.",
       "callout": {
-        "type": "insight",
-        "text": "Una ida y vuelta California ↔ Países Bajos cuesta del orden de 150 ms; dentro de un centro de datos, 0,5 ms. Por eso conviene servir desde cerca."
+        "type": "tip",
+        "text": "Más que los números, recuerda los saltos: la RAM es cientos o miles de veces más rápida que un SSD, y cruzar un océano cuesta cientos de veces más que hablar con la máquina de al lado."
       },
       "changes": [
         "+ CDN cerca de los usuarios",
@@ -760,8 +747,13 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que han decidido las cuentas",
-      "body": "- Redondea a potencias de 10: un día ≈ 10⁵ segundos.\n- QPS = DAU × acciones / 86.400, y diseña para el pico.\n- Almacenamiento = tamaño × al día × días; ancho de banda = QPS × tamaño.\n- Cada cuenta acaba en una decisión.",
+      "title": "Lo que te llevas",
+      "body": "- Las cuentas buscan el orden de magnitud: redondea a potencias de 10 y cierra cada una con una conclusión de diseño.\n- QPS = DAU × acciones al día / 86.400, y 86.400 ≈ 10⁵. Diseña para el pico (2-3 veces la media si no te dan el dato).\n- Separa lecturas y escrituras: el ratio te dice qué parte del sistema hay que cuidar.\n- Almacenamiento = tamaño × elementos al día × días; ancho de banda = QPS × tamaño, y la red va en bits.\n- La RAM es cientos o miles de veces más rápida que un SSD, y una ida y vuelta entre continentes cuesta del orden de 100 ms: por eso existen las caches y las CDN.",
+      "more": "**La tabla de la pizarra**, con los supuestos de la app de fotos:\n\n| Qué | Cuenta | Resultado |\n|---|---|---|\n| Escrituras | 10⁶ / 10⁵ | ~10/s (pico ~30/s) |\n| Lecturas | 10⁹ / 10⁵ | ~10.000/s (pico ~30.000/s) |\n| Ratio | 10⁹ / 10⁶ | 1.000 lecturas por escritura |\n| Fotos en 5 años | 2 MB × 10⁶ × 365 × 5 | ~3,7 PB |\n| Datos de las fotos en 5 años | 1 KB × 10⁶ × 365 × 5 | ~1,8 TB |\n| Subida | 2 MB × 10/s | ~20 MB/s = 160 Mbit/s |\n| Bajada | 200 KB × 10.000/s | ~2 GB/s = 16 Gbit/s (pico ~48 Gbit/s) |",
+      "callout": {
+        "type": "tip",
+        "text": "En la pizarra basta con la tabla y tres o cuatro conclusiones. No se trata de acertar el número, sino de que el diseño que dibujas después sea coherente con él."
+      },
       "metrics": {
         "reads": 30000,
         "writes": 30,

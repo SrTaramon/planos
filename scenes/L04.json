@@ -1,6 +1,7 @@
 {
   "id": "L04",
-  "title": "Leer bien los datos, en acción",
+  "title": "Leer bien los datos, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "reads",
@@ -13,34 +14,77 @@
       "better": "low"
     }
   ],
-  "goals": [
-    {
-      "text": "Por qué una consulta lee 8 millones de filas",
-      "step": 1
-    },
-    {
-      "text": "Cómo un índice B-tree lo deja en 3 saltos",
-      "step": 2
-    },
-    {
-      "text": "Qué cuesta cada índice",
-      "step": 3
-    },
-    {
-      "text": "Cómo elegir base de datos por el access pattern",
-      "step": 4
-    }
-  ],
   "steps": [
+    {
+      "short": "Postgres",
+      "chapter": "problem",
+      "title": "La tienda guarda sus pedidos en Postgres",
+      "body": "La tienda guarda sus pedidos en Postgres, una **base de datos relacional**: los datos viven en tablas con filas y columnas. Cada tabla tiene un **schema**, la lista fija de columnas y tipos que defines antes de guardar nada (por eso cambiarlo pide una migración).\n\nLas tablas se relacionan con claves: la **primary key** identifica cada fila (`users.id`) y una **foreign key** apunta a una fila de otra tabla (`orders.user_id`). Cada dato se guarda una sola vez: el nombre del usuario vive solo en `users`. Para leerlo junto a sus pedidos haces un **join**, una consulta que combina tablas.\n\nTe da consultas libres (mañana puedes preguntar algo que hoy no has previsto), integridad (no hay pedidos de usuarios que no existen) y **transacciones**: varias escrituras que se aplican todas o ninguna.",
+      "more": "El join de los pedidos de la última semana, con el nombre de cada cliente:\n\n```sql\nSELECT o.id, o.total, u.name\nFROM orders o\nJOIN users u ON u.id = o.user_id\nWHERE o.created_at > now() - interval '7 days';\n```\n\nLas transacciones las verás en su propia lección.",
+      "callout": {
+        "type": "warn",
+        "text": "Su límite: está pensada para una máquina principal. Crece mucho con una máquina más grande, pero repartir las escrituras entre varias pide trabajo extra (lo verás en la lección de sharding)."
+      },
+      "metrics": {
+        "reads": null,
+        "writes": null
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "items": [
+            "users",
+            "orders"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "app-pg",
+          "from": "app",
+          "to": "pg",
+          "label": "JOIN users"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        }
+      ]
+    },
     {
       "short": "Seq Scan",
       "chapter": "problem",
-      "title": "8 millones de filas para encontrar unas pocas",
-      "body": "La tienda guarda los pedidos en Postgres: 8 millones de filas en `orders`. Cada vez que alguien abre «Mis pedidos», la consulta `WHERE user_id = 42` lee la tabla **entera** para quedarse con sus pocas filas. Es un **full table scan** (`Seq Scan` en `EXPLAIN`).",
+      "title": "«Mis pedidos»: 8 millones de filas para unas pocas",
+      "body": "La tabla `orders` ya tiene 8 millones de filas. Cada vez que alguien abre «Mis pedidos», la consulta `WHERE user_id = 42` lee la tabla **entera** para quedarse con sus pocas filas: un **full table scan** (`Seq Scan` en `EXPLAIN`).\n\nEs como buscar una palabra leyendo el libro de principio a fin.",
       "callout": {
-        "type": "tip",
-        "text": "Es como buscar una palabra leyendo el libro de principio a fin."
+        "type": "insight",
+        "text": "La base de datos es la pieza que más cuesta cambiar después: mover millones de filas es como mudarse con la casa llena. Conviene pensar bien cómo vas a leer."
       },
+      "changes": [
+        "~ orders: 8 millones de filas",
+        "~ Cada consulta lee la tabla entera"
+      ],
       "metrics": {
         "reads": 8000000,
         "writes": null
@@ -105,11 +149,8 @@
       "short": "Índice",
       "chapter": "technique",
       "title": "Un índice, como el del final del libro",
-      "body": "Con `CREATE INDEX … ON orders (user_id)`, Postgres crea un **B-tree**: un árbol ancho y poco profundo, con los valores ordenados. Con 200 claves por nodo, 3 niveles ya guardan 8 millones de valores. Encontrar el 42 son **3 saltos**, y la hoja dice dónde están sus filas.",
-      "callout": {
-        "type": "insight",
-        "text": "Como está ordenado, también sirve para rangos (`created_at > …`) y para `ORDER BY`."
-      },
+      "body": "Un **índice** (*index*) es el índice del final del libro: una lista ordenada de valores, cada uno con la «página» donde está su fila. Con `CREATE INDEX … ON orders (user_id)`, Postgres lo crea por defecto como un **B-tree**: un árbol ancho y poco profundo, con los valores ordenados y muchas claves en cada nodo.\n\nCon 200 claves por nodo, 3 niveles ya guardan 8 millones de valores. Encontrar el 42 son **3 saltos**, no 8 millones de filas. Cada entrada apunta a dónde está su fila en la tabla, y Postgres lee solo esas filas.\n\nComo está ordenado, también sirve para rangos (`created_at > …`) y para `ORDER BY`.",
+      "more": "```sql\nCREATE INDEX orders_user_id_idx ON orders (user_id);\n```\n\nUn índice de varias columnas, como `(user_id, created_at)`, sirve sobre todo a las consultas que filtran por la primera columna.",
       "changes": [
         "+ Índice B-tree sobre user_id",
         "~ Lecturas: 8.000.000 → 3 saltos",
@@ -202,10 +243,11 @@
       "short": "El precio",
       "chapter": "case",
       "title": "El precio: cada pedido nuevo escribe más",
-      "body": "Cada `INSERT` escribe en la tabla **y en todos sus índices**. Con 5 índices, un pedido nuevo son 6 escrituras. Y cada índice es una copia ordenada de sus columnas: ocupa disco y memoria. Las lecturas por `user_id` siguen siendo rápidas; las escrituras, más lentas.",
+      "body": "No es gratis:\n- **Escrituras más lentas**: cada `INSERT` escribe en la tabla **y en todos sus índices**. Con 5 índices, un pedido nuevo son 6 escrituras.\n- **Más disco y memoria**: cada índice es una copia ordenada de sus columnas.\n\nLas lecturas por `user_id` siguen siendo rápidas; las escrituras, más lentas.\n\nLa regla: indexa las columnas por las que filtras, ordenas o haces join en las consultas frecuentes, y ninguna más.",
+      "more": "Para ver si falta uno, `EXPLAIN ANALYZE`: un `Seq Scan` en una tabla grande que devuelve pocas filas suele delatar un índice que falta.",
       "callout": {
-        "type": "tip",
-        "text": "Indexa las columnas por las que filtras, ordenas o haces join en las consultas frecuentes, y ninguna más."
+        "type": "warn",
+        "text": "Postgres solo crea los índices de la primary key y de cada `UNIQUE`, no los de las foreign keys: si haces join por `orders.user_id`, créalo tú."
       },
       "changes": [
         "~ 5 índices: 1 pedido nuevo, 6 escrituras",
@@ -214,6 +256,17 @@
       "metrics": {
         "reads": 3,
         "writes": 6
+      },
+      "predict": {
+        "q": "La tienda también guarda la sesión de cada visitante, y siempre la lee por su id exacto, miles de veces por segundo. ¿Dónde encaja mejor?",
+        "options": [
+          "En un key-value: una clave, un valor",
+          "En Postgres, con un índice más",
+          "En una base de datos de grafos",
+          "En la misma tabla que los pedidos"
+        ],
+        "answer": 0,
+        "explain": "Leer por clave exacta es justo lo que un key-value hace sin esfuerzo. Postgres también podría, pero sería otro índice que pagar en cada escritura; y un grafo sirve para recorrer relaciones, no para buscar una clave."
       },
       "nodes": [
         {
@@ -296,56 +349,24 @@
           "back": "resp",
           "rate": 0.6
         }
-      ],
-      "predict": {
-        "q": "La tienda también guarda la sesión de cada visitante, y siempre la lee por su id exacto, miles de veces por segundo. ¿Dónde encaja mejor?",
-        "options": [
-          "En un key-value: una clave, un valor",
-          "En Postgres, con un índice más",
-          "En una base de datos de grafos",
-          "En la misma tabla que los pedidos"
-        ],
-        "answer": 0,
-        "explain": "Leer por clave exacta es justo lo que un key-value hace sin esfuerzo. Postgres también podría, pero sería otro índice que pagar en cada escritura; y un grafo sirve para recorrer relaciones, no para buscar una clave."
-      }
+      ]
     },
     {
-      "short": "Access pattern",
+      "short": "NoSQL",
       "chapter": "technique",
-      "title": "Antes de elegir: ¿cómo vas a leer?",
-      "body": "Escribe las 2-3 consultas más frecuentes y mira su forma. Los pedidos se leen por usuario y por fecha, y tienen que cuadrar con pagos y stock: transacciones y consultas libres, **SQL**. La sesión de cada visitante se lee por clave exacta, a todas horas: un **key-value** la responde sin esfuerzo.",
+      "title": "Las sesiones, a un key-value: NoSQL",
+      "body": "Las sesiones se leen siempre por su id exacto: van a un **key-value**, una de las cuatro familias **NoSQL** (*not only SQL*), el nombre paraguas de las bases de datos que no usan tablas relacionadas. Se parecen poco:\n- **Key-value**: un diccionario gigante, clave → valor. Sesiones, carritos.\n- **Document**: documentos tipo JSON, cada uno con sus campos. Productos con atributos distintos por categoría.\n- **Wide-column**: filas agrupadas por una clave y ordenadas dentro del grupo. Mensajes de un chat, métricas por hora.\n- **Graph**: nodos y aristas (las relaciones). Amigos de amigos.\n\nLo que suelen tener en común: renuncian a parte de lo que da SQL (joins, consultas libres y, a menudo, transacciones entre registros) a cambio de algo concreto: repartirse fácil entre máquinas, un schema flexible o recorrer relaciones rápido.",
+      "more": "| Familia | Cómo guarda | Buena para | Ejemplos |\n|---|---|---|---|\n| **Key-value** | Un diccionario gigante: clave → valor | Leer y escribir por clave exacta, muy rápido: sesiones, carritos | Redis, DynamoDB |\n| **Document** | Documentos tipo JSON, cada uno con sus campos | Entidades que se leen enteras y cambian de forma: productos con atributos distintos por categoría | MongoDB, Firestore |\n| **Wide-column** | Filas agrupadas por una clave y ordenadas dentro del grupo | Muchas escrituras y lecturas por rango: mensajes de un chat, métricas por hora | Cassandra, HBase |\n| **Graph** | Nodos y aristas (las relaciones) | Recorrer relaciones a varios saltos: amigos de amigos | Neo4j, Amazon Neptune |\n\nLa menos intuitiva es wide-column: guardas los mensajes agrupados por `chat_id` y ordenados por fecha, así que «los 50 últimos del chat 123» es leer un trozo seguido.",
       "callout": {
-        "type": "insight",
-        "text": "Puedes usar varias: cada dato, donde mejor encaja con cómo se lee."
+        "type": "warn",
+        "text": "Las fronteras no son nítidas: Postgres guarda e indexa JSON (`jsonb`), y DynamoDB es key-value y document a la vez. Las familias sirven para pensar, no para clasificar productos."
       },
       "changes": [
-        "+ Key-value para las sesiones",
-        "~ Pedidos y pagos se quedan en Postgres"
+        "+ Key-value para las sesiones"
       ],
       "metrics": {
         "reads": 3,
         "writes": 6
-      },
-      "panel": {
-        "title": "La forma decide la familia",
-        "rows": [
-          {
-            "text": "¿Clave exacta? → key-value (sesiones, carritos)"
-          },
-          {
-            "text": "¿Entidad entera que cambia de forma? → document"
-          },
-          {
-            "text": "¿Clave y rango ordenado? → wide-column (chats)"
-          },
-          {
-            "text": "¿Relaciones a varios saltos? → graph"
-          },
-          {
-            "text": "¿Varias tablas que cuadran? → SQL",
-            "tone": "good"
-          }
-        ]
       },
       "nodes": [
         {
@@ -433,13 +454,137 @@
       ]
     },
     {
+      "short": "Access pattern",
+      "chapter": "solution",
+      "title": "La pregunta que decide: ¿cómo vas a leer?",
+      "body": "«¿Qué base de datos es mejor?» no tiene respuesta: elegirla no va de modas. Esta pregunta sí: **¿cuál es el access pattern?**, es decir, qué consultas hará el sistema, con qué forma y cuántas veces.\n1. Escribe las 2-3 lecturas y escrituras más frecuentes, con su volumen aproximado.\n2. Mira su forma (en la pizarra).\n3. Elige la base de datos que las responde sin esfuerzo, y di qué pierdes.\n\nLos pedidos se leen por usuario y por fecha, y pedidos, pagos y stock tienen que cuadrar; mañana habrá informes que nadie ha pedido aún. Transacciones y consultas libres: **SQL**. Un acortador de URLs, en cambio, casi solo pide «dame la URL larga de este código»: una clave, sin joins, y un key-value encaja perfecto (aunque Postgres con el código como primary key también sirve).",
+      "callout": {
+        "type": "insight",
+        "text": "Puedes usar varias: Postgres para los pedidos y un key-value para las sesiones. Cada dato, donde mejor encaja con cómo se lee."
+      },
+      "changes": [
+        "~ Pedidos: SQL, por usuario y fecha",
+        "~ Sesiones: key-value, por clave"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "panel": {
+        "title": "La forma decide la familia",
+        "rows": [
+          {
+            "text": "¿Clave exacta? → key-value (sesiones, carritos)"
+          },
+          {
+            "text": "¿Entidad entera que cambia de forma? → document"
+          },
+          {
+            "text": "¿Clave y rango ordenado? → wide-column (chats)"
+          },
+          {
+            "text": "¿Relaciones a varios saltos? → graph"
+          },
+          {
+            "text": "¿Varias tablas que cuadran? → SQL",
+            "tone": "good"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas",
+          "mark": "good"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ]
+        },
+        {
+          "id": "kv",
+          "kind": "db",
+          "label": "Key-value",
+          "at": [
+            2,
+            1.3
+          ],
+          "note": "sesiones",
+          "mark": "good"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        },
+        {
+          "id": "app-kv",
+          "from": "app",
+          "to": "kv",
+          "label": "por clave"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "app-kv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 3
+        }
+      ]
+    },
+    {
       "short": "Consulta nueva",
       "chapter": "case",
       "title": "Mañana llega una consulta que nadie previó",
-      "body": "Piden los pedidos de los últimos 7 días con el nombre de cada cliente. En Postgres es una consulta más: un **join** entre `orders` y `users`. En el key-value, buscar las sesiones de un usuario no es buscar por clave: toca recorrerlo entero o guardar los datos otra vez por otra clave (**denormalization**).",
+      "body": "Piden los pedidos de los últimos 7 días con el nombre de cada cliente. En Postgres es una consulta más: un **join** entre `orders` y `users`.\n\nEn SQL modelas los datos y luego preguntas lo que quieras. En key-value y wide-column es al revés: diseñas la clave pensando en la consulta. Si llega una que no previste (aquí, buscar las sesiones de un usuario, que no es su clave), toca recorrer toda la tabla o guardar los datos otra vez, organizados por otra clave.\n\nEso es **denormalization**: duplicar datos a propósito para que cada lectura vaya a un solo sitio.",
       "callout": {
         "type": "warn",
-        "text": "En key-value y wide-column diseñas la clave pensando en la consulta. Lo que no previste sale caro."
+        "text": "Lo que no previste sale caro: recorrer toda la tabla o guardar los datos otra vez con otra clave."
       },
       "changes": [
         "+ Consulta nueva: un join en Postgres",
@@ -537,14 +682,111 @@
       ]
     },
     {
+      "short": "Defenderlo",
+      "chapter": "solution",
+      "title": "Cómo defender tu elección",
+      "body": "Para justificar, encadena tres cosas: el access pattern, la elección y su precio.\n\n*«Los pedidos se leen por usuario y por fecha, y tienen que cuadrar con los pagos. Elijo Postgres con un índice en `(user_id, created_at)`. El precio: repartir las escrituras entre máquinas cuesta más, pero según las cuentas una máquina aguanta.»*\n\nLo que más sale, con excepciones: SQL tiene schema fijo, consultas libres y transacciones entre tablas, y crece con una máquina principal y copias para leer. Muchas NoSQL nacen para repartirse entre máquinas, con schema flexible y acceso sobre todo por clave; su consistencia, a menudo, es eventual: una copia puede dar un dato viejo un momento.\n\nY puedes usar varias: cada dato, donde mejor encaja con cómo se lee.",
+      "more": "| | SQL (relacional) | NoSQL |\n|---|---|---|\n| Schema | Fijo, cambia con migraciones | Flexible, lo controla la aplicación |\n| Consultas | Libres: joins, filtros, agregados | Sobre todo por clave; lo demás hay que preverlo |\n| Transacciones | Entre varias tablas | Varía; a menudo solo dentro de un registro |\n| Escala | Una máquina principal y copias para leer (lección de replicación) | Muchas nacen para repartirse entre máquinas |\n| Consistencia | En la principal, lees lo último escrito | A menudo eventual: una copia puede dar un dato viejo un momento (lección de CAP) |\n| Encaja con | Datos relacionados, dinero, consultas aún desconocidas | Acceso por clave a gran escala, schema cambiante, grafos |",
+      "callout": {
+        "type": "warn",
+        "text": "«NoSQL porque escala» no es un motivo, ni «SQL porque es lo que conozco». El motivo sale de cómo se leen y se escriben los datos. Si aún no está claro, SQL es la apuesta flexible: dilo con ese motivo."
+      },
+      "changes": [
+        "~ Access pattern → elección → precio"
+      ],
+      "metrics": {
+        "reads": 3,
+        "writes": 6
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "Tienda",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "pg",
+          "kind": "db",
+          "label": "Postgres",
+          "at": [
+            0,
+            1.3
+          ],
+          "note": "orders: 8 M filas"
+        },
+        {
+          "id": "idx",
+          "kind": "search",
+          "label": "5 índices",
+          "at": [
+            1,
+            1.3
+          ],
+          "note": "B-tree",
+          "items": [
+            "raíz",
+            "rama",
+            "hoja"
+          ]
+        },
+        {
+          "id": "kv",
+          "kind": "db",
+          "label": "Key-value",
+          "at": [
+            2,
+            1.3
+          ],
+          "note": "sesiones"
+        }
+      ],
+      "links": [
+        {
+          "id": "app-idx",
+          "from": "app",
+          "to": "idx"
+        },
+        {
+          "id": "idx-pg",
+          "from": "idx",
+          "to": "pg"
+        },
+        {
+          "id": "app-kv",
+          "from": "app",
+          "to": "kv",
+          "label": "por clave"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-idx",
+            "idx-pg"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1.2
+        },
+        {
+          "via": [
+            "app-kv"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5
+        }
+      ]
+    },
+    {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Elige por el access pattern: primero, las consultas frecuentes.\n- SQL: schema, joins, transacciones y consultas libres.\n- NoSQL: cuatro familias, cada una brilla con un acceso.\n- Un índice B-tree: de leer la tabla entera a 3 saltos.\n- Su precio: escrituras más lentas y más disco.",
-      "callout": {
-        "type": "tip",
-        "text": "«Los pedidos se leen por usuario y por fecha y cuadran con los pagos: Postgres con un índice en `(user_id, created_at)`. El precio: repartir escrituras cuesta más, pero una máquina aguanta.»"
-      },
+      "title": "Lo que te llevas",
+      "body": "- Una base de datos relacional te da tablas con schema, joins, transacciones y consultas libres: si dudas, es un buen punto de partida.\n- NoSQL son cuatro familias muy distintas (key-value, document, wide-column y graph), y cada una brilla con un tipo de acceso.\n- Elige por el access pattern: escribe primero las consultas más frecuentes y busca la base de datos que las responda sin esfuerzo.\n- Un índice (un B-tree en Postgres) convierte «leer toda la tabla» en unos pocos saltos, a cambio de escrituras más lentas y más disco.\n- En la entrevista: access pattern → elección → lo que pierdes y por qué es aceptable.",
       "metrics": {
         "reads": 3,
         "writes": 6
