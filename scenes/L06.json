@@ -1,6 +1,7 @@
 {
   "id": "L06",
-  "title": "Los IDs, en acción",
+  "title": "IDs únicos y códigos cortos, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "dup",
@@ -24,33 +25,15 @@
   "legend": {
     "event": "ajuste de hora (NTP)"
   },
-  "goals": [
-    {
-      "text": "Por qué dos contadores repiten y uno solo se atasca",
-      "step": 2
-    },
-    {
-      "text": "Qué cuesta un UUID y qué arregla el v7",
-      "step": 4
-    },
-    {
-      "text": "Cómo da Snowflake IDs sin coordinarse, y su punto débil",
-      "step": 6
-    },
-    {
-      "text": "Por qué un número pequeño da un código corto",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Dos contadores",
       "chapter": "problem",
       "title": "Dos bases de datos, el mismo pedido 1001",
-      "body": "Los pedidos se reparten entre dos bases de datos y cada una numera con **auto-increment**: 1, 2, 3… Es corto y ordenado, pero cada una cuenta por su lado: las dos acaban creando el pedido **1001**. Dentro de cada BD el número es único; entre las dos, no.",
+      "body": "Cada pedido, usuario o enlace necesita un **ID**: un identificador que no se repita nunca. Lo más sencillo es que cuente la base de datos con una columna **auto-increment** (en PostgreSQL, `identity` o el clásico `serial`): 1, 2, 3… Es corto (8 bytes en un `bigint`), ordenado y no tienes que pensar.\n\nCon una sola base de datos es perfecto. El problema llega cuando escribe más de una máquina. Aquí los pedidos se reparten entre dos bases de datos (lo verás en la lección de sharding: cada una guarda un trozo). Cada una cuenta por su lado y las dos acaban creando el pedido **1001**: dentro de cada BD es único; entre las dos, no.",
       "callout": {
-        "type": "insight",
-        "text": "Con una sola base de datos, auto-increment es perfecto. El lío empieza cuando escribe más de una máquina."
+        "type": "warn",
+        "text": "Consecutivo no significa sin huecos: si una inserción falla, ese número se pierde. No uses el ID para contar filas."
       },
       "metrics": {
         "dup": "sí",
@@ -164,10 +147,10 @@
       "short": "Un contador",
       "chapter": "problem",
       "title": "Un contador central: un cuello de botella",
-      "body": "Para no repetir, todos los servidores piden cada ID a **un único contador**. Ya no hay repetidos, pero cada inserción espera a esa máquina y, con muchos servidores, se satura. Y si se cae, nadie crea nada: es un **SPOF**.",
+      "body": "Para no repetir, todos los servidores piden cada ID a **un único contador central**. Ya no hay repetidos, pero cada inserción espera a esa máquina: con muchos servidores es un **cuello de botella**. Y si se cae, nadie crea nada: es un **SPOF**.\n\nAdemás, un ID consecutivo da pistas: si hoy tu pedido es el 5230 y mañana el 5310, cualquiera sabe que vendes unos 80 al día, y puede probar `/pedidos/5229`.\n\nSegún el caso, a un ID le pides que sea **único**, **corto**, **ordenable por tiempo**, **difícil de adivinar** y que se genere **sin preguntar a nadie**. Ningún método da todo a la vez: las cifras de arriba siguen cuatro de esas cosas en cada paso.",
       "callout": {
         "type": "tip",
-        "text": "El truco de Flickr: dos contadores, uno da los impares y otro los pares. Funciona, pero añadir un tercero obliga a cambiar el reparto."
+        "text": "El truco de Flickr: dos servidores MySQL, uno da los impares y otro los pares. Funciona, pero añadir un tercero obliga a cambiar el reparto."
       },
       "changes": [
         "+ Un contador central",
@@ -179,17 +162,6 @@
         "free": "no",
         "sorted": "sí",
         "len": 7
-      },
-      "predict": {
-        "q": "Quitas el contador: cada servidor genera su ID como un **UUID v4**, 122 bits al azar, sin preguntar a nadie. ¿Qué se resiente?",
-        "options": [
-          "Los repetidos: con tres servidores generando, chocarán a diario",
-          "El índice de la BD: cada fila nueva cae en una página cualquiera",
-          "La velocidad: sacar 122 bits al azar tarda más que contar",
-          "Nada: es único, corto y no depende de nadie"
-        ],
-        "answer": 1,
-        "explain": "Un UUID v4 no tiene orden: cada inserción cae en una página cualquiera del índice (un B-tree) y, cuando no cabe en memoria, toca leer del disco. Los repetidos tientan, pero son absurdamente improbables: con mil millones por segundo, unos 86 años hasta un 50 % de probabilidad de una sola colisión. Y corto no es: 36 caracteres."
       },
       "nodes": [
         {
@@ -332,19 +304,29 @@
           "kind": "write",
           "rate": 1
         }
-      ]
+      ],
+      "predict": {
+        "q": "Quitas el contador: cada servidor genera su ID como un **UUID v4**, 122 bits al azar, sin preguntar a nadie. ¿Qué se resiente?",
+        "options": [
+          "Los repetidos: con tres servidores generando, chocarán a diario",
+          "El índice de la BD: cada fila nueva cae en una página cualquiera",
+          "La velocidad: sacar 122 bits al azar tarda más que contar",
+          "Nada: es único, corto y no depende de nadie"
+        ],
+        "answer": 1,
+        "explain": "Un UUID v4 no tiene orden: cada inserción cae en una página cualquiera del índice (un B-tree) y, cuando no cabe en memoria, toca leer del disco. Los repetidos tientan, pero son absurdamente improbables: con mil millones por segundo, unos 86 años hasta un 50 % de probabilidad de una sola colisión. Y corto no es: 36 caracteres."
+      }
     },
     {
       "short": "UUID v4",
       "chapter": "technique",
       "title": "UUID v4: cada servidor, el suyo",
-      "body": "Cada servidor genera un **UUID v4**: 128 bits, 122 al azar. No pregunta a nadie y repetir uno es absurdamente improbable. El precio está en el índice, un **B-tree** ordenado: cada ID nuevo cae en una página cualquiera y, cuando el índice ya no cabe en memoria, muchas inserciones leen del disco.",
+      "body": "Cada servidor, o el móvil del usuario, genera su ID como un **UUID**: un número de 128 bits que se escribe así: `9b2f4c1e-7a3d-4f6b-8c2e-1d5a7b9e0f42`. La versión más usada, la **v4**, lleva 122 bits al azar. No pregunta a nadie y hay tantos valores que repetir uno es absurdamente improbable.\n\nEl precio está en la base de datos. El índice de la clave primaria es un **B-tree**: un árbol ordenado, guardado en páginas de pocos KB. Con IDs al azar, cada fila nueva cae en una página cualquiera: cuando el índice ya no cabe en memoria, muchas inserciones tienen que leer del disco, y las páginas se parten y quedan medio vacías.",
       "callout": {
         "type": "warn",
-        "text": "Además es largo: 16 bytes y, como texto, 36 caracteres (`9b2f4c1e-7a3d-…`). En base62 son 22: inservible como código corto."
+        "text": "Además es largo: 16 bytes (el doble que un `bigint`) y, como texto, 36 caracteres. En base62 son 22: inservible como código corto."
       },
       "changes": [
-        "− El contador central",
         "+ Un UUID v4 en cada servidor",
         "~ El índice: páginas al azar, lee del disco",
         "~ Código en base62: 7 → 22 caracteres"
@@ -459,16 +441,17 @@
           "kind": "write",
           "rate": 1.5
         }
-      ]
+      ],
+      "more": "**¿Cómo de improbable es repetir?** Generando mil millones de UUID v4 por segundo, tardarías unos 86 años en llegar a un 50 % de probabilidad de que haya alguna colisión.\n\n**Por qué el orden importa en un B-tree.** Con IDs crecientes, cada fila nueva va a la última página del índice, que siempre está en memoria. Con IDs aleatorios, cada inserción toca una página distinta: hay que traerla del disco y, cuando está llena, se parte en dos que quedan medio vacías. El índice ocupa más y cabe peor en memoria."
     },
     {
       "short": "UUID v7",
       "chapter": "solution",
       "title": "UUID v7: la hora, delante",
-      "body": "El **UUID v7** pone la hora en milisegundos en los primeros 48 bits y deja el resto al azar. Se genera igual de libre que un v4, pero cada ID nuevo es mayor que los anteriores: todos van **al final del índice**, a la última página, que siempre está en memoria. Es la **localidad**.",
+      "body": "La solución moderna es el **UUID v7**: los primeros 48 bits son la hora en milisegundos y casi todo el resto, aleatorio. Se genera igual de libre que un v4, pero cada ID nuevo es mayor que los anteriores: todos van **al final del índice**, a la última página, que siempre está en memoria.\n\nEs la **localidad**: escribir cerca de lo último que escribiste es barato.\n\nSigue siendo largo: 16 bytes y 22 caracteres en base62. Bien para la base de datos; para un enlace corto, no.",
       "callout": {
-        "type": "warn",
-        "text": "Sigue siendo largo: 22 caracteres en base62. Bien para la base de datos; para un enlace corto, no."
+        "type": "tip",
+        "text": "En una entrevista, si propones UUID, menciona su coste en el índice y el v7: es el trade-off que esperan oír."
       },
       "changes": [
         "~ UUID v4 → v7: empieza por la hora",
@@ -591,7 +574,7 @@
       "short": "Snowflake",
       "chapter": "technique",
       "title": "Snowflake: hora, máquina y contador",
-      "body": "Twitter quería IDs de 64 bits (caben en un `bigint`), ordenados y sin coordinarse. **Snowflake** junta tres trozos: la hora, el número de la máquina y un contador dentro del mismo milisegundo. Como cada servidor tiene su número, dos nunca generan el mismo ID. En base62, 11 caracteres.",
+      "body": "Twitter quería IDs de 64 bits (caben en un `bigint`), ordenados por tiempo y generados en muchas máquinas sin coordinarse. Su respuesta, **Snowflake**, se ha copiado mucho: Discord e Instagram usan variantes.\n\nCada ID junta tres trozos (la pizarra): los milisegundos desde una fecha elegida (la **epoch**), el número de la máquina y un contador dentro del mismo milisegundo. El bit que falta hasta 64 es el de signo, siempre a 0. Como cada servidor tiene su número, dos nunca generan el mismo ID. En base62, 10 u 11 caracteres.",
       "callout": {
         "type": "tip",
         "text": "Como la hora va delante, ordenar por ID es ordenar por fecha de creación. Casi: entre máquinas hay unos milisegundos de baile."
@@ -623,17 +606,6 @@
             "text": "1 bit: el signo, siempre a 0"
           }
         ]
-      },
-      "predict": {
-        "q": "NTP corrige el reloj del servidor B y lo atrasa unos milisegundos. Si su generador de Snowflake no lo vigila, ¿qué puede pasar?",
-        "options": [
-          "Nada: el número de máquina ya hace único cada ID",
-          "Que B y C generen el mismo ID",
-          "Que B repita IDs que ya dio en esos milisegundos",
-          "Que los IDs de B dejen de caber en 64 bits"
-        ],
-        "answer": 2,
-        "explain": "Con el reloj atrás, B vuelve a pasar por milisegundos ya usados y su contador vuelve a empezar: misma hora, misma máquina, misma secuencia, mismo ID. La tentadora es «el número de máquina lo hace único»: eso evita choques entre máquinas, como B y C, pero no los de B consigo mismo."
       },
       "nodes": [
         {
@@ -728,16 +700,28 @@
           "kind": "write",
           "rate": 1.5
         }
-      ]
+      ],
+      "predict": {
+        "q": "NTP corrige el reloj del servidor B y lo atrasa unos milisegundos. Si su generador de Snowflake no lo vigila, ¿qué puede pasar?",
+        "options": [
+          "Nada: el número de máquina ya hace único cada ID",
+          "Que B y C generen el mismo ID",
+          "Que B repita IDs que ya dio en esos milisegundos",
+          "Que los IDs de B dejen de caber en 64 bits"
+        ],
+        "answer": 2,
+        "explain": "Con el reloj atrás, B vuelve a pasar por milisegundos ya usados y su contador vuelve a empezar: misma hora, misma máquina, misma secuencia, mismo ID. La tentadora es «el número de máquina lo hace único»: eso evita choques entre máquinas, como B y C, pero no los de B consigo mismo."
+      },
+      "more": "El generador, en pocas líneas:\n\n```ts\nconst EPOCH = 1704067200000n; // 1 de enero de 2024, en ms\nlet last = -1n;\nlet seq = 0n;\n\nfunction nextId(machine: bigint): bigint {\n  let now = BigInt(Date.now());\n  if (now < last) throw new Error('El reloj ha ido hacia atrás');\n  if (now === last) {\n    seq = (seq + 1n) & 4095n;           // 12 bits: de 0 a 4095\n    if (seq === 0n) {                   // agotado este milisegundo:\n      while (now <= last) now = BigInt(Date.now()); // espera al siguiente\n    }\n  } else {\n    seq = 0n;\n  }\n  last = now;\n  return ((now - EPOCH) << 22n) | (machine << 12n) | seq;\n}\n```\n\n`<< 22n` pone la hora delante; `machine << 12n`, la máquina en medio; `seq`, el contador al final. Si se agotan los 4.096 IDs de un milisegundo, espera al siguiente."
     },
     {
       "short": "Reloj atrás",
       "chapter": "case",
       "title": "NTP atrasa el reloj de B",
-      "body": "Los servidores se ponen en hora con **NTP**, y a veces la corrección los mueve hacia atrás. B volvería a pasar por milisegundos ya usados y podría repetir IDs. Por eso el generador recuerda la última hora que usó: si el reloj retrocede, **espera** a alcanzarla o da error.",
+      "body": "El punto débil de Snowflake es el **reloj**. Los servidores se ponen en hora con **NTP**, y a veces la corrección lo mueve hacia atrás. B volvería a pasar por milisegundos ya usados y podría repetir IDs: misma hora, misma máquina, misma secuencia.\n\nPor eso el generador recuerda la última hora que usó (`last` en el código del paso anterior): si el reloj retrocede, **espera** a alcanzarla o da error.",
       "callout": {
         "type": "warn",
-        "text": "El número de máquina también tiene que ser único: se fija en la configuración o lo reparte un servicio de coordinación. Dos servidores con el mismo número sí chocarían."
+        "text": "El número de máquina también tiene que ser único: se fija en la configuración o lo reparte un servicio de coordinación (lo verás en esa lección). Con el mismo número, dos servidores chocarían."
       },
       "changes": [
         "+ NTP corrige la hora",
@@ -870,7 +854,7 @@
       "short": "Rangos",
       "chapter": "solution",
       "title": "Rangos: un bloque de 1.000 de golpe",
-      "body": "¿Y números pequeños y seguidos con muchos servidores? Un solo contador, pero cada servidor le pide un **bloque** de 1.000 y lo gasta en memoria. El contador recibe una petición por cada 1.000 IDs: deja de ser un cuello de botella. Y con números pequeños, el código en **base62** es corto: mil millones son `15FTGg`, 6 caracteres.",
+      "body": "¿Y si quieres números pequeños y seguidos, como los del auto-increment, pero con muchos servidores? Mantienes un único contador, pero no le preguntas por cada ID: cada servidor le pide un **bloque** de 1.000 de golpe y lo gasta en memoria.\n\n- A pide un bloque: el contador guarda el nuevo «siguiente libre» y le da del 1 al 1.000.\n- A da los IDs 1, 2, 3… desde memoria, sin preguntar a nadie.\n- Cuando se le acaba, pide otro y le toca el siguiente libre: ahora, del 3.001 al 4.000.\n\nEl contador recibe una petición por cada 1.000 IDs: deja de ser un cuello de botella. Si cae un rato, los servidores siguen gastando lo que tienen, y pueden pedir el siguiente bloque antes de acabar el actual.",
       "callout": {
         "type": "warn",
         "text": "Si A se cae a mitad de bloque, los números que le quedaban se pierden: habrá huecos, nunca repetidos."
@@ -885,21 +869,6 @@
         "free": "casi",
         "sorted": "no",
         "len": 7
-      },
-      "panel": {
-        "title": "Códigos posibles en base62",
-        "rows": [
-          {
-            "text": "6 caracteres → ~56.800 millones"
-          },
-          {
-            "text": "7 caracteres → ~3,5 billones",
-            "tone": "good"
-          },
-          {
-            "text": "8 caracteres → ~218 billones"
-          }
-        ]
       },
       "nodes": [
         {
@@ -1033,17 +1002,187 @@
           "kind": "write",
           "rate": 1.5
         }
-      ]
+      ],
+      "more": "El contador es una fila en una base de datos. Pedir un bloque es un solo `UPDATE`:\n\n```sql\nUPDATE id_counter SET next_value = next_value + 1000\nRETURNING next_value - 1000 AS start;  -- tu bloque: de start a start + 999\n```\n\nLa fila queda bloqueada durante el `UPDATE`, así que dos servidores nunca reciben el mismo bloque.\n\nEs la idea que usarás en el acortador de URLs, el siguiente problema: números pequeños dan códigos cortos."
+    },
+    {
+      "short": "Base62",
+      "chapter": "solution",
+      "title": "Base62: un número pequeño, un código corto",
+      "body": "Un número se puede escribir con más o menos símbolos. En decimal usas 10; en **base62**, 62: los diez dígitos, las 26 minúsculas y las 26 mayúsculas. Cuantos más símbolos, menos caracteres: mil millones son `1000000000` en decimal (10 caracteres) y `15FTGg` en base62 (6). Se convierte dividiendo entre 62 una y otra vez y quedándote con los restos: el 1.000 de A es `g8`.\n\nPor eso importa el generador: un UUID en base62 son 22 caracteres; un Snowflake, 10 u 11; un contador que va por los 6.000 millones, 6. **Si el código tiene que ser corto, el número tiene que ser pequeño.**",
+      "callout": {
+        "type": "warn",
+        "text": "Un contador en base62 da códigos consecutivos: quien vea `aZ3kQ9x` puede probar `aZ3kQ9y`. Si importa, baraja los bits del número antes de codificarlo; lo verás en el acortador."
+      },
+      "changes": [
+        "~ Cada ID, escrito en base62",
+        "~ 1.000 → g8 · mil millones → 15FTGg"
+      ],
+      "metrics": {
+        "dup": "no",
+        "free": "casi",
+        "sorted": "no",
+        "len": 7
+      },
+      "panel": {
+        "title": "Códigos posibles en base62",
+        "rows": [
+          {
+            "text": "6 caracteres → ~56.800 millones"
+          },
+          {
+            "text": "7 caracteres → ~3,5 billones",
+            "tone": "good"
+          },
+          {
+            "text": "8 caracteres → ~218 billones"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "ctr",
+          "kind": "service",
+          "label": "Contador",
+          "at": [
+            1,
+            0
+          ],
+          "note": "siguiente: 3.001",
+          "load": 0.1
+        },
+        {
+          "id": "a",
+          "kind": "service",
+          "label": "Servidor A",
+          "at": [
+            0,
+            1.1
+          ],
+          "note": "1–1.000",
+          "badge": "1.000 → g8"
+        },
+        {
+          "id": "b",
+          "kind": "service",
+          "label": "Servidor B",
+          "at": [
+            1,
+            1.1
+          ],
+          "note": "1.001–2.000",
+          "badge": "2.000 → wg"
+        },
+        {
+          "id": "c",
+          "kind": "service",
+          "label": "Servidor C",
+          "at": [
+            2,
+            1.1
+          ],
+          "note": "2.001–3.000",
+          "badge": "3.000 → Mo"
+        },
+        {
+          "id": "db1",
+          "kind": "db",
+          "label": "BD 1",
+          "at": [
+            0,
+            2.2
+          ]
+        },
+        {
+          "id": "db2",
+          "kind": "db",
+          "label": "BD 2",
+          "at": [
+            2,
+            2.2
+          ]
+        }
+      ],
+      "links": [
+        {
+          "id": "a-ctr",
+          "from": "a",
+          "to": "ctr"
+        },
+        {
+          "id": "b-ctr",
+          "from": "b",
+          "to": "ctr"
+        },
+        {
+          "id": "c-ctr",
+          "from": "c",
+          "to": "ctr"
+        },
+        {
+          "id": "a-db1",
+          "from": "a",
+          "to": "db1"
+        },
+        {
+          "id": "b-db1",
+          "from": "b",
+          "to": "db1"
+        },
+        {
+          "id": "b-db2",
+          "from": "b",
+          "to": "db2"
+        },
+        {
+          "id": "c-db2",
+          "from": "c",
+          "to": "db2"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            [
+              "a-ctr",
+              "b-ctr",
+              "c-ctr"
+            ]
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3
+        },
+        {
+          "via": [
+            [
+              "a-db1",
+              "b-db1"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5,
+          "pop": true
+        },
+        {
+          "via": [
+            [
+              "b-db2",
+              "c-db2"
+            ]
+          ],
+          "kind": "write",
+          "rate": 1.5,
+          "pop": true
+        }
+      ],
+      "more": "**¿Por qué no base64?** Porque añade `+` y `/`, que en una URL significan otras cosas.\n\n**La conversión, a mano.** 1.000 ÷ 62 = 16, resto 8. 16 ÷ 62 = 0, resto 16. Los restos, del último al primero, son 16 y 8: con el alfabeto `0-9`, `a-z`, `A-Z`, el 16 es `g` y el 8 es `8`. Queda `g8`."
     },
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Auto-increment: perfecto en una BD; con varias, repite o se atasca.\n- UUID: sin preguntar; el v4 dispersa el índice y el v7 no.\n- Snowflake: hora, máquina y contador en 64 bits. Vigila el reloj.\n- Rangos: bloques de 1.000, números pequeños, algunos huecos.\n- Número pequeño, código corto en base62.",
-      "callout": {
-        "type": "tip",
-        "text": "Un contador da códigos seguidos: tras `aZ3kQ9x` viene `aZ3kQ9y`. Si importa que no se adivinen, baraja los bits antes de codificar; lo verás en el acortador."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Un auto-increment es perfecto en una sola base de datos; con varias, o repite números o se vuelve un cuello de botella.\n- Un UUID se genera en cualquier sitio sin preguntar, pero es largo y el v4 dispersa el índice; el v7 empieza por la hora y lo evita.\n- Snowflake mete hora, máquina y secuencia en 64 bits: ordenado y sin coordinación, siempre que vigiles el reloj.\n- Con rangos, un contador central reparte bloques: números pequeños y casi sin coordinación, a cambio de algunos huecos.\n- Base62 convierte un número en un código corto: 7 caracteres dan ~3,5 billones de códigos.",
       "metrics": {
         "dup": "no",
         "free": "casi",
@@ -1201,7 +1340,8 @@
           "kind": "write",
           "rate": 1.5
         }
-      ]
+      ],
+      "more": "**Cuál elegir.** Cada método, frente a lo que le pides a un ID:\n\n| Método | Sin preguntar a nadie | Ordenado por tiempo | En base62 | Ojo con |\n|---|---|---|---|---|\n| Auto-increment | No: una sola BD | Sí | 6-7 caracteres | No escala a varias BD |\n| UUID v4 | Sí | No | 22 | Dispersa el índice |\n| UUID v7 | Sí | Sí | 22 | Largo para enseñarlo |\n| Snowflake | Sí, con un número de máquina único | Casi | 10-11 | Relojes que retroceden |\n| Rangos | Casi: un bloque cada 1.000 | No entre servidores | 6-7 | Huecos; cuidar el contador |"
     }
   ]
 }

@@ -1,6 +1,7 @@
 {
   "id": "L07",
-  "title": "Ficheros y CDN, en acción",
+  "title": "Ficheros grandes: object storage y CDN, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "size",
@@ -25,33 +26,15 @@
     "heavy": "foto o vídeo (bytes)",
     "event": "orden de invalidar"
   },
-  "goals": [
-    {
-      "text": "Por qué los ficheros grandes no van en la base de datos",
-      "step": 2
-    },
-    {
-      "text": "Cómo sube la app sin que la API toque los bytes",
-      "step": 3
-    },
-    {
-      "text": "Por qué la distancia no la arregla un servidor más rápido",
-      "step": 4
-    },
-    {
-      "text": "Qué hace una CDN y qué pasa al cambiar un fichero",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "Fotos en la BD",
       "chapter": "problem",
       "title": "Las fotos, dentro de la base de datos",
-      "body": "La app guarda cada foto en la base de datos, en una columna `bytea`. Con 1 millón de fotos de 3 MB, la BD pasa de unos 500 MB de datos a **3 TB**: las copias de seguridad crecen igual, la memoria se llena de bytes que nadie consulta y cada una de las 10.000 descargas por segundo ocupa una conexión mientras envía megas.",
+      "body": "Fotos, vídeos y PDFs son **blobs** (*binary large objects*): bytes que la app no interpreta, solo guarda y entrega. Una fila típica ocupa unos cientos de bytes; una foto de móvil, unos MB; un vídeo, cientos de MB.\n\nAquí la app guarda cada foto en la base de datos, en una columna `bytea` (PostgreSQL lo permite). Funciona en una demo y duele en producción. Con 1 millón de fotos de 3 MB, la BD pasa de unos 500 MB de datos (500 bytes por foto) a **3 TB**:\n\n- La BD crece a lo bestia, y con ella cada copia de seguridad.\n- La memoria que debería guardar índices y filas calientes se llena de bytes que nadie consulta.\n- Cada una de las 10.000 descargas por segundo ocupa una conexión de la BD y un servidor mientras envía megas.\n- Los discos de una BD son rápidos y caros; para guardar fotos no hace falta tanto.",
       "callout": {
         "type": "insight",
-        "text": "Fotos, vídeos y PDFs son **blobs**: bytes que la app no interpreta, solo guarda y entrega. No necesitan los discos rápidos y caros de una base de datos."
+        "text": "La regla: los bytes, a un almacén de ficheros; en la base de datos, solo su ficha."
       },
       "metrics": {
         "size": 3000,
@@ -129,10 +112,10 @@
       "short": "Object storage",
       "chapter": "technique",
       "title": "Los bytes, al bucket; la ficha, en la BD",
-      "body": "Los bytes se van a un **object storage** (S3, Google Cloud Storage…): un almacén enorme y barato donde cada fichero es un **objeto** dentro de un **bucket**, con su **clave**: `usuarios/42/2026/10/7f3a9c.jpg`. En la BD queda solo su ficha: clave, tipo, tamaño, dueño y estado. Vuelve a ocupar 500 MB.",
+      "body": "Los bytes se van a un **object storage** (Amazon S3, Google Cloud Storage, Azure Blob Storage, o MinIO si lo montas tú): un almacén enorme y barato de ficheros, que aquí se llaman **objetos**. Se organiza en **buckets** (contenedores con nombre) y cada objeto se encuentra por su **clave**, como `usuarios/42/2026/10/7f3a9c.jpg`.\n\nLa clave parece una ruta, pero no hay carpetas: es un nombre largo, y las barras solo ayudan a listar por prefijo. Las operaciones son pocas: subir (`PUT`), descargar (`GET`), borrar (`DELETE`) y listar. Normalmente no editas un trozo de un objeto: lo vuelves a subir entero.\n\nEn la BD queda la ficha: `id`, `owner_id`, `storage_key`, `content_type`, `size_bytes` y `status`. Las consultas («las fotos del usuario 42») van contra esa tabla; el storage solo entrega bytes. La BD vuelve a ocupar 500 MB.",
       "callout": {
         "type": "tip",
-        "text": "Genera tú la clave, con un ID como los de la lección de IDs. Nunca uses el nombre que sube el usuario: dos `foto.jpg` se pisarían."
+        "text": "Genera tú la clave, con un ID como los de la lección de IDs. Nunca uses tal cual el nombre que sube el usuario: dos `foto.jpg` se pisarían. Si quieres enseñarlo, guárdalo en la ficha."
       },
       "changes": [
         "+ Object storage: un bucket con los bytes",
@@ -230,16 +213,17 @@
           "kind": "heavy",
           "rate": 0.5
         }
-      ]
+      ],
+      "more": "**Un objeto, por dentro:**\n\n```\nbucket: fotos-prod\nclave:  usuarios/42/2026/10/7f3a9c.jpg\n```\n\n**¿Y si se rompe un disco?** El servicio guarda cada objeto varias veces, en máquinas y centros de datos distintos, y si pierde una copia la rehace con las otras (lo verás en la lección de replicación). AWS dice que S3 Standard está diseñado para una durabilidad del 99,999999999 % anual: las famosas «once nueves»."
     },
     {
       "short": "Pre-firmada",
       "chapter": "solution",
       "title": "Subir directo, con una URL pre-firmada",
-      "body": "Un vídeo de 500 MB que pasa por la API cruza la red dos veces y tiene ocupado un servidor durante minutos. Mejor: la app pide permiso (`POST /uploads`), la API crea la ficha en `pending` y firma una URL `PUT` válida **15 minutos** y solo para esa clave. La app sube directo al bucket y avisa; la API comprueba y pasa la ficha a `ready`.",
+      "body": "Si un vídeo de 500 MB viaja del móvil a tu API y de ahí al storage, tus servidores pasan minutos moviendo bytes que no necesitan mirar, y cada byte cruza la red dos veces. Mejor que la app suba **directo** al storage. Pero el bucket es privado y la app no tiene credenciales (ni debe tenerlas).\n\nLa solución es una **URL pre-firmada**: la API, que sí tiene la clave secreta, firma una URL que permite *una* operación (subir a *esta* clave) durante poco tiempo. Quien la tenga puede hacer eso y nada más.\n\n- La app pide permiso: `POST /uploads`, con el tipo y el tamaño.\n- La API comprueba que puede subirlo, crea la ficha en `pending`, elige la clave y firma una URL `PUT` válida **15 minutos**.\n- La app sube directo al bucket: la API no ve ni un byte.\n- La app avisa (`POST /uploads/981/complete`); la API comprueba que el objeto existe y pasa la ficha a `ready`.",
       "callout": {
         "type": "warn",
-        "text": "Una URL firmada es como una llave: quien la tiene, la usa. Que caduque pronto, que valga para una sola clave y, al confirmar, comprueba tú el tamaño y el tipo."
+        "text": "Una URL firmada es como una llave: quien la tiene, la usa. Que caduque pronto y valga para una sola clave, y al confirmar comprueba tú el tamaño y el tipo: no te fíes de lo que dijo la app al pedirla."
       },
       "changes": [
         "+ URL pre-firmada: un PUT, 15 minutos",
@@ -249,17 +233,6 @@
       "metrics": {
         "size": 0.5,
         "origin": 10000
-      },
-      "predict": {
-        "q": "Ahora abre la app alguien en Sídney, y el bucket está en Frankfurt, a 16.500 km. Pones un servidor el doble de rápido. ¿Cuánto antes ve la primera foto?",
-        "options": [
-          "Casi nada: el tiempo se va en el viaje, no en el servidor",
-          "La mitad: de unos 500 ms a unos 250",
-          "Un 10 %: lo que tarda el bucket en leer la foto",
-          "Bastante: con menos espera en el servidor, la red va más rápida"
-        ],
-        "answer": 0,
-        "explain": "La luz en la fibra va a unos 200.000 km/s: cada ida y vuelta a Frankfurt tarda como mínimo ~165 ms, y una conexión nueva necesita varias (abrirla, cifrarla y pedir). Casi medio segundo que ningún servidor más rápido arregla: es física. La tentadora, «la mitad», supone que el tiempo se va en el servidor."
       },
       "nodes": [
         {
@@ -338,13 +311,25 @@
           "rate": 0.8,
           "pop": true
         }
-      ]
+      ],
+      "predict": {
+        "q": "Ahora abre la app alguien en Sídney, y el bucket está en Frankfurt, a 16.500 km. Pones un servidor el doble de rápido. ¿Cuánto antes ve la primera foto?",
+        "options": [
+          "Casi nada: el tiempo se va en el viaje, no en el servidor",
+          "La mitad: de unos 500 ms a unos 250",
+          "Un 10 %: lo que tarda el bucket en leer la foto",
+          "Bastante: con menos espera en el servidor, la red va más rápida"
+        ],
+        "answer": 0,
+        "explain": "La luz en la fibra va a unos 200.000 km/s: cada ida y vuelta a Frankfurt tarda como mínimo ~165 ms, y una conexión nueva necesita varias (abrirla, cifrarla y pedir). Casi medio segundo que ningún servidor más rápido arregla: es física. La tentadora, «la mitad», supone que el tiempo se va en el servidor."
+      },
+      "more": "**También para descargar.** Un fichero privado se entrega igual: una URL `GET` firmada que caduca en unos minutos.\n\n**Ficheros enormes.** Se suben por trozos; lo verás en la lección de media."
     },
     {
       "short": "Sídney",
       "chapter": "problem",
       "title": "Alguien en Sídney, el bucket en Frankfurt",
-      "body": "Alguien abre la app en Sídney. El bucket está en Frankfurt, a unos 16.500 km: cada ida y vuelta tarda como mínimo ~165 ms, y una conexión nueva necesita varias (abrirla, cifrarla y pedir). Casi **medio segundo** antes de la primera foto. Ningún servidor más rápido lo arregla: es física.",
+      "body": "Alguien abre la app en Sídney. El bucket está en Frankfurt, a unos 16.500 km en línea recta. La luz en la fibra va a unos 200.000 km/s, así que cada ida y vuelta tarda como mínimo ~165 ms, y una conexión nueva necesita varias (abrirla, cifrarla y pedir): casi **medio segundo** antes de la primera foto.\n\nNingún servidor más rápido lo arregla: es física. La única forma de acortarlo es que el fichero esté más cerca.",
       "changes": [
         "~ La app, en Sídney",
         "~ Cada foto cruza medio mundo",
@@ -451,7 +436,7 @@
       "short": "CDN",
       "chapter": "solution",
       "title": "Una copia en Sídney: la CDN",
-      "body": "Una **CDN** guarda copias en servidores repartidos por el mundo, los **edge locations**. Si el edge de Sídney ya tiene la foto (**hit**), la sirve desde allí. Si no (**miss**), la pide al **origen**, el bucket, guarda una copia durante el TTL y responde: el siguiente de la zona ya tiene hit. Es **pull**: el edge va a buscar lo que le piden.",
+      "body": "Una **CDN** (*Content Delivery Network*) es una red de servidores repartidos por el mundo, los **edge locations**, que guardan copias de tus ficheros. Es una cache, como las que ya conoces, pero al otro lado del cable, junto al usuario:\n\n- **Cache hit**: el edge de Sídney ya tiene la foto y la sirve en milisegundos.\n- **Cache miss**: no la tiene; la pide a tu **origen** (el bucket o tu servidor), guarda una copia y la sirve. El siguiente de la zona ya tiene hit.\n- **TTL**: cuánto guarda el edge la copia antes de volver a preguntar.\n\nLa API devuelve las fichas con URLs de la CDN, como `cdn.ejemplo.com/usuarios/42/…/7f3a9c.jpg`, y el navegador llega al edge más cercano. La API nunca toca los bytes y el bucket solo ve los misses: con un 95 % de hits, de 10.000 peticiones por segundo solo le llegan 500.",
       "callout": {
         "type": "tip",
         "text": "El TTL lo marca el origen con una cabecera: `Cache-Control: max-age=86400` es un día."
@@ -592,13 +577,14 @@
         ],
         "answer": 1,
         "explain": "El edge no sabe que cambiaste el fichero: sigue sirviendo su copia hasta que vence el TTL o le pides que la tire. La tentadora, «el nuevo en cuanto sube», es lo que pasa en el bucket, no en la copia del edge. Por eso se cambia el nombre: un fichero nuevo, una URL nueva."
-      }
+      },
+      "more": "**Pull o push.** Hay dos formas de llenar la CDN: **pull** (el edge va a buscar cada fichero, como aquí) y **push** (tú se lo llevas).\n\n| | Pull | Push |\n|---|---|---|\n| Cómo llega el fichero al edge | El edge lo pide al origen en el primer miss | Tú lo subes a la CDN por adelantado |\n| Trabajo para ti | Casi ninguno: apuntas la CDN al bucket | Decides qué se sube, cuándo y cuándo se borra |\n| Primer usuario de cada zona | Paga el miss | Ya tiene hit |\n| Encaja con | Casi todo: fotos, avatares, ficheros de la web | Contenido grande y previsible, como el estreno de un episodio |\n\nLo habitual es empezar con pull."
     },
     {
       "short": "Nuevo logo",
       "chapter": "case",
       "title": "Cambias el logo: el edge sigue con el viejo",
-      "body": "Subes un `logo.png` nuevo con el mismo nombre. El edge guarda el viejo hasta que vence su TTL, un día. Puedes pedir a la CDN que lo **invalide**, pero tarda un rato en llegar a todos los edges. Mejor cambiar el nombre: `logo.3f9a1c.png`, con un hash del contenido. Un fichero nuevo es una URL nueva.",
+      "body": "Subes un `logo.png` nuevo con el mismo nombre. El edge no sabe que ha cambiado: sigue sirviendo el viejo hasta que vence su TTL, un día.\n\nPuedes pedir a la CDN que tire su copia (**invalidación**). Funciona, pero tarda un rato en llegar a todos los edges.\n\nPara no tener que invalidar, cambia el nombre: `logo.3f9a1c.png`, con un hash del contenido, en vez de `logo.png`. Un fichero nuevo es una URL nueva.",
       "callout": {
         "type": "tip",
         "text": "Con el hash en el nombre, una URL nunca cambia de contenido: puedes ponerle un TTL de un año."
@@ -728,12 +714,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Los bytes, al object storage; en la BD, solo la ficha.\n- La app sube directo con una URL pre-firmada: la API solo da permiso.\n- La distancia es física: Sídney–Frankfurt, ~165 ms por viaje.\n- La CDN sirve desde cerca y el bucket solo ve los misses.\n- Para cambiar un fichero, cambia su nombre.",
-      "callout": {
-        "type": "insight",
-        "text": "Y el coste: en la nube pagas cada GB que sale a internet (**egress**). Con ficheros grandes y muy vistos, sirve miniaturas en vez de originales, y comprime."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Los bytes de los ficheros grandes van a object storage; en la base de datos solo guardas su ficha (clave, tipo, tamaño, dueño, estado).\n- Object storage: buckets y claves, operaciones sencillas y durabilidad gracias a varias copias en sitios distintos.\n- Sube con URLs pre-firmadas: la API da el permiso y la app manda los bytes directo al storage.\n- Una CDN guarda copias cerca del usuario: menos latencia y menos carga en el origen. El TTL dice cuánto dura cada copia.\n- Para cambiar un fichero sin invalidar, cambia su nombre. Y vigila el egress: cada GB servido se paga.",
       "metrics": {
         "size": 0.5,
         "origin": 500,
@@ -855,7 +837,8 @@
           "back": "resp",
           "rate": 0.4
         }
-      ]
+      ],
+      "more": "**El egress.** En la nube pagas cada GB que sale hacia internet (**egress**). Con ficheros grandes y muy vistos importa servir miniaturas en vez de originales, y comprimir.\n\n**En una entrevista**, separa siempre los dos caminos: la ficha del fichero va por la API y la base de datos; los bytes, por object storage y CDN. Es la base de Instagram, YouTube o Dropbox, que verás más adelante."
     }
   ]
 }

@@ -1,6 +1,7 @@
 {
   "id": "L05",
-  "title": "La cache, en acción",
+  "title": "La cache, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "db",
@@ -24,33 +25,15 @@
   "legend": {
     "event": "DEL: borrar una clave"
   },
-  "goals": [
-    {
-      "text": "Qué es un hit, qué es un miss y cuánto ahorra la cache",
-      "step": 2
-    },
-    {
-      "text": "Por qué 10 puntos de hit rate doblan la carga de la BD",
-      "step": 3
-    },
-    {
-      "text": "Cómo se borra un dato viejo y por qué hace falta TTL",
-      "step": 4
-    },
-    {
-      "text": "Qué es un cache stampede y cómo se evita",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "Sin cache",
       "chapter": "problem",
       "title": "Cada lectura baja a la base de datos",
-      "body": "La tienda recibe **10.000 lecturas por segundo** y cada una es una consulta a la base de datos (supón 20 ms). Casi siempre se pide lo mismo: el 1 % de los productos se lleva el 80 % de las visitas. Aun así, la BD repite el trabajo cada vez y va al límite.",
+      "body": "La tienda tiene 10 millones de productos y recibe **10.000 lecturas por segundo**. Cada una es una consulta a la base de datos (supón 20 ms), y la BD va al límite.\n\nPero las lecturas no se reparten por igual: unos pocos elementos se llevan la mayoría (la portada, los productos de moda). Aquí, el 1 % más visto recibe el 80 % de las visitas. Si cada ficha ocupa 2 KB, ese 1 % son 100.000 fichas, unos 200 MB: caben en memoria de sobra.\n\nUna **cache** es una copia de lo que más se pide, guardada donde se coge en un momento: como el café y el azúcar de un bar, junto a la cafetera y no en el almacén del sótano. Guardas poco y ganas dos veces:\n- **Velocidad**: un valor ya preparado en memoria sale mucho más rápido que una consulta, que quizá va a disco o lleva joins.\n- **Descarga**: cada lectura que resuelve la cache es una consulta que la base de datos se ahorra.",
       "callout": {
-        "type": "insight",
-        "text": "Ese 1 % más visto son 100.000 fichas de 2 KB: unos 200 MB. Caben en memoria de sobra."
+        "type": "warn",
+        "text": "Una cache solo ayuda si los datos se repiten. Si cada dato se lee una vez (un log, un informe único), el hit rate es casi cero: solo añades un paso."
       },
       "metrics": {
         "db": 10000,
@@ -117,13 +100,136 @@
       ]
     },
     {
+      "short": "Capas",
+      "chapter": "technique",
+      "title": "Una cache en cada capa",
+      "body": "Puede haber una cache en cada capa por la que pasa una petición. Cuanto más cerca del usuario, más trabajo ahorra, pero más difícil es borrarla cuando el dato cambia:\n- **Navegador o app**: guarda respuestas HTTP según la cabecera `Cache-Control` que mandes. Lo más rápido: ni siquiera hay petición.\n- **CDN** (*content delivery network*): servidores repartidos por el mundo que guardan copias cerca del usuario.\n- **Memoria de la aplicación**: un `Map` dentro del proceso de Node. Rapidísima, pero cada servidor tiene la suya y se vacía al reiniciar.\n- **Cache compartida**: un servicio aparte, en memoria, al que van todos los servidores, como **Redis** o **Memcached**. Es la que se suele dibujar en una entrevista.\n- **La propia base de datos**: Postgres guarda en memoria las páginas que más lee (`shared_buffers`). Ayuda, pero cada lectura sigue siendo una consulta.",
+      "more": "Cada capa responde si tiene el dato; si no, la petición sigue hacia abajo hasta la base de datos. La CDN la verás en la lección de object storage y CDN.",
+      "callout": {
+        "type": "tip",
+        "text": "Lo que guardas en el navegador de un usuario no puedes borrarlo: esperas a que caduque. Por eso lo que cambia a menudo se cachea cerca de los datos, y lo estático (imágenes, CSS, JS), cerca del usuario."
+      },
+      "changes": [
+        "+ CDN para lo estático",
+        "+ Redis: la cache compartida"
+      ],
+      "metrics": {
+        "db": 10000,
+        "hit": 0,
+        "avg": 20
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ],
+          "note": "Cache-Control"
+        },
+        {
+          "id": "cdn",
+          "kind": "cdn",
+          "label": "CDN",
+          "at": [
+            0,
+            1.2
+          ],
+          "note": "lo estático",
+          "mark": "good"
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ],
+          "note": "Map local"
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "compartida",
+          "mark": "good"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "note": "shared_buffers",
+          "state": "hot",
+          "load": 0.95
+        }
+      ],
+      "links": [
+        {
+          "id": "users-cdn",
+          "from": "users",
+          "to": "cdn",
+          "dashed": true
+        },
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "dashed": true
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "state": "hot",
+          "label": "SELECT"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-cdn"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 1
+        },
+        {
+          "via": [
+            "users-app",
+            "app-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.5,
+          "wait": 500
+        }
+      ]
+    },
+    {
       "short": "Cache-aside",
       "chapter": "technique",
       "title": "Cache-aside: primero, mirar en Redis",
-      "body": "Pones al lado una cache en memoria, **Redis**. La app busca `product:42` ahí primero: si está, es un **hit** y sale en 1 ms. Si no, es un **miss**: lee la BD y deja la ficha en Redis con un TTL de 10 minutos, para la próxima vez. Con un 90 % de hits, la BD solo ve el 10 % de las lecturas.",
+      "body": "La estrategia más común es **cache-aside** (o *lazy loading*). La app busca `product:42` primero en Redis: si está, es un **cache hit** y sale en 1 ms. Si no, es un **cache miss**: lee la BD y deja la ficha en Redis con un TTL de 10 minutos, para la próxima vez. Quien manda es la app: la cache no sabe nada de la base de datos.\n\nEl **hit rate** es el porcentaje de lecturas que son hit, y es el número que manda. Con 10.000 lecturas por segundo y un hit rate del 90 %, a la base de datos llegan 1.000.",
+      "more": "Cache-aside, en código:\n\n```ts\nasync function getProduct(id: string) {\n  const key = `product:${id}`;\n  const cached = await redis.get(key);\n  if (cached) return JSON.parse(cached); // hit\n  const product = await db.getProduct(id); // miss\n  await redis.set(key, JSON.stringify(product), 'EX', 600); // caduca en 10 min\n  return product;\n}\n```\n\nEl cliente pide `GET /products/42`; la app busca la clave `product:42`. Con un hit responde con ella; con un miss, la lee de la base de datos, la guarda con un TTL de 10 minutos y responde.",
       "callout": {
         "type": "tip",
-        "text": "Quien decide es la app: la cache no sabe nada de la base de datos. Si Redis cae, la app sigue funcionando, solo que más lenta."
+        "text": "Si Redis cae, la app sigue funcionando, solo que más lenta: todas las lecturas van a la BD."
       },
       "changes": [
         "+ Redis, con TTL de 10 min",
@@ -260,7 +366,8 @@
       "short": "Hit rate 80 %",
       "chapter": "case",
       "title": "Redis se llena y el hit rate baja",
-      "body": "Redis no es infinito. Cuando se llena, la **eviction** saca entradas para meter las nuevas: con **LRU**, sale la que lleva más tiempo sin usarse. Con poca memoria expulsa fichas que se vuelven a pedir enseguida: el hit rate cae al 80 % y a la BD le llega el doble.",
+      "body": "Redis no es infinito. La **eviction** (expulsión) actúa cuando la memoria se llena y hay que sacar algo para meter lo nuevo. La política más habitual es **LRU** (*least recently used*): sale lo que lleva más tiempo sin usarse, como en tu mesa, donde los papeles que no tocas desde hace semanas vuelven los primeros al archivo. Otra habitual es **LFU** (*least frequently used*), que saca lo que menos se usa.\n\nCon poca memoria, Redis expulsa fichas que se vuelven a pedir enseguida: el hit rate cae al 80 % y a la BD llegan 2.000 lecturas por segundo. **El doble de carga por perder 10 puntos.**",
+      "more": "En Redis, la política se elige con `maxmemory-policy`, por ejemplo `allkeys-lru`.",
       "callout": {
         "type": "warn",
         "text": "Si el hit rate baja, sospecha de dos cosas: una cache pequeña que expulsa lo que se vuelve a pedir, o un TTL demasiado corto."
@@ -391,7 +498,8 @@
       "short": "Un precio",
       "chapter": "case",
       "title": "Cambia un precio: borra la clave",
-      "body": "Con más memoria, el hit rate vuelve al 90 %. Ahora el admin cambia el precio del producto 42, y la copia de Redis pasa a ser un **dato viejo** (*stale data*). En cache-aside, la app escribe en la BD y **borra** `product:42`: la siguiente lectura hace miss y trae el precio nuevo.",
+      "body": "Con más memoria, el hit rate vuelve al 90 %. Ahora el admin cambia el precio del producto 42: la copia de Redis pasa a ser un **dato viejo** (*stale data*) hasta que la borras o caduca. ¿Es grave? Depende del dato: un precio viejo durante un minuto quizá sí; el número de seguidores, no.\n\nLa **invalidación**: la app escribe en la BD y **borra** `product:42`. La siguiente lectura hace miss y trae el precio nuevo.\n\nEl **TTL** (*time to live*), la caducidad de cada entrada (pasado ese tiempo desaparece, y la siguiente lectura va a la BD), pone un tope a lo viejo que puede estar un dato. Es un trade-off: un TTL corto da datos más frescos y más misses; uno largo, más hits y datos más viejos. Elige según lo que toleres: la descripción de un producto aguanta horas; el stock que queda, segundos.",
+      "more": "**La trampa de borrar.** Una lectura lenta, tras un miss, saca el valor de la base de datos. Justo después, una escritura cambia ese valor y borra la clave. Y al final la lectura lenta guarda en la cache lo que leyó, que ya es viejo: se queda mal hasta que caduca. Por eso, aunque borres al escribir, pon siempre TTL.",
       "callout": {
         "type": "warn",
         "text": "Borrar no basta: una lectura lenta que leyó antes del cambio puede guardar el precio viejo justo después del borrado. Pon siempre TTL: es la red de seguridad."
@@ -405,17 +513,6 @@
         "db": 1000,
         "hit": 90,
         "avg": 2.9
-      },
-      "predict": {
-        "q": "La portada es la clave más pedida de la tienda. A medianoche vence su TTL. ¿Qué pasa en el segundo siguiente?",
-        "options": [
-          "Redis se satura: la portada es una hot key",
-          "Nada grave: la primera petición la guarda y las demás hacen hit",
-          "Miles de peticiones hacen miss a la vez y van todas a la BD",
-          "Se sirve la portada vieja hasta que alguien la borre"
-        ],
-        "answer": 2,
-        "explain": "Mientras nadie la vuelve a guardar, cada petición de la portada hace miss, y llegan miles a la vez: todas van a la BD a calcular lo mismo. Es un cache stampede. La tentadora, «la primera la guarda», olvida que recalcular tarda: en ese rato llegan todas las demás. Una hot key satura Redis mientras la clave está; aquí el problema es que no está."
       },
       "nodes": [
         {
@@ -532,6 +629,140 @@
       ]
     },
     {
+      "short": "Al escribir",
+      "chapter": "technique",
+      "title": "Al escribir: tres estrategias",
+      "body": "Las estrategias se diferencian en qué pasa al escribir en la base de datos:\n- **Cache-aside**: escribe en la BD y borra la clave. Es simple, solo cachea lo que se pide y, si la cache cae, la app sigue (más lenta). A cambio, el primer acceso es miss y hay datos viejos durante un rato.\n- **Write-through**: escribe en la cache y en la BD a la vez, antes de responder (lo que ves en el plano). La cache siempre está al día, pero cada escritura tarda más y cachea también lo que nadie lee.\n- **Write-back**: escribe solo en la cache, y la BD se actualiza después, en lotes. Escrituras rapidísimas que aguantan picos, pero si la cache cae antes de volcar, pierdes esas escrituras.",
+      "more": "| Estrategia | Al escribir | Gana | Pierde |\n|---|---|---|---|\n| **Cache-aside** | Escribe en la BD y borra la clave de la cache | Simple; solo cachea lo que se pide; si la cache cae, la app sigue (más lenta) | El primer acceso es miss; datos viejos durante un rato |\n| **Write-through** | Escribe en la cache y en la BD a la vez, antes de responder | La cache siempre está al día | Cada escritura tarda más; cachea también lo que nadie lee |\n| **Write-back** | Escribe solo en la cache; la BD se actualiza después, en lotes | Escrituras rapidísimas; aguanta picos | Si la cache cae antes de volcar, pierdes esas escrituras |",
+      "callout": {
+        "type": "tip",
+        "text": "Si no te piden otra cosa, cache-aside. Write-back solo para datos que puedes permitirte perder (contadores de visitas, likes), nunca para dinero."
+      },
+      "changes": [
+        "~ Write-through: cache y BD a la vez"
+      ],
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": 2.9
+      },
+      "predict": {
+        "q": "La portada es la clave más pedida de la tienda. A medianoche vence su TTL. ¿Qué pasa en el segundo siguiente?",
+        "options": [
+          "Redis se satura: la portada es una hot key",
+          "Nada grave: la primera petición la guarda y las demás hacen hit",
+          "Miles de peticiones hacen miss a la vez y van todas a la BD",
+          "Se sirve la portada vieja hasta que alguien la borre"
+        ],
+        "answer": 2,
+        "explain": "Mientras nadie la vuelve a guardar, cada petición de la portada hace miss, y llegan miles a la vez: todas van a la BD a calcular lo mismo. Es un cache stampede. La tentadora, «la primera la guarda», olvida que recalcular tarda: en ese rato llegan todas las demás. Una hot key satura Redis mientras la clave está; aquí el problema es que no está."
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "admin",
+          "kind": "client",
+          "label": "Admin",
+          "at": [
+            2,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ]
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "admin-app",
+          "from": "admin",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "SET p:42"
+        },
+        {
+          "id": "app-db",
+          "from": "app",
+          "to": "db",
+          "label": "UPDATE"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 2.4
+        },
+        {
+          "via": [
+            "admin-app",
+            "app-db"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        },
+        {
+          "via": [
+            "app-cache"
+          ],
+          "kind": "write",
+          "rate": 0.6
+        }
+      ]
+    },
+    {
       "short": "Stampede",
       "chapter": "case",
       "title": "Caduca la portada: todos a la base de datos",
@@ -642,7 +873,7 @@
       "short": "Lock y jitter",
       "chapter": "solution",
       "title": "Un lock: solo una petición recalcula",
-      "body": "Cada miss pide el **lock** de su clave. La primera petición que lo consigue lee la BD y vuelve a guardar la portada; las demás esperan o sirven la versión anterior. A la BD llega una consulta, no miles. Y el TTL lleva algo de azar (**jitter**): 10 minutos, más o menos unos segundos.",
+      "body": "Cada miss pide el **lock** de su clave. La primera petición que lo consigue lee la BD y vuelve a guardar la portada; las demás esperan o sirven la versión anterior. A la BD llega una consulta, no miles.\n\nY el TTL lleva algo de azar (**jitter**): 10 minutos, más o menos unos segundos, para que no caduquen todas juntas.",
       "callout": {
         "type": "tip",
         "text": "Sin jitter, las claves que se guardaron a la vez caducan a la vez, y el stampede vuelve cada 10 minutos."
@@ -767,13 +998,139 @@
       ]
     },
     {
-      "short": "Repaso",
-      "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Pocos datos se llevan casi todas las lecturas: tenerlos en memoria ahorra mucho.\n- Cache-aside: el hit sale de Redis; el miss, de la BD, y se guarda con TTL.\n- El hit rate manda: del 90 % al 80 %, el doble de carga en la BD.\n- Al escribir, borra la clave; el TTL es la red de seguridad.\n- Contra el stampede, un lock por clave y TTL con jitter.",
+      "short": "Hot key",
+      "chapter": "case",
+      "title": "Una clave viral satura su nodo",
+      "body": "Una cache grande se reparte entre varias máquinas (nodos) y cada clave vive en una sola (lo verás en la lección de sharding). Si un producto se hace viral, su clave recibe tanto tráfico que satura el nodo que la guarda: es una **hot key**.\n\nDos remedios:\n- Una **cache local** en cada servidor, con TTL corto: casi todas las lecturas de esa clave se quedan en la app.\n- **Copias de la clave** en varios nodos, para repartir sus lecturas.",
+      "more": "Los dos problemas del mucho tráfico:\n\n| Problema | Qué pasa | Remedio |\n|---|---|---|\n| **Cache stampede** (o *thundering herd*) | Caduca una clave muy pedida y miles de peticiones hacen miss a la vez: todas van a la base de datos | Un lock: solo una petición la recalcula y el resto espera o usa la versión anterior. Y TTL con algo de azar (**jitter**), para que no caduquen todas juntas |\n| **Hot key** | Una sola clave recibe tanto tráfico que satura el nodo que la guarda | Una cache local en cada servidor con TTL corto; copias de la clave en varios nodos |",
       "callout": {
         "type": "insight",
-        "text": "Al escribir hay más estrategias: **write-through** escribe en la cache y en la BD a la vez; **write-back**, solo en la cache, y vuelca en lotes. Para dinero, nunca write-back."
+        "text": "Stampede y hot key llegan con mucho tráfico: el stampede, cuando la clave no está; la hot key, mientras está."
+      },
+      "changes": [
+        "~ Una clave viral satura su nodo de Redis"
+      ],
+      "metrics": {
+        "db": 1000,
+        "hit": 90,
+        "avg": "sube"
+      },
+      "nodes": [
+        {
+          "id": "users",
+          "kind": "users",
+          "label": "Usuarios",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            1.2
+          ]
+        },
+        {
+          "id": "cache",
+          "kind": "cache",
+          "label": "Redis",
+          "at": [
+            0,
+            2.4
+          ],
+          "note": "TTL 10 min ± azar",
+          "items": [
+            "portada",
+            "p:42",
+            "p:7"
+          ],
+          "load": 0.97,
+          "state": "hot",
+          "mark": "bad",
+          "badge": "hot key"
+        },
+        {
+          "id": "lock",
+          "kind": "lock",
+          "label": "Lock",
+          "at": [
+            1,
+            2.4
+          ],
+          "state": "dim"
+        },
+        {
+          "id": "db",
+          "kind": "db",
+          "label": "Base de datos",
+          "at": [
+            2,
+            2.4
+          ],
+          "load": 0.1
+        }
+      ],
+      "links": [
+        {
+          "id": "users-app",
+          "from": "users",
+          "to": "app"
+        },
+        {
+          "id": "app-cache",
+          "from": "app",
+          "to": "cache",
+          "label": "hit",
+          "state": "hot"
+        },
+        {
+          "id": "app-lock",
+          "from": "app",
+          "to": "lock",
+          "label": "miss"
+        },
+        {
+          "id": "lock-db",
+          "from": "lock",
+          "to": "db"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "users-app",
+            "app-cache"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 5,
+          "wait": 400
+        },
+        {
+          "via": [
+            "users-app",
+            "app-lock",
+            "lock-db"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.3,
+          "wait": 150
+        }
+      ]
+    },
+    {
+      "short": "Repaso",
+      "chapter": "recap",
+      "title": "Lo que te llevas",
+      "body": "- Una cache funciona porque unos pocos datos se llevan la mayoría de las lecturas: guardas poco y ahorras mucho.\n- El hit rate manda: con un 90 %, la base de datos ve el 10 % de las lecturas; con un 80 %, el doble.\n- Hay caches en cada capa (navegador, CDN, memoria de la app, Redis o Memcached y la propia base de datos), y cuanto más cerca del usuario, más difícil es invalidarlas.\n- Cache-aside es la opción por defecto; write-through prioriza tener la cache al día, y write-back, escribir rápido a riesgo de perder datos.\n- Pon siempre TTL y piensa en lo que se complica: datos viejos, invalidación, stampede y hot keys.",
+      "callout": {
+        "type": "tip",
+        "text": "Cuando dibujes una cache, di tres cosas: qué guardas y con qué clave, qué TTL y por qué, y cómo invalidas al escribir. Si hay algo viral, añade cómo evitas el stampede y la hot key."
       },
       "metrics": {
         "db": 1000,

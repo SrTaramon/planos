@@ -1,6 +1,7 @@
 {
   "id": "L08",
-  "title": "El load balancer, en acción",
+  "title": "Load balancers y servidores sin estado, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "up",
@@ -23,33 +24,15 @@
   "legend": {
     "ping": "health check"
   },
-  "goals": [
-    {
-      "text": "Por qué scale out aguanta lo que scale up no",
-      "step": 2
-    },
-    {
-      "text": "Qué se rompe si la sesión vive en un servidor",
-      "step": 3
-    },
-    {
-      "text": "Cómo se arregla: servidores sin estado",
-      "step": 4
-    },
-    {
-      "text": "Cuántos servidores hacen falta y para qué sirve el margen",
-      "step": 6
-    }
-  ],
   "steps": [
     {
       "short": "Una máquina",
       "chapter": "problem",
       "title": "Un solo servidor, cada vez más justo",
-      "body": "Toda la web corre en un servidor y el tráfico no para de crecer: ya va al 95 %. Lo más simple es **scale up**, una máquina más potente, sin tocar el código. Pero hay un techo, cada salto cuesta más que el anterior y sigue siendo una sola máquina: si cae, cae todo.",
+      "body": "Toda la web corre en un servidor y el tráfico no para de crecer: ya va al 95 %. Cuando un servidor se queda corto tienes dos caminos.\n\n- **Scale up** (escalar en vertical): una máquina más potente, con más CPU y más RAM. Es lo más simple: no cambias nada del código. Pero hay un techo, cada salto cuesta más que el anterior y sigue siendo una sola máquina: si cae, cae todo.\n- **Scale out** (escalar en horizontal): más máquinas iguales que se reparten el trabajo. No tiene un techo claro y, si una cae, las demás siguen. A cambio, necesitas algo que reparta las peticiones y que tu aplicación funcione bien repartida.",
       "callout": {
         "type": "tip",
-        "text": "Empezar así es válido con poco tráfico. En una entrevista: escalo en vertical hasta que deja de compensar y luego paso a horizontal."
+        "text": "Empezar con una máquina mejor es válido con poco tráfico. En una entrevista: escalo en vertical hasta que deja de compensar y luego paso a horizontal."
       },
       "metrics": {
         "up": 1,
@@ -97,16 +80,17 @@
           "rate": 3,
           "wait": 400
         }
-      ]
+      ],
+      "more": "| | Scale up | Scale out |\n|---|---|---|\n| Complejidad | Baja | Mayor |\n| Techo | Sí, el de la máquina más grande | Casi ninguno |\n| Si una máquina cae | Cae todo | Las demás siguen |\n| Coste | Crece más que lo que ganas | Crece de forma más lineal |"
     },
     {
       "short": "Load balancer",
       "chapter": "technique",
       "title": "Más servidores y un jefe de sala",
-      "body": "**Scale out**: tres servidores iguales y, delante, un **load balancer**. Los usuarios solo conocen su dirección; él reparte las peticiones. Con **round robin**, una a cada servidor por turno, y cada uno va al 32 %. Si uno cae, los demás siguen.",
+      "body": "**Scale out**: tres servidores iguales y, delante, un **load balancer**, el jefe de sala. Recibe todas las peticiones y las reparte: los usuarios solo conocen su dirección; detrás hay muchas máquinas. Formas de repartir:\n\n- **Round robin**: una a cada servidor por turno. Simple y justo si todas las peticiones cuestan parecido. Aquí, cada uno va al 32 %.\n- **Least connections**: la siguiente va al servidor con menos conexiones abiertas. Mejor si unas peticiones tardan mucho más que otras.\n- **Hash de una clave** (por ejemplo, el usuario): el mismo usuario va siempre al mismo servidor. Útil, pero ata al usuario a una máquina.",
       "callout": {
         "type": "warn",
-        "text": "Un único load balancer es un **SPOF**, un punto único de fallo. En producción se montan dos o más; en la nube ya lo hacen por ti."
+        "text": "Un único load balancer es un **SPOF**, un punto único de fallo. En producción se montan dos o más; los servicios en la nube ya lo hacen por ti."
       },
       "changes": [
         "+ Load balancer",
@@ -117,17 +101,6 @@
         "up": 3,
         "load": 32,
         "err": 0
-      },
-      "predict": {
-        "q": "Inicias sesión y tu sesión queda guardada en la RAM del servidor A. Con round robin entre A, B y C, ¿qué pasa en tu siguiente petición?",
-        "options": [
-          "Va a A: el load balancer recuerda quién te atendió",
-          "Va a B, que no te conoce y te pide iniciar sesión otra vez",
-          "Va a B, que copia tu sesión de A en ese momento",
-          "Da igual a cuál vaya: la sesión viaja en la petición"
-        ],
-        "answer": 1,
-        "explain": "Round robin no mira quién eres: la siguiente va a B, y B no tiene en su memoria la sesión que guardó A. Recordar a quién atendió es lo que hacen las sticky sessions, y no vienen por defecto. Nadie copia sesiones entre servidores, y que la sesión viaje en la petición (un token) es justo el arreglo, no lo que hay ahora."
       },
       "nodes": [
         {
@@ -216,16 +189,28 @@
           "back": "resp",
           "rate": 3
         }
-      ]
+      ],
+      "predict": {
+        "q": "Inicias sesión y tu sesión queda guardada en la RAM del servidor A. Con round robin entre A, B y C, ¿qué pasa en tu siguiente petición?",
+        "options": [
+          "Va a A: el load balancer recuerda quién te atendió",
+          "Va a B, que no te conoce y te pide iniciar sesión otra vez",
+          "Va a B, que copia tu sesión de A en ese momento",
+          "Da igual a cuál vaya: la sesión viaja en la petición"
+        ],
+        "answer": 1,
+        "explain": "Round robin no mira quién eres: la siguiente va a B, y B no tiene en su memoria la sesión que guardó A. Recordar a quién atendió es lo que hacen las sticky sessions, y no vienen por defecto. Nadie copia sesiones entre servidores, y que la sesión viaje en la petición (un token) es justo el arreglo, no lo que hay ahora."
+      },
+      "more": "**El recorrido de una petición:**\n\n- El usuario la envía a la dirección del load balancer.\n- El load balancer elige un servidor sano (round robin, por ejemplo).\n- El servidor la atiende y consulta la base de datos si hace falta.\n- La respuesta vuelve al usuario por el mismo camino."
     },
     {
       "short": "Sesión en RAM",
       "chapter": "problem",
       "title": "La sesión, en la memoria de A",
-      "body": "Inicias sesión y A la guarda en su RAM. Tu siguiente petición, por turno, va a B: no te conoce y te pide iniciar sesión otra vez. Con tres servidores, 2 de cada 3 peticiones caen donde no está tu sesión. Y si A se reinicia, todas sus sesiones desaparecen.",
+      "body": "Si tu primera petición va a A y la segunda a B, B tiene que poder atenderla igual. Aquí no puede: al iniciar sesión, A la guardó en su RAM. Tu siguiente petición, por turno, va a B: no te conoce y te pide iniciar sesión otra vez. Con tres servidores, 2 de cada 3 peticiones caen donde no está tu sesión. Peor: si A se reinicia, todas sus sesiones desaparecen.",
       "callout": {
         "type": "warn",
-        "text": "Las **sticky sessions** mandan siempre al mismo usuario al mismo servidor. Funciona, pero reparte peor y, si ese servidor cae, pierdes la sesión igual. Es un parche."
+        "text": "Las **sticky sessions** mandan siempre al mismo usuario al mismo servidor. Funcionan cuando no puedes sacar el estado, pero reparten peor y, si ese servidor cae, pierdes la sesión igual. Es un parche."
       },
       "changes": [
         "+ Tu sesión, en la RAM de A",
@@ -341,7 +326,7 @@
       "short": "Sin estado",
       "chapter": "solution",
       "title": "La sesión, fuera: en Redis",
-      "body": "Sacas el estado de los servidores: la sesión va a una cache compartida, **Redis**, o viaja en cada petición en un token firmado, como un JWT. Los servidores son **stateless**: cualquiera atiende a cualquiera, y puedes encender o apagar máquinas sin que nadie se entere.",
+      "body": "Un servidor **stateless** (sin estado) no guarda en su memoria nada que necesite recordar entre peticiones. Para eso se saca el estado fuera:\n\n- La sesión va a un almacén compartido (una base de datos o una cache como **Redis**) o viaja en un token firmado, como un JWT, que el cliente envía en cada petición.\n- Los ficheros subidos van a un object storage, no al disco local.\n\nAsí cualquier servidor sirve a cualquier usuario, y puedes encender o apagar máquinas sin que nadie se entere.",
       "callout": {
         "type": "tip",
         "text": "Cuando dibujes varios servidores, dilo enseguida: «son stateless; la sesión vive en una cache compartida». Es de las frases que más esperan oír."
@@ -479,7 +464,7 @@
       "short": "¿Cuántos?",
       "chapter": "technique",
       "title": "Hora punta: 12.000 peticiones por segundo",
-      "body": "Supón que cada servidor aguanta 500 QPS y que en la hora punta llegan 12.000. Sin margen bastarían 24, pero no conviene trabajar al límite: al 70 % salen **35**. Como son stateless, el **autoscaling** los enciende cuando sube el tráfico y los apaga cuando baja: pagas solo lo que usas. (Dibujamos tres; son 35.)",
+      "body": "Una cuenta rápida, con supuestos: cada servidor aguanta 500 peticiones por segundo (QPS) y en la hora punta llegan 12.000.\n\n- Sin margen: 12.000 / 500 = **24 servidores**.\n- Pero no conviene trabajar al límite. Si quieres que cada uno vaya como mucho al 70 %: 12.000 / (500 × 0,7) = 34,3, es decir **35**.\n- Si uno cae, los otros 34 absorben su parte y siguen por debajo del límite. El margen te da hueco para picos y caídas.\n\nCon servidores sin estado, el **autoscaling** es fácil: añade servidores cuando sube el tráfico (a media tarde, por ejemplo), los quita cuando baja y pagas solo lo que usas. (Dibujamos tres; son 35.)",
       "callout": {
         "type": "tip",
         "text": "En una entrevista no cuenta el número exacto, sino enseñar que lo has razonado, con los supuestos en voz alta."
@@ -507,17 +492,6 @@
             "text": "Cada uno: 12.000 / 35 ≈ 343 QPS, el 69 %"
           }
         ]
-      },
-      "predict": {
-        "q": "En plena hora punta, con 35 servidores al 69 %, se caen 3 a la vez. ¿Qué pasa?",
-        "options": [
-          "Los 32 que quedan suben al 75 % y siguen bajo su límite",
-          "Los 32 que quedan se saturan y empiezan a caer en cadena",
-          "Falla un 9 % de las peticiones hasta que vuelvan los 3",
-          "Nada: el autoscaling repone los 3 antes de que se note"
-        ],
-        "answer": 0,
-        "explain": "12.000 / 32 = 375 QPS por servidor: el 75 % de los 500 que aguantan. Para eso está el margen del 70 %. La tentadora, «falla un 9 %», olvida los health checks: el load balancer deja de mandarles tráfico, y solo se notan las peticiones que los pillaron al caer. El autoscaling ayuda, pero arrancar servidores lleva su rato."
       },
       "nodes": [
         {
@@ -636,13 +610,24 @@
           "back": "resp",
           "rate": 3.5
         }
-      ]
+      ],
+      "predict": {
+        "q": "En plena hora punta, con 35 servidores al 69 %, se caen 3 a la vez. ¿Qué pasa?",
+        "options": [
+          "Los 32 que quedan suben al 75 % y siguen bajo su límite",
+          "Los 32 que quedan se saturan y empiezan a caer en cadena",
+          "Falla un 9 % de las peticiones hasta que vuelvan los 3",
+          "Nada: el autoscaling repone los 3 antes de que se note"
+        ],
+        "answer": 0,
+        "explain": "12.000 / 32 = 375 QPS por servidor: el 75 % de los 500 que aguantan. Para eso está el margen del 70 %. La tentadora, «falla un 9 %», olvida los health checks: el load balancer deja de mandarles tráfico, y solo se notan las peticiones que los pillaron al caer. El autoscaling ayuda, pero arrancar servidores lleva su rato."
+      }
     },
     {
       "short": "Caen 3",
       "chapter": "case",
       "title": "Caen 3 servidores en plena hora punta",
-      "body": "El load balancer hace **health checks**: pregunta cada pocos segundos a cada servidor si está vivo. B y otros dos dejan de responder, así que deja de mandarles tráfico. Los 32 que quedan reciben 375 QPS cada uno: el 75 %, aún bajo los 500. Nadie lo nota.",
+      "body": "El load balancer hace **health checks**: pregunta cada pocos segundos a cada servidor si está vivo y deja de enviarle tráfico si no responde. Así una caída no se nota.\n\nB y otros dos dejan de responder. Los 32 que quedan reciben 375 QPS cada uno: el 75 %, aún bajo los 500. Nadie lo nota. Y cuando el autoscaling arranca servidores nuevos, el balanceador los incorpora en cuanto pasan el health check.",
       "callout": {
         "type": "insight",
         "text": "Para esto es el margen: sin él, el trabajo de los caídos empujaría a los demás por encima de su límite."
@@ -800,12 +785,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Scale up es simple, pero tiene techo y es una sola máquina.\n- Scale out: un load balancer reparte y, con health checks, esquiva a los caídos.\n- Servidores stateless: la sesión, en Redis o en un token.\n- Dimensiona con margen: 12.000 QPS al 70 % son 35 servidores.",
-      "callout": {
-        "type": "warn",
-        "text": "Escalar los servidores es la parte fácil. La base de datos sigue siendo una sola: de eso tratan las lecciones de replicación y sharding."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Scale up es simple pero tiene techo; scale out no tiene techo y tolera caídas, a cambio de más piezas.\n- El load balancer reparte las peticiones y, con health checks, esquiva a los servidores caídos.\n- Para repartir libremente, los servidores deben ser stateless: el estado va a un almacén compartido.\n- Calcula la capacidad con margen: nunca dimensiones al 100 %.\n- La base de datos sigue siendo un cuello de botella: de eso hablan las siguientes lecciones.",
       "metrics": {
         "up": 35,
         "load": 69,
@@ -940,7 +921,8 @@
           "back": "resp",
           "rate": 0.6
         }
-      ]
+      ],
+      "more": "**Lo que viene.** Escalar los servidores de aplicación es la parte fácil. La base de datos sigue siendo una sola: las lecciones de replicación y sharding atacan precisamente ese cuello de botella."
     }
   ]
 }

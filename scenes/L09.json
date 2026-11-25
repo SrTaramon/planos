@@ -1,6 +1,7 @@
 {
   "id": "L09",
-  "title": "Las réplicas, en acción",
+  "title": "Replicación, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "reads",
@@ -28,30 +29,12 @@
   "legend": {
     "event": "cambio del log"
   },
-  "goals": [
-    {
-      "text": "Cómo se reparten 10.000 lecturas por segundo",
-      "step": 2
-    },
-    {
-      "text": "Qué es el replication lag y cuándo se nota",
-      "step": 4
-    },
-    {
-      "text": "Cómo ves lo que acabas de escribir",
-      "step": 5
-    },
-    {
-      "text": "Qué pasa, y qué se pierde, si cae el primary",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Una copia",
       "chapter": "problem",
       "title": "Una sola base de datos para todo",
-      "body": "Supón que la app lee **10.000 veces por segundo** y escribe 100, y que una base de datos aguanta 2.500 lecturas por segundo. No da abasto: las consultas se encolan o fallan. Y es la **única copia**: si se rompe su disco, pierdes los datos.",
+      "body": "Supón que la app lee **10.000 veces por segundo** y escribe 100, y que una base de datos aguanta 2.500 lecturas por segundo. No da abasto: las consultas se encolan o fallan. Y es la **única copia**: si se rompe su disco, pierdes los datos.\n\nLa **replicación** es mantener copias de los mismos datos en varias máquinas. Se hace por dos razones:\n\n- **Disponibilidad y durabilidad**: si la máquina principal se rompe, otra tiene los datos y el sistema sigue funcionando.\n- **Más lecturas**: una máquina aguanta un número limitado de consultas por segundo. Con varias copias, repartes las lecturas entre ellas.\n\nLa segunda funciona porque muchos sistemas leen mucho más de lo que escriben: los datos se escriben en un sitio y se leen desde muchos.",
       "callout": {
         "type": "warn",
         "text": "Dos problemas a la vez: no llega a las lecturas y, si cae, no hay otra copia de la que tirar."
@@ -124,17 +107,22 @@
       "short": "Réplicas",
       "chapter": "technique",
       "title": "Un primary para escribir y réplicas para leer",
-      "body": "Las escrituras (`INSERT`, `UPDATE`, `DELETE`) van al **primary**, que apunta cada cambio en un log y lo envía a las **réplicas**. Cada réplica aplica los cambios en el mismo orden y atiende lecturas. La app reparte los `SELECT` entre las cuatro.",
+      "body": "El esquema más habitual es **primary-replica** (antes llamado master-slave):\n\n- El **primary** recibe todas las escrituras.\n- Las **replicas** copian los cambios del primary y atienden las lecturas.\n\nLa app manda `INSERT`, `UPDATE` y `DELETE` al primary, que registra cada cambio en un log y lo envía a las réplicas. Cada réplica aplica los cambios en el mismo orden. La app reparte los `SELECT` entre las cuatro: 10.000 / 4 = 2.500 cada una, justo lo que aguanta una máquina.",
       "callout": {
         "type": "tip",
-        "text": "Todas las escrituras siguen pasando por el primary: replicar reparte las lecturas, no las escrituras. Para eso hará falta el sharding."
+        "text": "Todas las escrituras siguen pasando por una única máquina: replicar escala las lecturas, no las escrituras. Para eso hará falta el sharding, en la siguiente lección."
       },
       "changes": [
         "+ 4 réplicas (R1 a R4)",
         "~ La base de datos pasa a ser el primary",
-        "~ Lecturas por máquina: 10.000 → 2.500",
-        "~ Copias: 1 → 5"
+        "~ Lecturas por máquina: 10.000 → 2.500"
       ],
+      "metrics": {
+        "reads": 2500,
+        "copies": 5,
+        "lag": null,
+        "lost": 0
+      },
       "panel": {
         "title": "La cuenta",
         "rows": [
@@ -146,12 +134,6 @@
             "text": "100 escrituras/s: todas al primary"
           }
         ]
-      },
-      "metrics": {
-        "reads": 2500,
-        "copies": 5,
-        "lag": null,
-        "lost": 0
       },
       "nodes": [
         {
@@ -300,15 +282,21 @@
       "short": "Asíncrona",
       "chapter": "technique",
       "title": "El primary confirma sin esperar a nadie",
-      "body": "Lo más común es la replicación **asíncrona**: el primary guarda la escritura, confirma al momento y envía el cambio después. Escribir es rápido y no depende de las réplicas. El precio es el **replication lag**: supón que las réplicas van 300 ms por detrás.",
+      "body": "¿Cuándo confirma el primary una escritura al cliente? Hay dos formas (la pizarra):\n\n- **Síncrona**: cuando la réplica ya la tiene. Escribir tarda más, pero si el primary cae justo después no se pierde nada.\n- **Asíncrona**: nada más guardarla él, y envía el cambio después.\n\nLa asíncrona es la más común: es rápida y no depende de que las réplicas respondan. Su coste es el **replication lag**: el tiempo que tarda una réplica en enterarse de un cambio. Supón que aquí van 300 ms por detrás.\n\nMuchos sistemas combinan las dos: una réplica síncrona, para no perder datos, y el resto asíncronas.",
       "callout": {
         "type": "tip",
-        "text": "Muchos sistemas combinan las dos: una réplica síncrona, para no perder datos, y el resto asíncronas."
+        "text": "Si dices «replico de forma asíncrona», añade enseguida el coste: puede haber lag y, si el primary cae, perder las últimas escrituras. Muestra que conoces el precio."
       },
       "changes": [
         "~ El primary confirma nada más guardar",
         "~ Las réplicas van 300 ms por detrás"
       ],
+      "metrics": {
+        "reads": 2500,
+        "copies": 5,
+        "lag": 300,
+        "lost": 0
+      },
       "panel": {
         "title": "Síncrona o asíncrona",
         "rows": [
@@ -327,12 +315,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "metrics": {
-        "reads": 2500,
-        "copies": 5,
-        "lag": 300,
-        "lost": 0
       },
       "nodes": [
         {
@@ -487,16 +469,17 @@
         ],
         "answer": 1,
         "explain": "Confirmar solo significa que el primary lo guardó. R1 todavía no ha aplicado ese cambio, así que te devuelve la página de antes. El comentario no se ha perdido: llegará a R1 en unos 300 ms."
-      }
+      },
+      "more": "| | Síncrona | Asíncrona |\n|---|---|---|\n| El primary confirma | Cuando la réplica ya la tiene | Nada más guardarla él |\n| Latencia de escritura | Mayor | Menor |\n| Si el primary cae justo después | No se pierde nada | Se puede perder el último cambio |\n| Réplicas al día | Sí | Puede ir con retraso |"
     },
     {
       "short": "Recargas",
       "chapter": "case",
       "title": "Publicas un comentario y no lo ves",
-      "body": "Publicas un comentario: va al primary, que lo confirma. Recargas al instante y la lectura cae en R1, que aún no lo ha recibido. Tu comentario no aparece y piensas que se ha perdido. No se ha perdido: está en camino.",
+      "body": "Con replicación asíncrona, una réplica puede ir unos milisegundos (o segundos) por detrás. Un caso típico:\n\n- Publicas un comentario. La escritura va al primary, que lo confirma.\n- Recargas la página. La lectura va a R1, que aún no lo ha recibido.\n- Tu comentario no aparece y piensas que se ha perdido.\n\nNo se ha perdido: está en camino.",
       "callout": {
         "type": "insight",
-        "text": "Es la **eventual consistency**: si dejan de llegar escrituras, todas las copias acaban iguales, pero no en el mismo instante."
+        "text": "Es la **eventual consistency**: si dejan de llegar escrituras, todas las réplicas acaban teniendo el mismo dato, pero no en el mismo instante."
       },
       "changes": [
         "+ Tu lectura va a R1",
@@ -665,7 +648,7 @@
       "short": "Tus lecturas",
       "chapter": "solution",
       "title": "Tus lecturas, al primary durante unos segundos",
-      "body": "Con **read-your-writes**, justo después de escribir, tus lecturas van al primary (o a una réplica ya al día) durante unos segundos. Ves tu comentario. Los demás siguen leyendo de las réplicas: a ellos no les importa verlo 300 ms más tarde.",
+      "body": "Se suele resolver con **read-your-writes**: justo después de que un usuario escribe, sus lecturas van al primary (o a una réplica ya al día) durante unos segundos. Ves tu comentario.\n\nEl resto de usuarios sigue leyendo de las réplicas: puede ver el dato con un pequeño retraso, 300 ms más tarde, sin que importe.",
       "callout": {
         "type": "warn",
         "text": "No leas siempre de las réplicas: hay lecturas, como comprobar el saldo antes de un pago, que deben ir al primary."
@@ -845,8 +828,7 @@
       "changes": [
         "− Primary (caído)",
         "~ Las escrituras fallan",
-        "~ Las lecturas siguen en R1 a R4",
-        "~ Copias: 5 → 4"
+        "~ Las lecturas siguen en R1 a R4"
       ],
       "metrics": {
         "reads": 2500,
@@ -996,13 +978,14 @@
         ],
         "answer": 2,
         "explain": "Con replicación asíncrona, el viejo primary confirmó escrituras que aún no había enviado: las de los últimos 300 ms, 100 × 0,3 = 30. R2 tiene todo lo anterior. Es una copia completa, pero de hace 300 ms."
-      }
+      },
+      "more": "**Cuánto se gana.** Si cada máquina estuviera disponible el 99,9 % del tiempo y fallaran de forma independiente, la probabilidad de que fallen las dos a la vez es 0,001 × 0,001 = 0,000001: un 99,9999 % de disponibilidad. Es un supuesto simplificado: en la realidad los fallos no siempre son independientes (la misma red, el mismo centro de datos, el mismo fallo de software)."
     },
     {
       "short": "Failover",
       "chapter": "solution",
       "title": "Failover: R2 pasa a ser el primary",
-      "body": "Se elige una réplica, R2, y se **promociona** a primary: recibe las escrituras y las demás empiezan a copiar de ella. La app vuelve a escribir. Pero la replicación era asíncrona: lo que el viejo primary confirmó en sus últimos 300 ms no llegó a R2, y se pierde.",
+      "body": "Se hace un **failover**: se elige una réplica, R2, y se **promociona** a nuevo primary. Recibe las escrituras y las demás empiezan a copiar de ella. Se puede hacer a mano o con un sistema automático que detecta el fallo. La app vuelve a escribir.\n\nCosas que pueden salir mal:\n\n- Con replicación asíncrona, la réplica elegida puede no tener las últimas escrituras, que se pierden: lo que el viejo primary confirmó en sus últimos 300 ms no llegó a R2.\n- Si por error hay **dos primaries** a la vez, cada uno acepta escrituras distintas y los datos divergen.",
       "callout": {
         "type": "warn",
         "text": "Si el viejo primary vuelve y se cree primary, hay dos aceptando escrituras distintas: es el **split brain**, y los datos divergen."
@@ -1012,6 +995,12 @@
         "~ R1, R3 y R4 copian de R2",
         "~ Escrituras perdidas: 0 → 30"
       ],
+      "metrics": {
+        "reads": 2500,
+        "copies": 4,
+        "lag": 300,
+        "lost": 30
+      },
       "panel": {
         "title": "Lo que se pierde",
         "rows": [
@@ -1024,12 +1013,6 @@
             "tone": "good"
           }
         ]
-      },
-      "metrics": {
-        "reads": 2500,
-        "copies": 4,
-        "lag": 300,
-        "lost": 30
       },
       "nodes": [
         {
@@ -1168,12 +1151,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Replicar reparte las lecturas y evita perder los datos.\n- Las escrituras van al primary; las lecturas, a las réplicas.\n- Asíncrona es rápida, pero con lag: read-your-writes lo tapa para quien escribe.\n- Si cae el primary, failover: se pueden perder las últimas escrituras.",
-      "callout": {
-        "type": "insight",
-        "text": "Con dos máquinas al 99,9 % que fallan por separado, caer las dos a la vez es 0,001 × 0,001: un 99,9999 % de disponibilidad. En la realidad los fallos no siempre son independientes."
-      },
+      "title": "Lo que te llevas",
+      "body": "- Replicar sirve para no perder datos ni disponibilidad y para repartir las lecturas.\n- El esquema habitual: un primary recibe las escrituras y las réplicas atienden las lecturas.\n- La replicación asíncrona es rápida pero tiene lag y puede perder las últimas escrituras.\n- Read-your-writes evita que un usuario no vea lo que acaba de escribir.\n- La replicación no escala las escrituras: para eso se reparten los datos (sharding).",
       "metrics": {
         "reads": 2500,
         "copies": 4,

@@ -1,6 +1,7 @@
 {
   "id": "L10",
-  "title": "Los shards, en acción",
+  "title": "Sharding, paso a paso",
+  "lesson": true,
   "metrics": [
     {
       "id": "max",
@@ -30,37 +31,15 @@
   "legend": {
     "event": "claves que se mueven"
   },
-  "goals": [
-    {
-      "text": "Por qué las réplicas no bastan para escribir más",
-      "step": 1
-    },
-    {
-      "text": "Cómo decide el router a qué shard va cada consulta",
-      "step": 2
-    },
-    {
-      "text": "Qué hace buena a una shard key",
-      "step": 3
-    },
-    {
-      "text": "Por qué un shard va al 152 % con la media al 80 %",
-      "step": 4
-    },
-    {
-      "text": "Cuánto se mueve al añadir un shard, y cómo evitarlo",
-      "step": 7
-    }
-  ],
   "steps": [
     {
       "short": "Un primary",
       "chapter": "problem",
       "title": "Un primary que no da abasto",
-      "body": "Supón un chat con 30 TB de mensajes y **16.000 consultas por segundo**, muchas de ellas escrituras. Un primary aguanta 5.000: va al 320 %. Las réplicas no lo arreglan: cada escritura pasa por el primary y se copia a todas, y cada copia guarda los 30 TB.",
+      "body": "Supón un chat con 30 TB de mensajes y **16.000 consultas por segundo**, muchas de ellas escrituras. Un primary aguanta 5.000: va al 320 %.\n\nEn la lección de replicación viste que las réplicas reparten las **lecturas**. Pero todas las **escrituras** siguen pasando por un solo primary, y cada copia guarda **todos** los datos. Hay tres muros que las réplicas no saltan:\n\n- **Escrituras**: cada una pasa por el primary y se copia a todas las réplicas. Ninguna réplica lo arregla.\n- **Tamaño**: cada réplica tendría que guardar los 30 TB.\n- **Memoria**: los índices y las filas más usadas dejan de caber en RAM y cada consulta va más a disco.",
       "callout": {
-        "type": "insight",
-        "text": "Hay tres muros que las réplicas no saltan: las escrituras, el tamaño de los datos y la memoria, cuando los índices ya no caben en RAM."
+        "type": "warn",
+        "text": "El sharding es lo último, no lo primero: complica consultas, transacciones y la operación diaria. Antes, prueba índices, cache, réplicas y una máquina más grande. En la entrevista, justifícalo con las cuentas."
       },
       "metrics": {
         "max": 320,
@@ -161,17 +140,22 @@
       "short": "Shards",
       "chapter": "technique",
       "title": "Cuatro shards, cada uno con un trozo",
-      "body": "Repartes las filas de la tabla de mensajes entre 4 **shards**: cada uno tiene la misma tabla, pero solo un trozo de las filas. Un **router** calcula `hash(chat_id) % 4` y manda cada consulta solo al shard que tiene esas filas.",
+      "body": "El **sharding** (o *partitioning* horizontal) reparte las filas entre varias bases de datos: cada una, un **shard**, tiene la misma tabla pero solo un trozo de las filas. Aquí, 4 shards con los mensajes.\n\nHace falta una regla que diga en qué shard vive cada fila. Hay cuatro familias:\n\n- **Por rango** (*range*): cada shard guarda un intervalo: usuarios del 1 al millón en el 0, el siguiente millón en el 1… o pedidos por mes.\n- **Por hash**: una función de **hash** convierte la clave en un número que parece aleatorio (siempre el mismo para la misma clave), y haces `hash(clave) % N`, con N el número de shards.\n- **Por directorio** (*lookup*): una tabla aparte dice dónde vive cada clave: `cliente 42 → shard 3`.\n- **Por geografía**: Europa en un centro de datos europeo; América, en uno americano.\n\nAquí, un **router** calcula `hash(chat_id) % 4` y manda cada consulta solo a su shard.",
       "callout": {
         "type": "tip",
-        "text": "Cada shard suele ser un primary con sus réplicas: el sharding reparte la carga y la replicación protege cada trozo."
+        "text": "Usa un hash estable, igual en todos los procesos y versiones (MD5 o MurmurHash). El `hash()` de Python cambia de un proceso a otro: cada servidor buscaría la fila en otro shard."
       },
       "changes": [
         "+ Router: hash(chat_id) % 4",
         "+ 4 shards",
-        "~ La más cargada: 320 % → 80 %",
-        "~ Datos por máquina: 30 TB → 7,5 TB"
+        "~ La más cargada: 320 % → 80 %"
       ],
+      "metrics": {
+        "max": 80,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
       "panel": {
         "title": "La cuenta",
         "rows": [
@@ -183,12 +167,6 @@
             "text": "30 TB ÷ 4 = 7,5 TB por shard"
           }
         ]
-      },
-      "metrics": {
-        "max": 80,
-        "avg": 80,
-        "data": 7.5,
-        "moved": 0
       },
       "nodes": [
         {
@@ -305,21 +283,203 @@
           "back": "resp",
           "rate": 2.4
         }
+      ],
+      "more": "**Qué gana y qué pierde cada una:**\n\n| Estrategia | Gana | Pierde |\n|---|---|---|\n| Rango | Consultas por intervalo en un solo shard | Reparto desigual: lo nuevo cae siempre en el último |\n| Hash | Reparto uniforme de las claves | Un intervalo toca todos los shards; cambiar N recoloca casi todo |\n| Directorio | Libertad para mover cada clave | Una pieza más que consultar, cachear y mantener viva |\n| Geografía | Latencia baja y datos en su región (a veces lo exige la ley) | Regiones de tamaños muy distintos; usuarios que viajan o se mudan |\n\n**El recorrido.** La petición llega al servicio con la clave; el router (una librería del servicio o un proxy aparte) calcula su shard; la consulta va solo a ese shard. Cada shard suele ser un primary con sus réplicas: el sharding reparte la carga y la replicación protege cada trozo.\n\n**¿Cuántos shards?** Con 20.000 escrituras por segundo y shards de 5.000, sin pasar del 70 % como en la lección de load balancers: 20.000 / (5.000 × 0,7) = 5,7, es decir, **6 shards**."
+    },
+    {
+      "short": "Entre shards",
+      "chapter": "case",
+      "title": "Una consulta sin la shard key pregunta a todos",
+      "body": "Lo que en una sola base de datos era gratis, repartido cuesta:\n\n- **Consultas sin la shard key**: van a todos los shards y el router junta las respuestas (**scatter-gather**). En una tienda, para «los 20 pedidos más recientes», cada shard da sus 20 más recientes y el router se queda con los 20 primeros. Tarda lo que el shard más lento y carga a todos.\n- **Joins**: no hay join entre máquinas. Guarda juntas las filas que se leen juntas (los pedidos y sus líneas, ambos por `user_id`), copia datos (el nombre del cliente en el pedido) o haz dos consultas desde la app.\n- **Unicidad, transacciones e IDs**: un `UNIQUE` en el email solo vale dentro de cada shard; una transacción entre dos shards es mucho más difícil (lo verás en la lección de transacciones); y un auto-increment por shard repite números, como viste en la de IDs.",
+      "changes": [
+        "+ Una consulta sin chat_id",
+        "~ Va a los 4 shards y el router junta",
+        "~ Tarda lo que el shard más lento"
+      ],
+      "metrics": {
+        "max": 80,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
+      "panel": {
+        "title": "Lo que cuesta repartir",
+        "rows": [
+          {
+            "text": "Sin la shard key: a todos (scatter-gather)",
+            "tone": "bad"
+          },
+          {
+            "text": "Joins: no los hay entre máquinas",
+            "tone": "bad"
+          },
+          {
+            "text": "UNIQUE: solo vale dentro de cada shard"
+          },
+          {
+            "text": "Auto-increment por shard: repite números"
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "id": "app",
+          "kind": "service",
+          "label": "App",
+          "at": [
+            1,
+            0
+          ]
+        },
+        {
+          "id": "router",
+          "kind": "service",
+          "label": "Router",
+          "at": [
+            1,
+            1.35
+          ],
+          "note": "junta 4 × 20",
+          "mark": "bad"
+        },
+        {
+          "id": "s0",
+          "kind": "db",
+          "label": "shard 0",
+          "at": [
+            0,
+            0.7
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s1",
+          "kind": "db",
+          "label": "shard 1",
+          "at": [
+            2,
+            0.7
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s2",
+          "kind": "db",
+          "label": "shard 2",
+          "at": [
+            0,
+            2
+          ],
+          "badge": "4.000/s",
+          "load": 0.8
+        },
+        {
+          "id": "s3",
+          "kind": "db",
+          "label": "shard 3",
+          "at": [
+            2,
+            2
+          ],
+          "badge": "el más lento",
+          "load": 0.8
+        }
+      ],
+      "links": [
+        {
+          "id": "app-router",
+          "from": "app",
+          "to": "router"
+        },
+        {
+          "id": "router-s0",
+          "from": "router",
+          "to": "s0"
+        },
+        {
+          "id": "router-s1",
+          "from": "router",
+          "to": "s1"
+        },
+        {
+          "id": "router-s2",
+          "from": "router",
+          "to": "s2"
+        },
+        {
+          "id": "router-s3",
+          "from": "router",
+          "to": "s3"
+        }
+      ],
+      "flows": [
+        {
+          "via": [
+            "app-router"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8
+        },
+        {
+          "via": [
+            "router-s0"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8,
+          "wait": 150
+        },
+        {
+          "via": [
+            "router-s1"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8,
+          "wait": 150
+        },
+        {
+          "via": [
+            "router-s2"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8,
+          "wait": 150
+        },
+        {
+          "via": [
+            "router-s3"
+          ],
+          "kind": "req",
+          "back": "resp",
+          "rate": 0.8,
+          "wait": 900
+        }
       ]
     },
     {
       "short": "Shard key",
       "chapter": "technique",
       "title": "La consulta principal, en un solo shard",
-      "body": "La consulta más frecuente es «los 50 últimos mensajes del chat 123». Con `chat_id` como **shard key**, los mensajes de un chat viven juntos y esa consulta va a un solo shard. Y como hay millones de chats, la carga se reparte bien.",
+      "body": "La **shard key** es la columna que decide el shard. Cambiarla después es mover todos los datos. Se elige por dos cosas:\n\n- **El access pattern** (lo viste en la lección de bases de datos): las consultas más frecuentes deben resolverse en un solo shard.\n- **Un reparto parejo**: muchos valores distintos (alta **cardinality**) y que ninguno se lleve una parte desproporcionada del tráfico.\n\nAquí, la consulta reina es «los 50 últimos mensajes del chat 123». Con `chat_id`, los mensajes de un chat viven juntos y esa consulta va a un solo shard. Y como hay millones de chats, la carga se reparte bien.\n\nLas consultas raras sí pueden tocar todos los shards: un informe diario, vale; la pantalla principal, no.",
       "callout": {
         "type": "tip",
-        "text": "Las consultas raras sí pueden preguntar a todos los shards (**scatter-gather**): un informe diario, vale; la pantalla principal, no."
+        "text": "Di la shard key en voz alta con sus dos motivos: «Shardeo por `chat_id` porque la lectura principal es por chat y hay millones de chats que reparten bien la carga»."
       },
       "changes": [
         "+ chat 123 → shard 1",
         "~ Una consulta, un shard"
       ],
+      "metrics": {
+        "max": 80,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
       "panel": {
         "title": "Otras shard keys",
         "rows": [
@@ -340,12 +500,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "metrics": {
-        "max": 80,
-        "avg": 80,
-        "data": 7.5,
-        "moved": 0
       },
       "nodes": [
         {
@@ -468,22 +622,29 @@
         ],
         "answer": 2,
         "explain": "El hash reparte claves, no tráfico: las 4.800 consultas del chat viral van todas a su shard. Y además le toca su parte del resto: 11.200 / 4 = 2.800. Total, 7.600 de 5.000. El 96 % olvida esa segunda parte."
-      }
+      },
+      "more": "**Las otras candidatas** (la pizarra):\n\n- Por `message_id`: reparto perfecto, pero leer un chat obliga a preguntar a todos los shards.\n- Por `created_at`: todo lo de hoy cae en el mismo shard, que se come todas las escrituras.\n- Por país: pocos valores y muy desiguales; el shard del país más grande revienta."
     },
     {
       "short": "Hot partition",
       "chapter": "case",
       "title": "Un chat viral calienta un shard",
-      "body": "El chat 777 se hace viral y se lleva el **30 %** del tráfico. Todas sus consultas van al shard 2. Recibe 4.800 + 2.800 = **7.600** por segundo, el 152 % de lo que aguanta, mientras los otros tres van al 56 %. Es una **hot partition**.",
+      "body": "Un hash reparte las **claves** a partes iguales, pero no el **tráfico**. Si una clave es muy popular (un famoso, un producto viral), todas sus peticiones caen en el shard que la guarda: es una **hot partition**.\n\nCada shard aguanta 5.000 consultas por segundo y, con 16.000, le tocan 4.000: sin problema. Ahora el chat 777 se hace viral y se lleva el **30 %** del tráfico:\n\n- Ese chat: 16.000 × 0,3 = 4.800 por segundo, todas al shard 2.\n- El resto, 11.200, se reparte: 2.800 por shard.\n- El shard 2 recibe 4.800 + 2.800 = **7.600**, el 152 % de lo que aguanta, mientras los otros tres van al 56 %.",
       "callout": {
         "type": "warn",
-        "text": "Vigila la carga de cada shard, no solo la media: aquí la media sigue al 80 % y parece que vas bien."
+        "text": "Vigila la carga de cada shard, no solo la media: aquí la media sale al 80 % y parece que vas bien, pero un shard está al 152 %."
       },
       "changes": [
         "+ chat 777: el 30 % del tráfico",
         "~ shard 2: 80 % → 152 %",
         "~ Los demás: 80 % → 56 %"
       ],
+      "metrics": {
+        "max": 152,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
       "panel": {
         "title": "La cuenta",
         "rows": [
@@ -498,12 +659,6 @@
             "tone": "bad"
           }
         ]
-      },
-      "metrics": {
-        "max": 152,
-        "avg": 80,
-        "data": 7.5,
-        "moved": 0
       },
       "nodes": [
         {
@@ -638,15 +793,17 @@
       "short": "Partir clave",
       "chapter": "solution",
       "title": "Partir la clave en diez subclaves",
-      "body": "Guardas el chat 777 en diez subclaves (`chat777#0` … `#9`), que el hash manda a shards distintos. Sus escrituras se reparten entre los cuatro. A cambio, leer el chat junta las diez: lecturas más caras para quitar el cuello de botella.",
-      "callout": {
-        "type": "tip",
-        "text": "Otros remedios: una cache delante de esa clave o, para un cliente gigante, un shard propio (fácil si repartes con un directorio)."
-      },
+      "body": "Remedios para una hot partition:\n\n- **Partir la clave**: guardas el chat 777 en diez subclaves (`chat777#0` … `#9`), que el hash manda a shards distintos, y al leer se juntan. Repartes las escrituras a cambio de lecturas más caras.\n- Una **cache** delante de esa clave, como con las hot keys de la lección de cache.\n- Darle su propio shard al cliente gigante, fácil si repartes por directorio.\n\nCon las subclaves, el shard más cargado baja del 152 % al 85 %.",
       "changes": [
         "+ chat777#0 … #9 en los 4 shards",
         "~ La más cargada: 152 % → 85 %"
       ],
+      "metrics": {
+        "max": 85,
+        "avg": 80,
+        "data": 7.5,
+        "moved": 0
+      },
       "panel": {
         "title": "La cuenta",
         "rows": [
@@ -662,12 +819,6 @@
             "tone": "good"
           }
         ]
-      },
-      "metrics": {
-        "max": 85,
-        "avg": 80,
-        "data": 7.5,
-        "moved": 0
       },
       "nodes": [
         {
@@ -813,13 +964,14 @@
         ],
         "answer": 3,
         "explain": "Una clave solo se queda si su hash da el mismo resto entre 4 y entre 5: una de cada cinco. Se mueve el 80 %, 24 de los 30 TB, también entre los shards viejos. Los 6 TB serían lo justo, pero `% N` no lo consigue."
-      }
+      },
+      "more": "**Otro ejemplo de partir la clave:** el contador de likes de un post viral se guarda en diez subclaves (`post:123#0` … `post:123#9`) que caen en shards distintos. Cada like suma en una al azar; para leer el total, se suman las diez."
     },
     {
       "short": "Resharding",
       "chapter": "case",
       "title": "Un quinto shard con hash % 5 lo mueve casi todo",
-      "body": "Añades el shard 4 y la regla pasa a `hash % 5`. Casi todas las claves cambian de sitio, también entre los shards que ya estaban: se mueve el **80 %**, 24 TB. Moverlos sin parar la app lleva semanas.",
+      "body": "El dolor más grande del sharding es el **resharding**: cambiar el número de shards. Añades el shard 4 y la regla pasa a `hash % 5`.\n\nSolo se quedan en su sitio las claves que dan el mismo resto entre 4 y entre 5: una de cada cinco. Se mueve el **80 %**, también entre los shards que ya estaban: 24 de los 30 TB. Moverlos sin parar la app lleva semanas.",
       "callout": {
         "type": "warn",
         "text": "Cambiar el número de shards es el dolor más grande del sharding. Mejor pensarlo antes de empezar."
@@ -829,6 +981,12 @@
         "~ La regla pasa a hash % 5",
         "~ Datos que se mueven: 0 → 80 %"
       ],
+      "metrics": {
+        "max": 64,
+        "avg": 64,
+        "data": 6,
+        "moved": 80
+      },
       "panel": {
         "title": "La cuenta",
         "rows": [
@@ -843,12 +1001,6 @@
             "text": "Lo justo: el 20 %, lo que va al shard nuevo"
           }
         ]
-      },
-      "metrics": {
-        "max": 64,
-        "avg": 64,
-        "data": 6,
-        "moved": 80
       },
       "nodes": [
         {
@@ -1026,10 +1178,10 @@
       "short": "Lógicos",
       "chapter": "solution",
       "title": "256 shards lógicos: se mueven enteros",
-      "body": "Mejor empezar con **256 shards lógicos** en 4 máquinas, 64 en cada una. La regla, `hash % 256`, no cambia nunca. Para crecer, cada máquina vieja pasa 13 shards lógicos enteros a la nueva y se queda con 51. Se mueve el **20 %**: justo lo que le toca.",
+      "body": "Dos salidas. La primera: empezar con muchos **shards lógicos**, por ejemplo 256, en pocas máquinas: 4, con 64 en cada una. La regla, `hash % 256`, no cambia nunca. Para crecer, se mueven shards enteros: cada máquina vieja pasa 13 shards lógicos a la nueva y se queda con 51. Se mueve el **20 %**: justo lo que le toca. Solo cambia la tabla que dice qué máquina tiene cada shard lógico.\n\nLa segunda: **consistent hashing**, que al añadir una máquina solo mueve una parte pequeña de las claves. Es la siguiente lección.",
       "callout": {
-        "type": "insight",
-        "text": "Solo cambia la tabla que dice qué máquina tiene cada shard lógico. Consistent hashing consigue algo parecido de otra forma: es la siguiente lección."
+        "type": "tip",
+        "text": "Si propones sharding, adelántate a la pregunta del resharding: «Empiezo con 256 shards lógicos en 4 máquinas; para crecer, muevo shards enteros, no filas sueltas»."
       },
       "changes": [
         "~ La regla pasa a hash % 256, fija",
@@ -1194,12 +1346,8 @@
     {
       "short": "Repaso",
       "chapter": "recap",
-      "title": "Lo que has visto",
-      "body": "- Las réplicas reparten lecturas; los shards reparten también escrituras y datos.\n- La shard key, por la consulta principal y un reparto parejo.\n- El hash reparte claves, no tráfico: ojo con las hot partitions.\n- Con `hash % N`, cambiar N mueve casi todo: empieza con shards lógicos.",
-      "callout": {
-        "type": "warn",
-        "text": "El sharding es lo último, no lo primero: complica consultas, joins y transacciones. Antes, índices, cache, réplicas y una máquina más grande."
-      },
+      "title": "Lo que te llevas",
+      "body": "- La replicación reparte las lecturas; el sharding reparte también las escrituras y los datos, y cada máquina guarda solo un trozo.\n- Cuatro formas de repartir: por rango, por hash, por directorio y por geografía. Cada una gana algo y pierde otra cosa.\n- La shard key se elige por el access pattern (la consulta principal, en un solo shard) y por un reparto parejo.\n- El hash reparte claves, no tráfico: una clave muy popular crea una hot partition.\n- Consultas entre shards, joins y resharding son el precio. Con `hash % N`, pasar de 4 a 5 shards mueve el 80 % de las claves.",
       "metrics": {
         "max": 64,
         "avg": 64,
