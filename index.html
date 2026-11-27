@@ -689,6 +689,12 @@ mark { background: color-mix(in srgb, var(--amber) 28%, transparent); color: inh
 .more-item[open] > summary svg { transform: rotate(-90deg); }
 .more-item > :not(summary) { margin-bottom: 14px; }
 .more-card .used { padding: 12px 0 14px; border-top: 1px solid var(--line); font-size: .9rem; }
+
+/* Segmented choice (cards per review session) */
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 8px; }
+.seg button { border: 0; background: var(--surface); padding: 8px 18px; font: 600 .95rem var(--f-mono); cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1.5px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--blue); color: var(--on-blue); }
 </style>
 </head>
 <body>

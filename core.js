@@ -112,37 +112,66 @@
     return out;
   }
 
-  // Repaso espaciado: tarjetas sacadas de las unidades hechas, en cajas que vuelven cada vez más tarde.
+  // Repaso variado: tarjetas de todo lo que has hecho. Cada tanda es corta y se elige al azar, con
+  // más peso para lo que cuesta y menos (pero nunca cero) para lo que ya sabes.
   const BOX_DAYS = [1, 3, 7, 16, 35, 75];
   const REVIEW_LIMIT = 10;
-  function cardsOf(unit) {
+  const REVIEW_SIZES = [5, 10, 15];
+  const mcq = (unit, id, c, scene) => ({ id, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain, scene: scene || c.scene || null });
+  // Lo que se dibuja de un paso de escena, sin sus textos: el mini plano de una pregunta de predecir.
+  const planOf = (st) => (st ? { nodes: st.nodes, links: st.links, flows: st.flows, zones: st.zones, ring: st.ring } : null);
+  function cardsOf(unit, scene) {
     const out = [];
     if (!unit) return out;
     if (unit.kind === 'lesson') {
       (unit.glossary || []).forEach((g, i) => out.push({ id: `${unit.id}:g${i}`, unitId: unit.id, type: 'term', front: g.term, back: g.def }));
-      (unit.checks || []).forEach((c, i) => out.push({ id: `${unit.id}:c${i}`, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain, scene: c.scene || null }));
+      (unit.checks || []).forEach((c, i) => out.push(mcq(unit, `${unit.id}:c${i}`, c)));
     } else {
       (unit.considerations || []).forEach((c, i) => out.push({ id: `${unit.id}:q${i}`, unitId: unit.id, type: 'qa', front: c.q, back: c.a }));
-      (unit.checks || []).forEach((c, i) => out.push({ id: `${unit.id}:c${i}`, unitId: unit.id, type: 'mcq', front: c.q, options: c.options, answer: c.answer, back: c.explain, scene: c.scene || null }));
+      (unit.checks || []).forEach((c, i) => out.push(mcq(unit, `${unit.id}:c${i}`, c)));
+    }
+    // Las preguntas de «¿Qué crees que pasará?» de su escena, con el plano de ese paso.
+    (scene?.steps || []).forEach((st, i) => { if (st.predict) out.push(mcq(unit, `${unit.id}:p${i}`, st.predict, planOf(st))); });
+    return out;
+  }
+  const dayDiff = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 86400000);
+  // El peso de una tarjeta: nueva, alto; vista hoy, cero; vista antes, según lo que tocaría por su caja.
+  function reviewWeight(st, today = todayKey()) {
+    if (!st) return 2.5;
+    if (st.last === today) return 0;
+    const interval = BOX_DAYS[Math.max(0, Math.min(BOX_DAYS.length - 1, st.box ?? 0))];
+    const age = st.last ? dayDiff(st.last, today) : interval;
+    const r = Math.max(0.04, Math.min(4, age / interval));
+    return r ** 1.5;
+  }
+  // Todas las tarjetas de las unidades hechas (scenes: {id: escena}).
+  function reviewPool(units, progress, scenes = {}) {
+    const out = [];
+    for (const u of units) if (isDone(progress, u.id)) out.push(...cardsOf(u, scenes?.[u.id]));
+    return out;
+  }
+  // Una tanda: al azar según el peso, con pocas nuevas y mezclando unidades.
+  function reviewSession(pool, cards, size = REVIEW_LIMIT, today = todayKey(), rng = Math.random) {
+    const cand = pool.map((card) => ({ card, w: reviewWeight(cards?.[card.id], today), isNew: !cards?.[card.id] })).filter((c) => c.w > 0);
+    const out = [];
+    const newCap = Math.max(1, Math.ceil(size * 0.4));
+    let news = 0;
+    while (out.length < size && cand.length) {
+      const total = cand.reduce((a, c) => a + c.w, 0);
+      let x = rng() * total;
+      let k = 0;
+      while (k < cand.length - 1 && x >= cand[k].w) { x -= cand[k].w; k++; }
+      const [pick] = cand.splice(k, 1);
+      out.push(pick.card);
+      if (pick.isNew && ++news >= newCap) for (const c of cand) if (c.isNew) c.w *= 0.15;
+      for (const c of cand) if (c.card.unitId === pick.card.unitId) c.w *= 0.35;
     }
     return out;
   }
-  // A card first comes up the day after finishing its unit (two days if it went «Lo tengo»).
-  const firstDue = (p) => addDays(p.doneOn || todayKey(), p.feel === 'ok' ? 2 : 1);
-  function reviewQueue(units, progress, cards, today = todayKey(), limit = REVIEW_LIMIT) {
-    const due = [];
-    for (const u of units) {
-      const p = progress?.[u.id];
-      if (p?.status !== 'done') continue;
-      const weight = p.feel === 'review' ? 0 : p.feel === 'meh' ? 1 : 2;
-      for (const card of cardsOf(u)) {
-        const st = cards?.[card.id];
-        const dueOn = st ? st.due : firstDue(p);
-        if (dueOn <= today) due.push({ card, dueOn, weight });
-      }
-    }
-    due.sort((a, b) => a.dueOn.localeCompare(b.dueOn) || a.weight - b.weight || a.card.id.localeCompare(b.card.id));
-    return { total: due.length, items: due.slice(0, limit).map((d) => d.card) };
+  // Cuántas tarjetas propone hoy el repaso: una tanda, si aún no la has hecho.
+  function reviewSuggested(poolSize, reviewLog, size = REVIEW_LIMIT, today = todayKey()) {
+    const doneToday = reviewLog?.[today] || 0;
+    return doneToday >= size ? 0 : Math.min(size, poolSize);
   }
   function gradeCard(st, result, today = todayKey()) {
     let box = st?.box ?? 0;
@@ -154,7 +183,7 @@
   function dailyMessage(path, progress, today = todayKey(), reviewDue = 0, activeDays = []) {
     const list = outline(path);
     const next = list.find((u) => !isDone(progress, u.id));
-    const review = reviewDue > 0 ? `Repaso: ${Math.min(reviewDue, REVIEW_LIMIT)} ${reviewDue === 1 ? 'tarjeta' : 'tarjetas'}` : '';
+    const review = reviewDue > 0 ? `Repaso: ${reviewDue} ${reviewDue === 1 ? 'tarjeta' : 'tarjetas'}` : '';
     if (!list.length) return { title: 'Planos', body: 'Tu ruta de system design te espera.' };
     if (!next) return { title: 'Planos', body: review ? `${review} de lo que ya has visto.` : 'Has terminado la ruta. Repasa lo que marcaste cuando quieras.' };
     const { plan } = todayPlan(path, progress, today);
@@ -198,5 +227,5 @@
     });
   }
 
-  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, REST_EVERY, REST_MAX, CARD_MIN, todayKey, addDays, outline, isDone, kindLabel, todayPlan, activityByDay, streakInfo, streak, badges, cardsOf, reviewQueue, gradeCard, dailyMessage, idbGet, idbSet };
+  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, REVIEW_SIZES, REST_EVERY, REST_MAX, CARD_MIN, todayKey, addDays, outline, isDone, kindLabel, todayPlan, activityByDay, streakInfo, streak, badges, cardsOf, reviewWeight, reviewPool, reviewSession, reviewSuggested, gradeCard, dailyMessage, idbGet, idbSet };
 })(typeof self !== 'undefined' ? self : window);

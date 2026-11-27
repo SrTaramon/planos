@@ -1,7 +1,7 @@
 /* Planos service worker: la app y las lecciones sin conexión, y el aviso de cada mañana. */
 importScripts('./core.js');
 
-const VERSION = '2026-11-25-5886f24e';
+const VERSION = '2026-11-27-c76ae1a9';
 const CACHE = 'planos-' + VERSION;
 const SHELL = ['./', './index.html', './app.js', './core.js', './scene.js', './fonts.css', './manifest.webmanifest',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './data/path.json', './data/index.json'];
@@ -62,13 +62,17 @@ self.addEventListener('push', (event) => {
     if (data.title) msg = { title: String(data.title), body: String(data.body || '') };
     else {
       try {
-        const [path, stored, cards, reviewLog] = await Promise.all([cachedJSON('./data/path.json'), PlanosCore.idbGet('progress'), PlanosCore.idbGet('cards'), PlanosCore.idbGet('reviewLog')]);
+        const [path, stored, cards, reviewLog, prefs] = await Promise.all([cachedJSON('./data/path.json'), PlanosCore.idbGet('progress'), PlanosCore.idbGet('cards'), PlanosCore.idbGet('reviewLog'), PlanosCore.idbGet('prefs')]);
         const progress = stored || {};
         let reviewDue = 0;
         try {
+          // Una tanda variada de todo lo hecho, si hoy aún no la has hecho.
           const done = Object.keys(progress).filter((id) => progress[id]?.status === 'done');
-          const units = await Promise.all(done.map((id) => cachedJSON(`./data/units/${id}.json`).catch(() => null)));
-          reviewDue = PlanosCore.reviewQueue(units.filter(Boolean), progress, cards || {}, PlanosCore.todayKey(), Infinity).total;
+          const units = (await Promise.all(done.map((id) => cachedJSON(`./data/units/${id}.json`).catch(() => null)))).filter(Boolean);
+          const scenes = {};
+          await Promise.all(done.map(async (id) => { scenes[id] = await cachedJSON(`./data/scenes/${id}.json`).catch(() => null); }));
+          const pool = PlanosCore.reviewPool(units, progress, scenes);
+          reviewDue = PlanosCore.reviewSuggested(pool.length, reviewLog || {}, prefs?.reviewSize || PlanosCore.REVIEW_LIMIT);
         } catch (e) { reviewDue = 0; }
         msg = PlanosCore.dailyMessage(path, progress, PlanosCore.todayKey(), reviewDue, Object.keys(reviewLog || {}));
       } catch (e) {

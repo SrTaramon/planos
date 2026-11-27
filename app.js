@@ -10,11 +10,6 @@
   const VAPID_PUBLIC = 'BJkgg8WXyX8y1UY_sIxzuKDtnEdMxVWT5_iFF9x_C3FGssW44FcbdWpPDXXdf3Ai9cTgP2dbSsfJlSp4-LKa9HE';
   const REMINDER_TIME = '9:53';
   const CALLOUT_LABEL = { tip: 'Truco', trap: 'Ojo', interview: 'En la entrevista', example: 'Ejemplo' };
-  const FEEL = [
-    { id: 'ok', label: 'Lo tengo' },
-    { id: 'meh', label: 'Más o menos' },
-    { id: 'review', label: 'Quiero repasarlo' },
-  ];
   const CARD_LABEL = { term: 'Término', mcq: 'Pregunta', qa: 'Pregunta del problema' };
   const TTS_RATES = [1, 1.25, 0.85];
 
@@ -58,7 +53,7 @@
   const S = {
     status: 'loading', path: null, ready: new Set(), version: '', units: {}, progress: {},
     cards: {}, reviewLog: {}, reviewInfo: null, rev: null, seenBadges: null, cal: null,
-    scenes: {}, sceneIds: new Set(), sc: null,
+    scenes: {}, sceneIds: new Set(), sc: null, prefs: { reviewSize: 10 },
     search: { q: '', ready: false, terms: [], docs: [] },
     view: { name: 'home' }, ui: {}, reg: null,
     push: { supported: false, permission: 'default', subscribed: false, code: null, sent: false, busy: false },
@@ -265,26 +260,34 @@
 
   // ---------- spaced review ----------
   const doneIds = () => outline().filter((u) => isDone(u.id) && isReady(u.id)).map((u) => u.id);
-  async function refreshReview() {
-    const units = await loadUnits(doneIds());
-    const q = C.reviewQueue(units, S.progress, S.cards);
-    S.reviewInfo = { due: q.total, doneToday: S.reviewLog[C.todayKey()] || 0 };
-    renderIfHome();
-    return q;
+  // Todas las tarjetas de lo que has hecho: vocabulario, preguntas y las de predecir de sus escenas.
+  async function reviewPoolNow() {
+    const ids = doneIds();
+    const units = await loadUnits(ids);
+    await Promise.all(ids.map((id) => loadScene(id)));
+    return C.reviewPool(units, S.progress, S.scenes);
   }
+  async function refreshReview() {
+    const pool = await reviewPoolNow();
+    S.reviewInfo = { pool: pool.length, units: new Set(pool.map((c) => c.unitId)).size, doneToday: S.reviewLog[C.todayKey()] || 0 };
+    renderIfHome();
+    return pool;
+  }
+  // Una tanda corta y variada; se puede pedir otra cuando se quiera.
   async function startReview() {
     ttsStop();
-    const q = await refreshReview();
-    if (!q.items.length) { toast('No te toca repasar nada ahora mismo'); return; }
-    S.rev = { items: q.items, i: 0, shown: false, chosen: null, results: [], before: streakNow() };
+    const pool = await refreshReview();
+    const items = C.reviewSession(pool, S.cards, S.prefs.reviewSize);
+    if (!items.length) { toast(pool.length ? 'Ya has repasado hoy todas tus tarjetas. Mañana, más.' : 'El repaso empieza cuando termines tu primera unidad'); return; }
+    S.rev = { items, i: 0, shown: false, chosen: null, results: [], before: streakNow() };
     S.view = { name: 'review' };
     render();
     window.scrollTo(0, 0);
   }
-  function gradeLabelDays(card, g) {
-    const due = C.gradeCard(S.cards[card.id], g).due;
-    const days = Math.round((new Date(due + 'T12:00:00Z') - new Date(C.todayKey() + 'T12:00:00Z')) / 86400000);
-    return days === 1 ? 'mañana' : `en ${days} días`;
+  // Cada cuánto volverá a salir, más o menos, según lo que elijas.
+  function gradeLabel(card, g) {
+    const box = C.gradeCard(S.cards[card.id], g).box;
+    return ['pronto', 'en unos días', 'en una semana', 'en unas semanas', 'en un mes', 'de tarde en tarde'][Math.min(5, box)];
   }
   function gradeCurrent(g) {
     const r = S.rev;
@@ -308,17 +311,17 @@
     const top = `<button class="back" data-act="home">${ICON.back}La ruta</button>`;
     if (r.i >= n) {
       const again = r.results.filter((x) => x === 'again').length;
-      return top + `<section class="card rev-end"><h1>Repaso hecho</h1><p class="lead">${n} ${n === 1 ? 'tarjeta' : 'tarjetas'}` +
-        (again ? ` · ${again} ${again === 1 ? 'vuelve' : 'vuelven'} mañana para afianzar` : ' · todo en su sitio') + '.</p>' +
-        '<p class="muted">Cada tarjeta vuelve cuando está a punto de olvidarse: primero al día siguiente, luego a los 3, 7, 16… días.</p>' + celebrateBox(r.celebrate) +
-        '<div class="row-actions"><button class="btn" data-act="home">Volver a la ruta</button></div></section>';
+      return top + `<section class="card rev-end"><h1>Tanda hecha</h1><p class="lead">${n} ${n === 1 ? 'tarjeta' : 'tarjetas'}` +
+        (again ? ` · ${again} ${again === 1 ? 'volverá' : 'volverán'} pronto` : ' · todo en su sitio') + '.</p>' +
+        '<p class="muted">Lo que te cuesta vuelve pronto y lo que ya sabes, de tarde en tarde. Cada tanda mezcla cosas distintas de todo lo que has hecho.</p>' + celebrateBox(r.celebrate) +
+        '<div class="row-actions"><button class="btn" data-act="home">Volver a la ruta</button><button class="btn alt" data-act="review-start">Otra tanda</button></div></section>';
     }
     const card = r.items[r.i];
     let front = `<div class="flash-meta"><span class="mono-label">${CARD_LABEL[card.type]}</span><button class="link small-link" data-open-from="${esc(card.unitId)}">${esc(unitTitle(card.unitId))}</button></div>`;
     front += card.type === 'term' ? `<p class="flash-term">${esc(card.front)}</p><p class="muted">¿Qué significa? Piénsalo y mira la respuesta.</p>` : `<p class="flash-q">${inline(card.front)}</p>${miniPlan(card.scene, card.front)}`;
     let body = '';
     let actions = '';
-    const grades = (opts) => '<div class="grade-btns">' + opts.map((g) => `<button data-act="rev-grade" data-g="${g}" class="g-${g}">${{ again: 'Otra vez', good: 'Bien', easy: 'Fácil' }[g]}<small>${gradeLabelDays(card, g)}</small></button>`).join('') + '</div>';
+    const grades = (opts) => '<div class="grade-btns">' + opts.map((g) => `<button data-act="rev-grade" data-g="${g}" class="g-${g}">${{ again: 'Otra vez', good: 'Bien', easy: 'Fácil' }[g]}<small>${gradeLabel(card, g)}</small></button>`).join('') + '</div>';
     if (card.type === 'mcq') {
       const answered = Number.isInteger(r.chosen);
       body = card.options.map((o, k) => {
@@ -910,6 +913,12 @@
     if (!sc || k < 0 || k >= sc.steps.length || k === S.sc.i) return;
     S.sc.i = k;
     saveProgress(S.sc.id, { sceneAt: k });
+    const unit = content(S.sc.id);
+    if (sc.lesson && k === sc.steps.length - 1 && unit && markDone(unit)) {
+      render();
+      document.getElementById('scene-card')?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      return;
+    }
     const card = document.getElementById('scene-card');
     if (!card) { render(); return; }
     card.innerHTML = sceneInner(sc, k);
@@ -1024,21 +1033,13 @@
   function reviewHomeCard() {
     const r = S.reviewInfo;
     if (!r) return '';
-    if (r.due > 0) {
-      const n = Math.min(r.due, C.REVIEW_LIMIT);
-      return `<section class="card rev-home" aria-labelledby="rev-h"><div class="rev-row"><span class="rev-ico">${ICON.cards}</span><div class="rev-txt"><h2 id="rev-h">Repaso</h2><p class="muted">${n} ${n === 1 ? 'tarjeta' : 'tarjetas'} · unos ${Math.max(2, Math.round(n * 0.35))} min</p></div><button class="btn" data-act="review-start">Repasar</button></div></section>`;
-    }
-    if (r.doneToday > 0) return `<section class="card rev-home"><p class="status-line ok">${ICON.check}Repaso de hoy hecho · ${r.doneToday} ${r.doneToday === 1 ? 'tarjeta' : 'tarjetas'}</p></section>`;
-    return '';
-  }
-
-  function markedCard() {
-    const items = outline().filter((u) => isDone(u.id) && ['review', 'meh'].includes(prog(u.id)?.feel) && isReady(u.id))
-      .sort((a, b) => (prog(a.id).feel === 'review' ? -1 : 0) - (prog(b.id).feel === 'review' ? -1 : 0));
-    if (!items.length) return '';
-    return `<section class="card"><div class="sec-head"><h2>Marcadas para repasar</h2><span class="muted">${items.length}</span></div><ul class="rev-list">` +
-      items.map((u) => `<li><button data-open="${esc(u.id)}"><span class="tag">${prog(u.id).feel === 'review' ? 'Repasar' : 'Más o menos'}</span><span>${esc(u.title)}</span></button></li>`).join('') +
-      '</ul></section>';
+    if (!r.pool) return '';
+    const size = Math.min(S.prefs.reviewSize, r.pool);
+    const done = r.doneToday >= size;
+    const sub = done
+      ? `Hoy ya llevas ${r.doneToday} · si te apetece, otra tanda`
+      : `${size} tarjetas variadas de ${r.units === 1 ? 'una unidad' : r.units + ' unidades'} · unos ${Math.max(2, Math.round(size * 0.35))} min`;
+    return `<section class="card rev-home" aria-labelledby="rev-h"><div class="rev-row"><span class="rev-ico">${done ? ICON.check : ICON.cards}</span><div class="rev-txt"><h2 id="rev-h">Repaso</h2><p class="muted">${sub}</p></div><button class="btn${done ? ' alt' : ''}" data-act="review-start">${done ? 'Otra tanda' : 'Repasar'}</button></div></section>`;
   }
 
   function routeCard() {
@@ -1079,6 +1080,7 @@
       : '<div class="row-actions"><button class="btn alt small" data-act="backup">Copiar mi progreso</button><button class="btn alt small" data-act="restore-open">Restaurar una copia</button></div>';
     return `<section class="card settings" aria-labelledby="settings-h"><h2 id="settings-h">Ajustes</h2>` +
       `<div class="row"><h3>Aviso de cada mañana</h3>${notif}</div>` +
+      `<div class="row"><h3>Repaso</h3><p class="muted">Tarjetas por tanda. Siempre puedes pedir otra tanda al acabar.</p><div class="seg" role="group" aria-label="Tarjetas por tanda">${C.REVIEW_SIZES.map((n) => `<button data-act="rev-size" data-n="${n}" aria-pressed="${S.prefs.reviewSize === n}">${n}</button>`).join('')}</div></div>` +
       `<div class="row"><h3>Copia de seguridad</h3><p class="muted">Tu progreso, tus notas y tus tarjetas de repaso viven en este iPhone. Cópialos y guárdalos en Notas de vez en cuando.</p>${restore}</div></section>`;
   }
 
@@ -1091,7 +1093,7 @@
       app.innerHTML = header() + '<section class="card empty"><h1>No se ha podido cargar la ruta</h1><p class="muted">Comprueba la conexión y vuelve a abrir la app.</p></section>';
       return;
     }
-    app.innerHTML = header() + setupCard() + todayCard() + reviewHomeCard() + streakHomeCard() + markedCard() + routeCard() + settingsCard() + `<p class="foot">Planos · ${esc(S.version)}</p>`;
+    app.innerHTML = header() + setupCard() + todayCard() + reviewHomeCard() + streakHomeCard() + routeCard() + settingsCard() + `<p class="foot">Planos · ${esc(S.version)}</p>`;
   }
 
   // ---------- unit pages ----------
@@ -1164,25 +1166,30 @@
     return `<section class="card"><div class="sec-head"><h2>${title}</h2><span class="muted">${sub}</span></div><div class="checks">${items}</div></section>`;
   }
 
+  // El final de una unidad: se da por hecha sola al llegar al final (sin marcar nada).
   function feelBlock(u) {
     const p = prog(u.id);
-    const pressed = p?.status === 'done' ? p.feel : null;
-    const btns = FEEL.map((f) => `<button data-act="feel" data-feel="${f.id}" aria-pressed="${pressed === f.id}">${f.label}</button>`).join('');
     let next = '';
-    if (p?.status === 'done') {
+    if (p?.status !== 'done') {
+      const st = u.kind === 'problem' ? problemState(u) : null;
+      if (u.kind === 'problem' && st && st.at < u.steps.length && !st.all) return '';
+      if (isSceneLesson(u)) return '';
+      return `<section class="card feel"><h2>${u.kind === 'problem' ? '¿Lo has terminado?' : '¿La has terminado?'}</h2><p class="muted">Al marcarla, sus tarjetas entran en tu repaso.</p><div class="row-actions"><button class="btn" data-act="finish">${u.kind === 'problem' ? 'He terminado el problema' : 'He terminado la lección'}</button></div></section>`;
+    }
+    {
       const list = outline();
       const idx = list.findIndex((x) => x.id === u.id);
       const after = list.slice(idx + 1).find((x) => !isDone(x.id)) || nextUndone();
       const { plan } = todayPlan();
       const moreToday = after && plan.includes(after) && !isDone(after.id);
-      const cards = C.cardsOf(u).length;
-      next = celebrateBox(S.ui.celebrate) + `<div class="next-box"><b>${pressed === 'review' ? 'Hecho. Lo tienes en «Marcadas para repasar».' : 'Hecho.'}</b>` +
-        (cards ? `<span class="muted">${cards} ${cards === 1 ? 'tarjeta pasa' : 'tarjetas pasan'} a tu repaso${pressed === 'ok' ? ' dentro de dos días' : ' mañana'}.</span>` : '') +
+      const cards = C.cardsOf(u, S.scenes[u.id]).length;
+      next = celebrateBox(S.ui.celebrate) + `<div class="next-box"><b>${u.kind === 'problem' ? 'Problema hecho.' : 'Lección hecha.'}</b>` +
+        (cards ? `<span class="muted">Sus ${cards} tarjetas ya están en tu repaso: irán saliendo mezcladas con las demás.</span>` : '') +
         (after && isReady(after.id)
           ? `<div class="row-actions"><button class="btn${moreToday ? '' : ' alt'}" data-open="${esc(after.id)}">${moreToday ? 'Siguiente' : 'Adelantar'}: ${esc(after.title)}</button><button class="link" data-act="home">Volver a la ruta</button></div>`
           : '<div class="row-actions"><button class="btn alt" data-act="home">Volver a la ruta</button></div>') + '</div>';
     }
-    return `<section class="card feel"><h2>¿Cómo lo llevas?</h2><p class="muted">Lo marcas como hecho y, si quieres, lo dejas para repasar.</p><div class="feel-btns" role="group" aria-label="Cómo lo llevas">${btns}</div>${next}</section>`;
+    return `<section class="card feel">${next}</section>`;
   }
 
   function askBlock() {
@@ -1315,17 +1322,20 @@
     const st = problemState(u);
     const at = Math.min(st.at + 1, u.steps.length);
     saveProgress(u.id, { at });
+    if (at >= u.steps.length) markDone(u);
     render();
     if (at < u.steps.length) scrollToStep(u.steps[at].id);
   }
-  function markFeel(u, feel) {
+  // Da la unidad por hecha (una sola vez): la racha, los logros y el repaso lo notan.
+  function markDone(u) {
     const p = prog(u.id);
-    const before = p?.status === 'done' ? null : streakNow();
-    const patch = { status: 'done', feel, doneAt: p?.doneAt || new Date().toISOString(), doneOn: p?.doneOn || C.todayKey() };
+    if (p?.status === 'done') return false;
+    const before = streakNow();
+    const patch = { status: 'done', doneAt: new Date().toISOString(), doneOn: C.todayKey() };
     if (u.kind === 'problem') patch.at = u.steps.length;
     saveProgress(u.id, patch);
-    if (before) S.ui.celebrate = celebrationFor(before);
-    render();
+    S.ui.celebrate = celebrationFor(before);
+    return true;
   }
 
   // Dudas: se abre Claude con la pregunta y el contexto de la unidad.
@@ -1398,8 +1408,15 @@
   }
 
   // ---------- backup ----------
+  function setReviewSize(n) {
+    if (!C.REVIEW_SIZES.includes(n)) return;
+    S.prefs = { ...S.prefs, reviewSize: n };
+    persist('prefs');
+    refreshReview();
+    render();
+  }
   async function backup() {
-    const text = JSON.stringify({ app: 'planos', savedAt: new Date().toISOString(), progress: S.progress, cards: S.cards, reviewLog: S.reviewLog });
+    const text = JSON.stringify({ app: 'planos', savedAt: new Date().toISOString(), progress: S.progress, cards: S.cards, reviewLog: S.reviewLog, prefs: S.prefs });
     toast((await copyText(text)) ? 'Progreso copiado. Pégalo en Notas para guardarlo.' : 'No se ha podido copiar');
   }
   function restoreApply() {
@@ -1409,6 +1426,7 @@
       S.progress = data.progress;
       S.cards = data.cards && typeof data.cards === 'object' ? data.cards : {};
       S.reviewLog = data.reviewLog && typeof data.reviewLog === 'object' ? data.reviewLog : {};
+      if (data.prefs && C.REVIEW_SIZES.includes(data.prefs.reviewSize)) { S.prefs = { ...S.prefs, ...data.prefs }; C.idbSet('prefs', S.prefs); }
       C.idbSet('progress', S.progress);
       C.idbSet('cards', S.cards);
       C.idbSet('reviewLog', S.reviewLog);
@@ -1441,7 +1459,8 @@
       case 'reveal': if (u) reveal(u, t.dataset.step); break;
       case 'advance': if (u) advance(u); break;
       case 'all': if (u) { S.ui.all = true; render(); } break;
-      case 'feel': if (u) markFeel(u, t.dataset.feel); break;
+      case 'finish': if (u && markDone(u)) render(); break;
+      case 'rev-size': setReviewSize(Number(t.dataset.n)); break;
       case 'ask': if (u) ask(u); break;
       case 'interview': if (u) openClaude(interviewPrompt(u, t.dataset.lang), t.dataset.lang === 'en' ? 'Opening Claude… (the prompt is also copied)' : 'Abriendo Claude como entrevistador… (también está copiado)'); break;
       case 'tts-play': if (u) ttsPlay(u); break;
@@ -1526,10 +1545,10 @@
   async function init() {
     renderHome();
     try {
-      const [path, index, progress, cards, reviewLog, seenBadges] = await Promise.all([
+      const [path, index, progress, cards, reviewLog, seenBadges, prefs] = await Promise.all([
         getJSON('./data/path.json'), getJSON('./data/index.json'),
         C.idbGet('progress').catch(() => null), C.idbGet('cards').catch(() => null), C.idbGet('reviewLog').catch(() => null),
-        C.idbGet('seenBadges').catch(() => null),
+        C.idbGet('seenBadges').catch(() => null), C.idbGet('prefs').catch(() => null),
       ]);
       S.path = path;
       S.ready = new Set(index.units);
@@ -1538,6 +1557,7 @@
       S.progress = progress || {};
       S.cards = cards || {};
       S.reviewLog = reviewLog || {};
+      if (prefs && C.REVIEW_SIZES.includes(prefs.reviewSize)) S.prefs = { ...S.prefs, ...prefs };
       S.status = 'ready';
       if (Array.isArray(seenBadges)) S.seenBadges = seenBadges;
       else quietBadges();
