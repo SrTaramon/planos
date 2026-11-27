@@ -168,6 +168,9 @@
     }
     return out;
   }
+  // El nivel de una tarjeta sube con «Fácil» (y poco a poco con «Bien») y vuelve a 0 con «Otra vez»:
+  // 0, como siempre; 1, más difícil (al revés, sin ver las opciones al principio, escribiendo); 2, abierta.
+  const cardLevel = (st) => (!st || (st.box ?? 0) <= 1 ? 0 : st.box <= 3 ? 1 : 2);
   // Cuántas tarjetas propone hoy el repaso: una tanda, si aún no la has hecho.
   function reviewSuggested(poolSize, reviewLog, size = REVIEW_LIMIT, today = todayKey()) {
     const doneToday = reviewLog?.[today] || 0;
@@ -227,5 +230,5 @@
     });
   }
 
-  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, REVIEW_SIZES, REST_EVERY, REST_MAX, CARD_MIN, todayKey, addDays, outline, isDone, kindLabel, todayPlan, activityByDay, streakInfo, streak, badges, cardsOf, reviewWeight, reviewPool, reviewSession, reviewSuggested, gradeCard, dailyMessage, idbGet, idbSet };
+  root.PlanosCore = { TZ, SESSION_MIN, REVIEW_LIMIT, REVIEW_SIZES, REST_EVERY, REST_MAX, CARD_MIN, todayKey, addDays, outline, isDone, kindLabel, todayPlan, activityByDay, streakInfo, streak, badges, cardsOf, reviewWeight, reviewPool, reviewSession, reviewSuggested, cardLevel, gradeCard, dailyMessage, idbGet, idbSet };
 })(typeof self !== 'undefined' ? self : window);

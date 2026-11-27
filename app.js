@@ -292,7 +292,9 @@
   function gradeCurrent(g) {
     const r = S.rev;
     const card = r.items[r.i];
+    const was = C.cardLevel(S.cards[card.id]);
     S.cards[card.id] = C.gradeCard(S.cards[card.id], g);
+    if (C.cardLevel(S.cards[card.id]) > was) r.up = (r.up || 0) + 1;
     const today = C.todayKey();
     S.reviewLog[today] = (S.reviewLog[today] || 0) + 1;
     persist('cards');
@@ -302,6 +304,8 @@
     if (r.i >= r.items.length) r.celebrate = celebrationFor(r.before);
     r.shown = false;
     r.chosen = null;
+    r.optsShown = false;
+    r.typed = '';
     render();
     window.scrollTo(0, 0);
   }
@@ -312,38 +316,76 @@
     if (r.i >= n) {
       const again = r.results.filter((x) => x === 'again').length;
       return top + `<section class="card rev-end"><h1>Tanda hecha</h1><p class="lead">${n} ${n === 1 ? 'tarjeta' : 'tarjetas'}` +
-        (again ? ` · ${again} ${again === 1 ? 'volverá' : 'volverán'} pronto` : ' · todo en su sitio') + '.</p>' +
-        '<p class="muted">Lo que te cuesta vuelve pronto y lo que ya sabes, de tarde en tarde. Cada tanda mezcla cosas distintas de todo lo que has hecho.</p>' + celebrateBox(r.celebrate) +
+        (again ? ` · ${again} ${again === 1 ? 'volverá' : 'volverán'} pronto` : ' · todo en su sitio') + (r.up ? ` · ${r.up} ${r.up === 1 ? 'sube' : 'suben'} de nivel` : '') + '.</p>' +
+        '<p class="muted">Lo que te cuesta vuelve pronto y lo que ya sabes, de tarde en tarde y más difícil: al revés, sin opciones o con preguntas más difíciles en Claude.</p>' + celebrateBox(r.celebrate) +
         '<div class="row-actions"><button class="btn" data-act="home">Volver a la ruta</button><button class="btn alt" data-act="review-start">Otra tanda</button></div></section>';
     }
     const card = r.items[r.i];
-    let front = `<div class="flash-meta"><span class="mono-label">${CARD_LABEL[card.type]}</span><button class="link small-link" data-open-from="${esc(card.unitId)}">${esc(unitTitle(card.unitId))}</button></div>`;
-    front += card.type === 'term' ? `<p class="flash-term">${esc(card.front)}</p><p class="muted">¿Qué significa? Piénsalo y mira la respuesta.</p>` : `<p class="flash-q">${inline(card.front)}</p>${miniPlan(card.scene, card.front)}`;
+    // El nivel decide cómo se pregunta: lo que ya sabes se complica.
+    const lvl = C.cardLevel(S.cards[card.id]);
+    const mode = card.type === 'term' ? (lvl ? 'al revés' : '') : card.type === 'mcq' ? ['', 'piensa antes de ver las opciones', 'sin opciones'][lvl] : (lvl ? 'escribe tu respuesta' : '');
+    let front = `<div class="flash-meta"><span class="mono-label">${CARD_LABEL[card.type]} · <span class="lvl lvl-${lvl}">nivel ${lvl + 1}${mode ? ' · ' + mode : ''}</span></span><button class="link small-link" data-open-from="${esc(card.unitId)}">${esc(unitTitle(card.unitId))}</button></div>`;
     let body = '';
     let actions = '';
     const grades = (opts) => '<div class="grade-btns">' + opts.map((g) => `<button data-act="rev-grade" data-g="${g}" class="g-${g}">${{ again: 'Otra vez', good: 'Bien', easy: 'Fácil' }[g]}<small>${gradeLabel(card, g)}</small></button>`).join('') + '</div>';
-    if (card.type === 'mcq') {
-      const answered = Number.isInteger(r.chosen);
-      body = card.options.map((o, k) => {
-        let cls = 'opt';
-        if (answered && k === card.answer) cls += ' right';
-        else if (answered && k === r.chosen) cls += ' wrong';
-        return `<button class="${cls}" data-act="rev-choose" data-k="${k}" ${answered ? 'disabled' : ''}><span class="k">${'ABCD'[k]}</span><span>${inline(o)}</span></button>`;
-      }).join('');
-      if (answered) {
-        const ok = r.chosen === card.answer;
-        body += `<div class="explain prose">${ok ? '<p><strong>Eso es.</strong></p>' : '<p><strong>Casi.</strong> La buena es la marcada en verde.</p>'}${md(card.back)}</div>`;
-        actions = ok ? grades(['good', 'easy']) : grades(['again']);
+    const show = '<div class="row-actions"><button class="btn" data-act="rev-show">Mostrar respuesta</button></div>';
+    const write = `<label class="sr" for="rev-ans">Tu respuesta</label><textarea id="rev-ans" data-fk="revans" placeholder="Escribe tu respuesta, aunque sea en dos palabras (opcional)">${esc(r.typed || '')}</textarea>`;
+    const yours = () => (r.typed && r.typed.trim() ? `<div class="rev-typed"><span class="mono-label">Tu respuesta</span><p>${esc(r.typed.trim())}</p></div>` : '');
+    const deeper = lvl === 2 ? '<button class="link rev-claude" data-act="rev-claude">Ir más allá con Claude: preguntas más difíciles sobre esto</button>' : '';
+    if (card.type === 'term') {
+      if (!lvl) {
+        front += `<p class="flash-term">${esc(card.front)}</p><p class="muted">¿Qué significa? Piénsalo y mira la respuesta.</p>`;
+        if (!r.shown) actions = show;
+        else { body = `<div class="flash-back prose">${md(card.back)}</div>`; actions = grades(['again', 'good', 'easy']); }
+      } else {
+        front += `<p class="muted">¿Qué término es?</p><div class="flash-def prose">${md(card.back)}</div>`;
+        if (!r.shown) actions = (lvl === 2 ? write : '') + show;
+        else { body = yours() + `<p class="flash-term">${esc(card.front)}</p>` + deeper; actions = grades(['again', 'good', 'easy']); }
       }
-    } else if (!r.shown) {
-      actions = '<div class="row-actions"><button class="btn" data-act="rev-show">Mostrar respuesta</button></div>';
+    } else if (card.type === 'mcq') {
+      front += `<p class="flash-q">${inline(card.front)}</p>${miniPlan(card.scene, card.front)}`;
+      if (lvl === 2) {
+        // Sin opciones: respuesta abierta y luego la buena.
+        if (!r.shown) actions = write + show;
+        else {
+          body = yours() + `<div class="flash-back prose"><p><strong>La buena:</strong> ${inline(card.options[card.answer])}</p>${md(card.back)}</div>` + deeper;
+          actions = grades(['again', 'good', 'easy']);
+        }
+      } else if (lvl === 1 && !r.optsShown) {
+        body = '<p class="muted">Piensa la respuesta antes de ver las opciones.</p>';
+        actions = '<div class="row-actions"><button class="btn" data-act="rev-opts">Ya lo tengo: ver opciones</button></div>';
+      } else {
+        const answered = Number.isInteger(r.chosen);
+        body = card.options.map((o, k) => {
+          let cls = 'opt';
+          if (answered && k === card.answer) cls += ' right';
+          else if (answered && k === r.chosen) cls += ' wrong';
+          return `<button class="${cls}" data-act="rev-choose" data-k="${k}" ${answered ? 'disabled' : ''}><span class="k">${'ABCD'[k]}</span><span>${inline(o)}</span></button>`;
+        }).join('');
+        if (answered) {
+          const ok = r.chosen === card.answer;
+          body += `<div class="explain prose">${ok ? '<p><strong>Eso es.</strong></p>' : '<p><strong>Casi.</strong> La buena es la marcada en verde.</p>'}${md(card.back)}</div>`;
+          actions = ok ? grades(['good', 'easy']) : grades(['again']);
+        }
+      }
     } else {
-      body = `<div class="flash-back prose">${md(card.back)}</div>`;
-      actions = grades(['again', 'good', 'easy']);
+      front += `<p class="flash-q">${inline(card.front)}</p>`;
+      if (!r.shown) actions = (lvl ? write : '') + show;
+      else { body = yours() + `<div class="flash-back prose">${md(card.back)}</div>` + deeper; actions = grades(['again', 'good', 'easy']); }
     }
     return top + `<header class="unit-head"><div class="unit-tag"><span class="badge lesson">Repaso</span><span class="badge">${r.i + 1} / ${n}</span></div><h1>Repaso</h1></header>` +
       `<div class="meter rev-meter" aria-hidden="true"><span style="width:${(r.i / n) * 100}%"></span></div>` +
       `<section class="card flash">${front}${body ? `<div class="flash-body">${body}</div>` : ''}${actions}</section>`;
+  }
+
+  // Una tarjeta que ya te sabes: Claude te pone a prueba con preguntas más difíciles sobre ese tema.
+  function reviewDeeper(card) {
+    if (!card) return;
+    const answer = card.type === 'mcq' ? `${plain(card.options[card.answer])}. ${plain(card.back)}` : plain(card.back);
+    const prompt = `Estoy repasando system design con una app y esta tarjeta ya me la sé. Quiero comprobar que lo entiendo de verdad, no que me lo sé de memoria.\n\n` +
+      `Unidad: «${unitTitle(card.unitId)}»\nTarjeta: ${plain(card.front)}\nRespuesta: ${answer.slice(0, 900)}\n\n` +
+      'Hazme 3 preguntas más difíciles sobre esto, de una en una: un caso nuevo, un «¿qué pasa si…?» y un trade-off. Espera mi respuesta, corrígeme y explícame lo que se me escape. En español, con los términos técnicos en inglés.';
+    openClaude(prompt, 'Abriendo Claude con preguntas más difíciles… (también está copiado)');
   }
 
   // ---------- listening (speech synthesis) ----------
@@ -1482,6 +1524,8 @@
       case 'cal-day': if (S.cal) { S.cal.day = t.dataset.day; render(); } break;
       case 'review-start': startReview(); break;
       case 'rev-show': if (S.rev) { S.rev.shown = true; render(); } break;
+      case 'rev-opts': if (S.rev) { S.rev.optsShown = true; render(); } break;
+      case 'rev-claude': if (S.rev) reviewDeeper(S.rev.items[S.rev.i]); break;
       case 'rev-choose': if (S.rev && !Number.isInteger(S.rev.chosen)) { S.rev.chosen = Number(t.dataset.k); render(); } break;
       case 'rev-grade': if (S.rev) gradeCurrent(t.dataset.g); break;
       case 'push-on': pushOn(); break;
@@ -1501,6 +1545,7 @@
     if (t.dataset?.note && S.view.name === 'unit') saveNote(S.view.id, t.dataset.note, t.value.slice(0, 4000));
     if (t.id === 'ask-in') S.ui.ask = t.value;
     if (t.id === 'restore-in') S.settings.restoreText = t.value;
+    if (t.id === 'rev-ans' && S.rev) S.rev.typed = t.value;
     if (t.id === 'search-in') { S.search.q = t.value; renderSearchResults(); }
   });
 
